@@ -4,62 +4,174 @@
    прибор в дыму, восковой карандаш на контактном листе, фокус, ошибки.
    ========================================================================== */
 
-/* ---------- Шрифты (self-hosted, кириллица + латиница) ---------- */
+/* ---------- Шрифты (self-hosted; кириллица с кыргызскими Ң, Ө, Ү + латиница) ---------- */
 @font-face {
-  font-family: "Sofia Sans Extra Condensed";
-  src: url("../fonts/sofia-sans-extra-condensed-cyrillic-wght-normal.woff2") format("woff2");
-  font-weight: 1 1000;
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-ext-300-normal.woff2") format("woff2");
+  font-weight: 300;
   font-display: swap;
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
 }
 @font-face {
-  font-family: "Sofia Sans Extra Condensed";
-  src: url("../fonts/sofia-sans-extra-condensed-latin-wght-normal.woff2") format("woff2");
-  font-weight: 1 1000;
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-300-normal.woff2") format("woff2");
+  font-weight: 300;
   font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+25B8, U+FEFF, U+FFFD;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
 }
 @font-face {
-  font-family: "Sofia Sans";
-  src: url("../fonts/sofia-sans-cyrillic-wght-normal.woff2") format("woff2");
-  font-weight: 1 1000;
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-latin-300-normal.woff2") format("woff2");
+  font-weight: 300;
   font-display: swap;
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 @font-face {
-  font-family: "Sofia Sans";
-  src: url("../fonts/sofia-sans-latin-wght-normal.woff2") format("woff2");
-  font-weight: 1 1000;
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-ext-600-normal.woff2") format("woff2");
+  font-weight: 600;
   font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-ext-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-ext-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-ext-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-cyrillic-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-display: swap;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Fira Sans Extra Condensed";
+  src: url("../fonts/fira-sans-extra-condensed-latin-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("../fonts/onest-cyrillic-ext-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("../fonts/onest-cyrillic-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("../fonts/onest-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/ibm-plex-mono-cyrillic-ext-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
 }
 @font-face {
   font-family: "IBM Plex Mono";
   src: url("../fonts/ibm-plex-mono-cyrillic-400-normal.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
 }
 @font-face {
   font-family: "IBM Plex Mono";
   src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/ibm-plex-mono-cyrillic-ext-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+  unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;
 }
 @font-face {
   font-family: "IBM Plex Mono";
   src: url("../fonts/ibm-plex-mono-cyrillic-500-normal.woff2") format("woff2");
   font-weight: 500;
   font-display: swap;
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
 }
 @font-face {
   font-family: "IBM Plex Mono";
   src: url("../fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
   font-weight: 500;
   font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 
 /* ---------- Токены ---------- */
@@ -82,8 +194,8 @@
   --film: #121212;
   --hole: #d6d6d1;
 
-  --font-display: "Sofia Sans Extra Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --font-body: "Sofia Sans", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Fira Sans Extra Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Onest", "Segoe UI", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -213,7 +325,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---------- Типографика ---------- */
 .h2 {
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(2.9rem, 7vw, 6.6rem);
   line-height: 0.88;
   letter-spacing: -0.005em;
@@ -241,7 +353,7 @@ h1, h2, h3, p { margin: 0; }
   background: var(--fg);
   color: var(--bg);
   font-family: var(--font-display);
-  font-weight: 750;
+  font-weight: 700;
   font-size: 1.25rem;
   line-height: 1;
   letter-spacing: 0.06em;
@@ -305,12 +417,12 @@ h1, h2, h3, p { margin: 0; }
 .brand {
   margin-right: auto;
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: 1.7rem;
   line-height: 1;
   letter-spacing: 0.03em;
 }
-.brand span { font-weight: 350; }
+.brand span { font-weight: 300; }
 
 .nav-links { display: none; gap: 30px; }
 .nav-links a {
@@ -322,6 +434,50 @@ h1, h2, h3, p { margin: 0; }
 .nav-links a:hover { color: var(--fg); }
 
 .nav-cta { display: none; }
+
+/* Переключатель языка: активный подчёркнут красным, как отмеченный кадр */
+.lang {
+  display: flex;
+  align-items: center;
+}
+.lang button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 40px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 0.2s ease;
+}
+.lang button:hover,
+.lang button[aria-pressed="true"] { color: var(--fg); }
+.lang button[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 7px;
+  height: 2px;
+  background: var(--red);
+}
+.lang button + button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 13px;
+  bottom: 13px;
+  width: 1px;
+  background: var(--line);
+}
 
 .menu-toggle {
   display: grid;
@@ -359,7 +515,7 @@ h1, h2, h3, p { margin: 0; }
 .menu-links { display: grid; gap: 6px; }
 .menu-links a {
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(2.8rem, 13vw, 4.6rem);
   line-height: 1;
   text-transform: uppercase;
@@ -387,6 +543,17 @@ h1, h2, h3, p { margin: 0; }
 .intro-pending .intro { animation: intro-failsafe 0.01s 4s forwards; }
 .intro-lock,
 .intro-lock body { overflow: hidden; }
+
+/* Пока скрипт подставляет кыргызский текст, страница не мелькает русским.
+   Если скрипт не загрузился, через 1.5 с показываем как есть. */
+.i18n-wait body {
+  visibility: hidden;
+  animation: i18n-failsafe 0.01s 1.5s forwards;
+}
+
+@keyframes i18n-failsafe {
+  to { visibility: visible; }
+}
 
 @keyframes intro-failsafe {
   to { visibility: hidden; pointer-events: none; }
@@ -419,7 +586,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .intro-top .intro-word { margin-bottom: 2.4vh; }
 .intro-bottom .intro-word { margin-top: 2.4vh; }
-.intro-word-thin { font-weight: 350; }
+.intro-word-thin { font-weight: 300; }
 
 /* Нить прибора, которая разгорается перед титром */
 .intro-line {
@@ -521,8 +688,9 @@ h1, h2, h3, p { margin: 0; }
 .hero-title {
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: clamp(3.3rem, 9.5vw, 11rem);
-  line-height: 0.84;
+  /* самая длинная строка около 10.5em: 8.7vw держит заголовок в две строки от 1024px */
+  font-size: clamp(3.3rem, 8.7vw, 8.2rem);
+  line-height: 0.86;
   letter-spacing: -0.012em;
   text-transform: uppercase;
 }
@@ -677,7 +845,7 @@ h1, h2, h3, p { margin: 0; }
   background: var(--red);
   color: var(--on-red);
   font-family: var(--font-display);
-  font-weight: 750;
+  font-weight: 700;
   font-size: 1.1rem;
   line-height: 1;
   letter-spacing: 0.08em;
@@ -1157,12 +1325,12 @@ h1, h2, h3, p { margin: 0; }
 .roll-end {
   margin-top: clamp(110px, 16vh, 180px);
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(2.6rem, 6vw, 4.6rem);
   line-height: 1;
   letter-spacing: 0.03em;
 }
-.roll-end span { font-weight: 350; }
+.roll-end span { font-weight: 300; }
 
 .roll-controls {
   display: flex;
@@ -1214,6 +1382,15 @@ h1, h2, h3, p { margin: 0; }
   transition: color 0.2s ease;
 }
 .direct a:hover { color: var(--red-hi); }
+.direct .direct-sub {
+  display: inline-block;
+  margin-left: 14px;
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--fg-2);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 
 .slate { position: relative; width: 100%; }
 
@@ -1271,7 +1448,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .slate-prod b {
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(1.9rem, 3.4vw, 2.7rem);
   line-height: 1;
   letter-spacing: 0.05em;
@@ -1420,7 +1597,7 @@ h1, h2, h3, p { margin: 0; }
 .slate-done:focus { outline: none; }
 .slate-done-title {
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(3.6rem, 9vw, 7rem);
   line-height: 0.85;
   text-transform: uppercase;
@@ -1579,7 +1756,7 @@ h1, h2, h3, p { margin: 0; }
 
 .viewer-title {
   font-family: var(--font-display);
-  font-weight: 850;
+  font-weight: 900;
   font-size: clamp(2.4rem, 5vw, 4.2rem);
   line-height: 0.9;
   text-transform: uppercase;

@@ -19,6 +19,79 @@
   const hero = $("[data-hero]");
   const lightOn = () => hero && hero.classList.add("is-lit");
 
+  /* ---------- Языки: русский и кыргызский ----------
+     Русский текст живёт в разметке, кыргызский в assets/js/i18n.js.
+     Элементы помечены data-i18n (текст), data-i18n-html (текст с разметкой)
+     и data-i18n-attr="атрибут:ключ; атрибут:ключ". */
+  const DICT = window.KF_I18N || {};
+  DICT.ru = DICT.ru || {};
+  DICT.ky = DICT.ky || {};
+  const LANGS = ["ru", "ky"];
+  let lang = LANGS.includes(document.documentElement.lang) ? document.documentElement.lang : "ru";
+
+  const t = (key, vars) => {
+    let s = DICT[lang][key] ?? DICT.ru[key] ?? key;
+    if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+    return s;
+  };
+  const mailLink = (mail) => `<a href="mailto:${mail}">${mail}</a>`;
+  const attrPairs = (el) => el.dataset.i18nAttr
+    .split(";")
+    .map((pair) => pair.split(":").map((x) => x.trim()))
+    .filter(([a, k]) => a && k);
+
+  // Русский текст берём из самой страницы, чтобы не хранить его дважды
+  function captureRu() {
+    $$("[data-i18n]").forEach((el) => { DICT.ru[el.dataset.i18n] ??= el.textContent.trim(); });
+    $$("[data-i18n-html]").forEach((el) => { DICT.ru[el.dataset.i18nHtml] ??= el.innerHTML.trim(); });
+    $$("[data-i18n-attr]").forEach((el) => attrPairs(el).forEach(([a, k]) => {
+      DICT.ru[k] ??= el.getAttribute(a) || "";
+    }));
+  }
+
+  function applyLang(next) {
+    lang = LANGS.includes(next) ? next : "ru";
+    const root = document.documentElement;
+    root.lang = lang;
+    const pick = (k) => DICT[lang][k] ?? DICT.ru[k];
+    $$("[data-i18n]").forEach((el) => {
+      const v = pick(el.dataset.i18n);
+      if (v != null && el.textContent !== v) el.textContent = v;
+    });
+    $$("[data-i18n-html]").forEach((el) => {
+      const v = pick(el.dataset.i18nHtml);
+      if (v != null) el.innerHTML = v;
+    });
+    $$("[data-i18n-attr]").forEach((el) => attrPairs(el).forEach(([a, k]) => {
+      const v = pick(k);
+      if (v != null) el.setAttribute(a, v);
+    }));
+    $$("[data-lang]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+    root.classList.remove("i18n-wait");
+    document.dispatchEvent(new CustomEvent("kf:lang", { detail: lang }));
+  }
+
+  const onLang = (fn) => document.addEventListener("kf:lang", fn);
+
+  function initLang() {
+    captureRu();
+    if (lang !== "ru") applyLang(lang);
+    $$("[data-lang]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+    document.documentElement.classList.remove("i18n-wait");
+
+    $$("[data-lang]").forEach((btn) => btn.addEventListener("click", () => {
+      if (btn.dataset.lang === lang) return;
+      applyLang(btn.dataset.lang);
+      try { localStorage.setItem("kf-lang", lang); } catch (err) { /* приватный режим */ }
+      try {
+        const url = new URL(window.location.href);
+        if (lang === "ru") url.searchParams.delete("lang");
+        else url.searchParams.set("lang", lang);
+        window.history.replaceState(null, "", url);
+      } catch (err) { /* песочница без history */ }
+    }));
+  }
+
   /* ---------- Сцены, привязанные к прокрутке ----------
      Один цикл rAF читает положение блоков, пока хотя бы один из них
      на экране. Как только все ушли из кадра, цикл останавливается. */
@@ -83,8 +156,9 @@
       menu.hidden = !open;
       document.body.classList.toggle("menu-open", open);
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.setAttribute("aria-label", open ? "Закрыть меню" : "Открыть меню");
+      toggle.setAttribute("aria-label", t(open ? "menu.close" : "menu.open"));
     };
+    onLang(() => toggle.setAttribute("aria-label", t(menu.hidden ? "menu.open" : "menu.close")));
 
     toggle.addEventListener("click", () => setOpen(menu.hidden));
     menu.addEventListener("click", (e) => {
@@ -448,37 +522,48 @@
     const text = $("[data-manifest-text]");
     if (!sec || !text || reduce) return;
 
-    const words = [];
-    Array.from(text.childNodes).forEach((node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const frag = document.createDocumentFragment();
-        node.textContent.split(/(\s+)/).forEach((part) => {
-          if (!part) return;
-          if (/^\s+$/.test(part)) {
-            frag.append(part);
-            return;
-          }
-          const w = document.createElement("span");
-          w.className = "w";
-          w.textContent = part;
-          words.push(w);
-          frag.append(w);
-        });
-        node.replaceWith(frag);
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        node.classList.add("w", "key");
-        words.push(node);
-      }
-    });
+    let words = [];
+    let lit = -1;
+    const split = () => {
+      words = [];
+      lit = -1;
+      Array.from(text.childNodes).forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const frag = document.createDocumentFragment();
+          node.textContent.split(/(\s+)/).forEach((part) => {
+            if (!part) return;
+            if (/^\s+$/.test(part)) {
+              frag.append(part);
+              return;
+            }
+            const w = document.createElement("span");
+            w.className = "w";
+            w.textContent = part;
+            words.push(w);
+            frag.append(w);
+          });
+          node.replaceWith(frag);
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          node.classList.add("w", "key");
+          words.push(node);
+        }
+      });
+    };
+    split();
     sec.classList.add("is-split");
 
-    let lit = -1;
-    addScene(text, (r, vh) => {
+    const refresh = addScene(text, (r, vh) => {
       const p = clamp((vh * 0.82 - r.top) / (r.height + vh * 0.3), 0, 1);
       const count = Math.round(p * words.length);
       if (count === lit) return;
       lit = count;
       words.forEach((w, i) => w.classList.toggle("on", i < count));
+    });
+
+    // Смена языка заменяет текст целиком: заново режем на слова и подсвечиваем
+    onLang(() => {
+      split();
+      refresh();
     });
   }
 
@@ -603,16 +688,20 @@
       if (i === current) return;
       if (current >= 0) frames[current].classList.remove("is-marked");
       current = i;
-      const f = frames[i];
-      f.classList.add("is-marked");
+      frames[i].classList.add("is-marked");
+      label(i);
       if (titleEl) {
-        titleEl.textContent = $(".caption h3", f).textContent;
         titleEl.classList.remove("is-cut");
         void titleEl.offsetWidth;
         titleEl.classList.add("is-cut");
       }
+    };
+    const label = (i) => {
+      const f = frames[i];
+      if (titleEl) titleEl.textContent = $(".caption h3", f).textContent;
       if (metaEl) metaEl.textContent = $(".caption p", f).textContent;
     };
+    onLang(() => label(Math.max(0, current)));
 
     let refresh = () => {};
     const measure = () => {
@@ -757,10 +846,15 @@
     }
 
     if (toggle) {
+      const labelToggle = () => {
+        toggle.textContent = t(roll.classList.contains("is-paused") ? "roll.start" : "roll.stop");
+      };
+      labelToggle();
+      onLang(labelToggle);
       toggle.addEventListener("click", () => {
         const paused = roll.classList.toggle("is-paused");
         toggle.setAttribute("aria-pressed", String(paused));
-        toggle.textContent = paused ? "Запустить титры" : "Остановить титры";
+        labelToggle();
       });
     }
   }
@@ -813,9 +907,9 @@
     const openReel = () => {
       const note = document.createElement("p");
       note.className = "viewer-note";
-      note.innerHTML = 'Новый шоурил в монтаже. Пока можно посмотреть <a href="#work" data-viewer-jump>работы</a> на контактном листе.';
+      note.innerHTML = t("reel.note");
       open({
-        heading: "Шоурил 2026",
+        heading: t("reel.title"),
         sub: "KAGANFILM",
         video: reel ? reel.dataset.video : "",
         img: reel ? $("img", reel) : null,
@@ -896,23 +990,25 @@
     }
 
     const rules = {
-      project: (v) => (v ? "" : "Напишите, что снимаем"),
-      name: (v) => (v ? "" : "Как к вам обращаться?"),
+      project: (v) => (v ? "" : "err.project"),
+      name: (v) => (v ? "" : "err.name"),
       contact: (v) => {
-        if (!v) return "Оставьте телефон, Telegram или почту";
+        if (!v) return "err.contact";
         const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
         const phone = v.replace(/\D/g, "").length >= 7;
         const tg = /^@?[a-zA-Z0-9_]{4,}$/.test(v);
-        return email || phone || tg ? "" : "Не похоже на телефон, Telegram или почту";
+        return email || phone || tg ? "" : "err.contactBad";
       },
     };
 
-    const setError = (input, message) => {
+    // Ошибка хранится ключом, чтобы при смене языка перевести и её
+    const setError = (input, key) => {
       const field = input.closest(".field");
       const err = $(".field-error", field);
-      field.classList.toggle("is-invalid", Boolean(message));
-      input.setAttribute("aria-invalid", message ? "true" : "false");
-      if (err) err.textContent = message;
+      field.classList.toggle("is-invalid", Boolean(key));
+      input.setAttribute("aria-invalid", key ? "true" : "false");
+      input.dataset.err = key || "";
+      if (err) err.textContent = key ? t(key) : "";
     };
 
     const validate = () => {
@@ -957,13 +1053,22 @@
       done.focus();
     };
 
+    const failText = () => {
+      status.innerHTML = mailto ? t("send.fail", { mail: mailLink(mailto) }) : t("send.failNoMail");
+    };
     const fail = () => {
       form.classList.remove("is-clap");
       status.classList.add("is-error");
-      status.innerHTML = mailto
-        ? `Не получилось отправить. Напишите нам на <a href="mailto:${mailto}">${mailto}</a>.`
-        : "Не получилось отправить. Попробуйте ещё раз чуть позже.";
+      failText();
     };
+
+    onLang(() => {
+      Object.keys(rules).forEach((name) => {
+        const input = form.elements[name];
+        if (input.dataset.err) setError(input, input.dataset.err);
+      });
+      if (status.classList.contains("is-error")) failText();
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -984,7 +1089,7 @@
 
       if (endpoint) {
         submit.disabled = true;
-        submit.textContent = "Отправляем";
+        submit.textContent = t("send.sending");
         try {
           const res = await fetch(endpoint, {
             method: "POST",
@@ -997,7 +1102,7 @@
           fail();
         } finally {
           submit.disabled = false;
-          submit.textContent = "Мотор!";
+          submit.textContent = t("slate.go");
         }
         return;
       }
@@ -1014,7 +1119,7 @@
       ];
       const subject = `Заявка с сайта: ${data.get("project")}`;
       window.location.href = `mailto:${mailto}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
-      finish(`Открыли почту с готовым письмом. Если ничего не произошло, напишите на <a href="mailto:${mailto}">${mailto}</a>.`);
+      finish(t("send.mailto", { mail: mailLink(mailto) }));
     });
 
     again.addEventListener("click", () => {
@@ -1042,6 +1147,7 @@
     }, { passive: true });
   }
 
+  safe(initLang);
   const introReady = safe(initIntro) || Promise.resolve();
   safe(initNav);
   safe(initMenu);

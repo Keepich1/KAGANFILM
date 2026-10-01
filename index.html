@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>KAGANFILM | Кинопродакшн</title>
-  <meta name="description" content="Продакшн полного цикла: реклама, музыкальные клипы, короткий метр и документальное кино. От сценария до цветокоррекции.">
+  <title data-i18n="meta.title">KAGANFILM | Кинопродакшн</title>
+  <meta name="description" content="Продакшн полного цикла: реклама, музыкальные клипы, короткий метр и документальное кино. От сценария до цветокоррекции." data-i18n-attr="content:meta.desc">
   <meta name="theme-color" content="#0b0b0b">
   <meta name="color-scheme" content="dark">
 
@@ -13,15 +13,25 @@
   <meta property="og:description" content="Снимаем кино. Даже когда это реклама.">
   <meta property="og:image" content="assets/img/og.jpg">
   <meta property="og:locale" content="ru_RU">
+  <meta property="og:locale:alternate" content="ky_KG">
   <meta name="twitter:card" content="summary_large_image">
 
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/fonts/sofia-sans-extra-condensed-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="assets/fonts/sofia-sans-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/fira-sans-extra-condensed-cyrillic-900-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/onest-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <script>
-    // Класс js и решение о титрах до первой отрисовки, чтобы не мелькала страница
+    // До первой отрисовки: язык (?lang=, сохранённый выбор, язык браузера) и решение о титрах
     (function (d) {
       d.classList.add("js");
+      var lang = "ru";
+      try {
+        var q = new URLSearchParams(location.search).get("lang");
+        var saved = localStorage.getItem("kf-lang");
+        var prefs = (navigator.languages || [navigator.language || ""]).join(",").toLowerCase();
+        lang = q === "ky" || q === "ru" ? q : saved === "ky" || saved === "ru" ? saved : /(^|,)ky/.test(prefs) ? "ky" : "ru";
+      } catch (e) {}
+      d.lang = lang;
+      if (lang !== "ru") d.classList.add("i18n-wait");
       try {
         if (!sessionStorage.getItem("kf-intro") && !location.hash && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
           d.classList.add("intro-pending");
@@ -30,10 +40,11 @@
     })(document.documentElement);
   </script>
   <link rel="stylesheet" href="assets/css/style.css">
+  <script src="assets/js/i18n.js" defer></script>
   <script src="assets/js/main.js" defer></script>
 </head>
 <body>
-  <a class="skip" href="#main">К содержимому</a>
+  <a class="skip" href="#main" data-i18n="skip">К содержимому</a>
 
   <!-- Текстура воскового карандаша для пометок на плёнке -->
   <svg class="defs" aria-hidden="true" focusable="false">
@@ -55,14 +66,18 @@
 
   <header class="nav" data-nav>
     <div class="nav-inner">
-      <a class="brand" href="#top" aria-label="KAGANFILM, на главную">KAGAN<span>FILM</span></a>
-      <nav class="nav-links" aria-label="Основное меню">
-        <a href="#showreel">Шоурил</a>
-        <a href="#work">Работы</a>
-        <a href="#services">Что снимаем</a>
-        <a href="#team">Команда</a>
+      <a class="brand" href="#top" aria-label="KAGANFILM, на главную" data-i18n-attr="aria-label:nav.home">KAGAN<span>FILM</span></a>
+      <nav class="nav-links" aria-label="Основное меню" data-i18n-attr="aria-label:nav.main">
+        <a href="#showreel" data-i18n="nav.reel">Шоурил</a>
+        <a href="#work" data-i18n="nav.work">Работы</a>
+        <a href="#services" data-i18n="nav.services">Что снимаем</a>
+        <a href="#team" data-i18n="nav.team">Команда</a>
       </nav>
-      <a class="btn btn-sm nav-cta" href="#contact">Обсудить проект</a>
+      <div class="lang" role="group" aria-label="Тил / Язык" data-lang-switch>
+        <button type="button" lang="ky" aria-label="Кыргызча" aria-pressed="false" data-lang="ky">Кыр</button>
+        <button type="button" lang="ru" aria-label="Русский" aria-pressed="true" data-lang="ru">Рус</button>
+      </div>
+      <a class="btn btn-sm nav-cta" href="#contact" data-i18n="cta.discuss">Обсудить проект</a>
       <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="menu" aria-label="Открыть меню" data-menu-toggle>
         <svg class="i-open" viewBox="0 0 256 256" aria-hidden="true"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/></svg>
         <svg class="i-close" viewBox="0 0 256 256" aria-hidden="true"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>
@@ -71,12 +86,12 @@
   </header>
 
   <div class="menu" id="menu" hidden data-menu>
-    <nav class="menu-links" aria-label="Мобильное меню">
-      <a href="#showreel">Шоурил</a>
-      <a href="#work">Работы</a>
-      <a href="#services">Что снимаем</a>
-      <a href="#team">Команда</a>
-      <a href="#contact" class="menu-cta">Обсудить проект</a>
+    <nav class="menu-links" aria-label="Мобильное меню" data-i18n-attr="aria-label:nav.mobile">
+      <a href="#showreel" data-i18n="nav.reel">Шоурил</a>
+      <a href="#work" data-i18n="nav.work">Работы</a>
+      <a href="#services" data-i18n="nav.services">Что снимаем</a>
+      <a href="#team" data-i18n="nav.team">Команда</a>
+      <a href="#contact" class="menu-cta" data-i18n="cta.discuss">Обсудить проект</a>
     </nav>
   </div>
 
@@ -88,16 +103,16 @@
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="wrap hero-inner">
         <h1 class="hero-title" data-hot>
-          <span class="line"><span>Снимаем кино.</span></span>
-          <span class="line"><span>Даже когда это реклама.</span></span>
+          <span class="line"><span data-i18n="hero.l1">Снимаем кино.</span></span>
+          <span class="line"><span data-i18n="hero.l2">Даже когда это реклама.</span></span>
         </h1>
         <div class="hero-foot">
-          <p class="hero-sub">Продакшн полного цикла: сценарий, кастинг, съёмка, монтаж и цвет. Реклама, клипы и&nbsp;короткий метр.</p>
+          <p class="hero-sub" data-i18n-html="hero.sub">Продакшн полного цикла: сценарий, кастинг, съёмка, монтаж и цвет. Реклама, клипы и&nbsp;короткий метр.</p>
           <div class="hero-cta">
-            <a class="btn" href="#contact">Обсудить проект</a>
+            <a class="btn" href="#contact" data-i18n="cta.discuss">Обсудить проект</a>
             <button class="btn-ghost" type="button" data-open-reel>
               <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
-              Смотреть шоурил
+              <span data-i18n="cta.reel">Смотреть шоурил</span>
             </button>
           </div>
         </div>
@@ -105,9 +120,9 @@
     </section>
 
     <!-- МАНИФЕСТ: слова загораются, когда по ним проходит свет -->
-    <section class="manifest" aria-label="О студии" data-manifest>
+    <section class="manifest" aria-label="О студии" data-i18n-attr="aria-label:manifest.label" data-manifest>
       <div class="wrap">
-        <p class="manifest-text" data-manifest-text>Каждый проект мы снимаем как кино: со сценарием, кастингом, репетициями и <em>светом</em>, который выставлен под конкретный кадр.</p>
+        <p class="manifest-text" data-manifest-text data-i18n-html="manifest.text">Каждый проект мы снимаем как кино: со сценарием, кастингом, репетициями и <em>светом</em>, который выставлен под конкретный кадр.</p>
       </div>
     </section>
 
@@ -132,12 +147,12 @@
           <div class="bar bar-bottom" aria-hidden="true"></div>
           <div class="reel-cursor" aria-hidden="true" data-reel-cursor>
             <svg viewBox="0 0 256 256"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
-            <span>Смотреть шоурил</span>
+            <span data-i18n="cta.reel">Смотреть шоурил</span>
           </div>
         </div>
         <div class="reel-caption">
-          <h2 class="reel-title" id="reel-title">Шоурил 2026</h2>
-          <button class="reel-play" type="button" aria-label="Смотреть шоурил" data-open-reel>
+          <h2 class="reel-title" id="reel-title" data-i18n="reel.title">Шоурил 2026</h2>
+          <button class="reel-play" type="button" aria-label="Смотреть шоурил" data-i18n-attr="aria-label:cta.reel" data-open-reel>
             <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
           </button>
         </div>
@@ -148,101 +163,102 @@
     <section class="work" id="work" aria-labelledby="work-title" data-pan>
       <div class="work-pin" data-pan-pin>
         <div class="wrap work-head">
-          <h2 class="h2" id="work-title">Работы</h2>
-          <p class="work-note">Кадры из проектов последних лет. Нажмите на&nbsp;кадр, чтобы открыть проект.</p>
+          <h2 class="h2" id="work-title" data-i18n="work.title">Работы</h2>
+          <p class="work-note" data-i18n-html="work.note">Кадры из проектов последних лет. Нажмите на&nbsp;кадр, чтобы открыть проект.</p>
         </div>
 
         <!--
           Каждый проект: кадр (img), название (h3), формат и год (p),
           описание в data-desc и ссылка на видео в data-video (необязательно).
+          Тексты на кыргызском лежат в assets/js/i18n.js под теми же ключами.
         -->
         <ol class="strip" data-pan-track>
           <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
-              <button class="frame-btn" type="button" data-project data-desc="Паромщик последнего рейса отказывается уходить на пенсию. Шесть ночей на воде и почти никакого искусственного света." data-video="">
-                <img src="assets/img/work-ferry.jpg" alt="Лунная дорожка на ночной воде" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Паромщик последнего рейса на Иссык-Куле отказывается уходить на пенсию. Шесть ночей на воде и почти никакого искусственного света." data-i18n-attr="data-desc:w1.desc" data-video="">
+                <img src="assets/img/work-ferry.jpg" alt="Лунная дорожка на ночной воде" data-i18n-attr="alt:w1.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M30 28C95 6 215 4 268 30C298 48 300 142 266 170C214 200 86 198 36 174C4 154 0 64 44 30C66 14 104 8 140 10"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>14</b><i>&#9656;</i><b>14A</b></span>
             </div>
             <div class="caption">
-              <h3>Последний паром</h3>
-              <p>Короткий метр, 2025</p>
+              <h3 data-i18n="w1.title">Последний паром</h3>
+              <p data-i18n="w1.meta">Короткий метр, 2025</p>
             </div>
           </li>
           <li class="frame">
             <div class="film">
-              <button class="frame-btn" type="button" data-project data-desc="Клип, снятый одним светом из окна. Всё, что происходит с героиней, рассказано тенями на стене." data-video="">
-                <img src="assets/img/work-cold.jpg" alt="Полосы света от жалюзи на стене" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Клип, снятый одним светом из окна. Всё, что происходит с героиней, рассказано тенями на стене." data-i18n-attr="data-desc:w2.desc" data-video="">
+                <img src="assets/img/work-cold.jpg" alt="Полосы света от жалюзи на стене" data-i18n-attr="alt:w2.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M262 22C190 2 80 6 34 32C2 56 4 150 40 174C96 202 214 196 262 170C296 150 302 58 252 26C236 16 208 10 178 8"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>15</b><i>&#9656;</i><b>15A</b></span>
             </div>
             <div class="caption">
-              <h3>Холод</h3>
-              <p>Музыкальный клип, 2025</p>
+              <h3 data-i18n="w2.title">Холод</h3>
+              <p data-i18n="w2.meta">Музыкальный клип, 2025</p>
             </div>
           </li>
           <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
-              <button class="frame-btn" type="button" data-project data-desc="Ролик о людях, которые работают, пока город спит. Три хронометража и вертикальные версии для соцсетей." data-video="">
-                <img src="assets/img/work-nightshift.jpg" alt="Размытые огни ночного города" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Ролик о людях, которые работают, пока город спит. Три хронометража и вертикальные версии для соцсетей." data-i18n-attr="data-desc:w3.desc" data-video="">
+                <img src="assets/img/work-nightshift.jpg" alt="Размытые огни ночного города" data-i18n-attr="alt:w3.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M30 28C95 6 215 4 268 30C298 48 300 142 266 170C214 200 86 198 36 174C4 154 0 64 44 30C66 14 104 8 140 10"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>16</b><i>&#9656;</i><b>16A</b></span>
             </div>
             <div class="caption">
-              <h3>Ночная смена</h3>
-              <p>Реклама, 2024</p>
+              <h3 data-i18n="w3.title">Ночная смена</h3>
+              <p data-i18n="w3.meta">Реклама, 2024</p>
             </div>
           </li>
           <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
-              <button class="frame-btn" type="button" data-project data-desc="Портрет человека, который много лет живёт один посреди соляной пустыни. Съёмочная группа из четырёх человек." data-video="">
-                <img src="assets/img/work-salt.jpg" alt="Одинокая фигура на горизонте белой соляной равнины" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Портрет чабана, который двадцать лет в одиночку зимует высоко в горах. Съёмочная группа из четырёх человек." data-i18n-attr="data-desc:w4.desc" data-video="">
+                <img src="assets/img/work-salt.jpg" alt="Одинокая фигура на заснеженном горном плато" data-i18n-attr="alt:w4.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M262 22C190 2 80 6 34 32C2 56 4 150 40 174C96 202 214 196 262 170C296 150 302 58 252 26C236 16 208 10 178 8"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>22</b><i>&#9656;</i><b>22A</b></span>
             </div>
             <div class="caption">
-              <h3>Соль</h3>
-              <p>Документальный фильм, 2024</p>
+              <h3 data-i18n="w4.title">Зимовка</h3>
+              <p data-i18n="w4.meta">Документальный фильм, 2024</p>
             </div>
           </li>
           <li class="frame">
             <div class="film">
-              <button class="frame-btn" type="button" data-project data-desc="Одна ночь, один фонарь и один дубль. Клип снят непрерывным планом на стабилизаторе." data-video="">
-                <img src="assets/img/work-citysleeps.jpg" alt="Уличный фонарь в тумане" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Одна ночь, один фонарь и один дубль. Клип снят непрерывным планом на стабилизаторе." data-i18n-attr="data-desc:w5.desc" data-video="">
+                <img src="assets/img/work-citysleeps.jpg" alt="Уличный фонарь в тумане" data-i18n-attr="alt:w5.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M30 28C95 6 215 4 268 30C298 48 300 142 266 170C214 200 86 198 36 174C4 154 0 64 44 30C66 14 104 8 140 10"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>23</b><i>&#9656;</i><b>23A</b></span>
             </div>
             <div class="caption">
-              <h3>Город спит</h3>
-              <p>Музыкальный клип, 2024</p>
+              <h3 data-i18n="w5.title">Город спит</h3>
+              <p data-i18n="w5.meta">Музыкальный клип, 2024</p>
             </div>
           </li>
           <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
-              <button class="frame-btn" type="button" data-project data-desc="Фильм о театре для самого театра: пустая сцена, один прожектор и актёры, которые возвращаются на неё каждый вечер." data-video="">
-                <img src="assets/img/work-secondtake.jpg" alt="Луч прожектора над пустой сценой" width="1500" height="1000" loading="lazy" decoding="async">
+              <button class="frame-btn" type="button" data-project data-desc="Фильм о театре для самого театра: пустая сцена, один прожектор и актёры, которые возвращаются на неё каждый вечер." data-i18n-attr="data-desc:w6.desc" data-video="">
+                <img src="assets/img/work-secondtake.jpg" alt="Луч прожектора над пустой сценой" data-i18n-attr="alt:w6.alt" width="1500" height="1000" loading="lazy" decoding="async">
                 <svg class="mark" viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M262 22C190 2 80 6 34 32C2 56 4 150 40 174C96 202 214 196 262 170C296 150 302 58 252 26C236 16 208 10 178 8"/></svg>
-                <span class="sr-only">Открыть проект</span>
+                <span class="sr-only" data-i18n="work.open">Открыть проект</span>
               </button>
               <span class="edge edge-bottom" aria-hidden="true"><b>24</b><i>&#9656;</i><b>24A</b></span>
             </div>
             <div class="caption">
-              <h3>Выход</h3>
-              <p>Имиджевый фильм, 2023</p>
+              <h3 data-i18n="w6.title">Выход</h3>
+              <p data-i18n="w6.meta">Имиджевый фильм, 2023</p>
             </div>
           </li>
         </ol>
@@ -257,35 +273,35 @@
     <!-- ЧТО СНИМАЕМ: строка подсвечивается, за курсором плывёт кадр в красном свете -->
     <section class="services" id="services" aria-labelledby="services-title">
       <div class="wrap">
-        <h2 class="h2" id="services-title" data-reveal>Что снимаем</h2>
+        <h2 class="h2" id="services-title" data-i18n="svc.title" data-reveal>Что снимаем</h2>
 
         <ul class="svc-list" data-svc-list>
           <li class="svc" data-light data-img="assets/img/work-nightshift.jpg" data-reveal>
-            <h3 class="svc-name">Реклама</h3>
+            <h3 class="svc-name" data-i18n="svc1.name">Реклама</h3>
             <div class="svc-body">
-              <p>ТВ и digital-ролики под ключ: от сценария до мастер-копий для всех площадок.</p>
-              <ul class="tags"><li>Сценарий</li><li>Кастинг</li><li>Съёмка</li><li>Постпродакшн</li></ul>
+              <p data-i18n="svc1.text">ТВ и digital-ролики под ключ: от сценария до мастер-копий для всех площадок.</p>
+              <ul class="tags" data-i18n-html="svc1.tags"><li>Сценарий</li><li>Кастинг</li><li>Съёмка</li><li>Постпродакшн</li></ul>
             </div>
           </li>
           <li class="svc" data-light data-img="assets/img/work-cold.jpg" data-reveal>
-            <h3 class="svc-name">Клипы</h3>
+            <h3 class="svc-name" data-i18n="svc2.name">Клипы</h3>
             <div class="svc-body">
-              <p>Придумываем визуальную историю под трек и снимаем её вместе с артистом.</p>
-              <ul class="tags"><li>Идея</li><li>Раскадровка</li><li>Съёмка</li><li>Цвет</li></ul>
+              <p data-i18n="svc2.text">Придумываем визуальную историю под трек и снимаем её вместе с артистом.</p>
+              <ul class="tags" data-i18n-html="svc2.tags"><li>Идея</li><li>Раскадровка</li><li>Съёмка</li><li>Цвет</li></ul>
             </div>
           </li>
           <li class="svc" data-light data-img="assets/img/work-ferry.jpg" data-reveal>
-            <h3 class="svc-name">Кино</h3>
+            <h3 class="svc-name" data-i18n="svc3.name">Кино</h3>
             <div class="svc-body">
-              <p>Короткий метр, пилоты сериалов и документальные проекты. Ведём до фестивальной копии.</p>
-              <ul class="tags"><li>Девелопмент</li><li>Продюсирование</li><li>Съёмка</li><li>Фестивали</li></ul>
+              <p data-i18n="svc3.text">Короткий метр, пилоты сериалов и документальные проекты. Ведём до фестивальной копии.</p>
+              <ul class="tags" data-i18n-html="svc3.tags"><li>Девелопмент</li><li>Продюсирование</li><li>Съёмка</li><li>Фестивали</li></ul>
             </div>
           </li>
           <li class="svc" data-light data-img="assets/img/work-secondtake.jpg" data-reveal>
-            <h3 class="svc-name">Для брендов</h3>
+            <h3 class="svc-name" data-i18n="svc4.name">Для брендов</h3>
             <div class="svc-body">
-              <p>Имиджевые фильмы и серии роликов для соцсетей, снятые в одном визуальном языке.</p>
-              <ul class="tags"><li>Концепция</li><li>Серии</li><li>Вертикальные версии</li></ul>
+              <p data-i18n="svc4.text">Имиджевые фильмы и серии роликов для соцсетей, снятые в одном визуальном языке.</p>
+              <ul class="tags" data-i18n-html="svc4.tags"><li>Концепция</li><li>Серии</li><li>Вертикальные версии</li></ul>
             </div>
           </li>
         </ul>
@@ -296,22 +312,22 @@
     <!-- КОМАНДА: финальные титры -->
     <section class="credits" id="team" aria-labelledby="team-title">
       <div class="wrap credits-head">
-        <h2 class="h2" id="team-title" data-reveal>Команда</h2>
-        <p class="lead" data-reveal>Постоянный состав студии. На площадке к нему присоединяются гафферы, механики, гримёры и&nbsp;ассистенты, с&nbsp;которыми мы работаем годами.</p>
+        <h2 class="h2" id="team-title" data-i18n="team.title" data-reveal>Команда</h2>
+        <p class="lead" data-i18n-html="team.lead" data-reveal>Постоянный состав студии. На площадке к нему присоединяются гафферы, механики, гримёры и&nbsp;ассистенты, с&nbsp;которыми мы работаем годами.</p>
       </div>
 
       <div class="roll" data-roll>
         <div class="roll-track">
           <dl class="roll-list">
-            <div><dt>Режиссёр, основатель</dt><dd>Михаил Каган</dd></div>
-            <div><dt>Продюсер</dt><dd>Анна Велихова</dd></div>
-            <div><dt>Оператор-постановщик</dt><dd>Тимур Садыков</dd></div>
-            <div><dt>Художник-постановщик</dt><dd>Вера Ольшанская</dd></div>
-            <div><dt>Второй режиссёр</dt><dd>Глеб Рожков</dd></div>
-            <div><dt>Монтаж</dt><dd>Ксения Лунина</dd></div>
-            <div><dt>Цветокоррекция</dt><dd>Павел Игнатов</dd></div>
-            <div><dt>Звукорежиссёр</dt><dd>Роман Черкасов</dd></div>
-            <div><dt>Кастинг</dt><dd>Дарья Мельник</dd></div>
+            <div><dt data-i18n="role.director">Режиссёр, основатель</dt><dd>Михаил Каган</dd></div>
+            <div><dt data-i18n="role.producer">Продюсер</dt><dd>Айгерим Осмонова</dd></div>
+            <div><dt data-i18n="role.dop">Оператор-постановщик</dt><dd>Тимур Садыков</dd></div>
+            <div><dt data-i18n="role.design">Художник-постановщик</dt><dd>Бермет Асанова</dd></div>
+            <div><dt data-i18n="role.ad">Второй режиссёр</dt><dd>Нурлан Жумабеков</dd></div>
+            <div><dt data-i18n="role.edit">Монтаж</dt><dd>Ксения Лунина</dd></div>
+            <div><dt data-i18n="role.color">Цветокоррекция</dt><dd>Эмир Токтосунов</dd></div>
+            <div><dt data-i18n="role.sound">Звукорежиссёр</dt><dd>Роман Черкасов</dd></div>
+            <div><dt data-i18n="role.casting">Кастинг</dt><dd>Жылдыз Абдыкадырова</dd></div>
           </dl>
           <p class="roll-end" aria-hidden="true">KAGAN<span>FILM</span></p>
         </div>
@@ -325,12 +341,12 @@
     <section class="contact" id="contact" aria-labelledby="contact-title">
       <div class="wrap contact-grid">
         <div class="contact-copy">
-          <h2 class="h2" id="contact-title" data-reveal>Обсудим проект</h2>
-          <p class="lead" data-reveal>Заполните хлопушку, и продюсер свяжется с&nbsp;вами в течение рабочего дня.</p>
+          <h2 class="h2" id="contact-title" data-i18n="contact.title" data-reveal>Обсудим проект</h2>
+          <p class="lead" data-i18n-html="contact.lead" data-reveal>Заполните хлопушку, и продюсер свяжется с&nbsp;вами в течение рабочего дня.</p>
           <dl class="direct" data-reveal>
-            <div><dt>Почта</dt><dd><a href="mailto:hello@kaganfilm.ru">hello@kaganfilm.ru</a></dd></div>
+            <div><dt data-i18n="contact.phone">Телефон и WhatsApp</dt><dd><a href="tel:+996000000000">+996 000 000 000</a> <a class="direct-sub" href="https://wa.me/996000000000" rel="noopener" data-i18n="contact.wa">Написать в WhatsApp</a></dd></div>
             <div><dt>Telegram</dt><dd><a href="https://t.me/kaganfilm" rel="noopener">@kaganfilm</a></dd></div>
-            <div><dt>Телефон</dt><dd><a href="tel:+70000000000">+7 (000) 000-00-00</a></dd></div>
+            <div><dt data-i18n="contact.mail">Почта</dt><dd><a href="mailto:hello@kaganfilm.kg">hello@kaganfilm.kg</a></dd></div>
           </dl>
         </div>
 
@@ -338,7 +354,7 @@
           Отправка: если указать data-endpoint (например, адрес формы Formspree),
           заявка уйдёт POST-запросом. Без него откроется почтовый клиент с готовым письмом.
         -->
-        <form class="slate" novalidate data-slate data-endpoint="" data-mailto="hello@kaganfilm.ru">
+        <form class="slate" novalidate data-slate data-endpoint="" data-mailto="hello@kaganfilm.kg">
           <div class="clapper" aria-hidden="true">
             <div class="clapper-stick clapper-top"></div>
             <div class="clapper-stick clapper-base"></div>
@@ -346,71 +362,72 @@
 
           <div class="slate-board">
             <div class="slate-row slate-prod" aria-hidden="true">
-              <span>Продакшн</span><b>KAGANFILM</b>
+              <span data-i18n="slate.prod">Продакшн</span><b>KAGANFILM</b>
             </div>
 
             <div class="slate-row">
               <div class="field">
-                <label for="f-project">Проект</label>
-                <input id="f-project" name="project" type="text" required autocomplete="off" placeholder="Ролик, клип, фильм" aria-describedby="e-project">
+                <label for="f-project" data-i18n="f.project">Проект</label>
+                <input id="f-project" name="project" type="text" required autocomplete="off" placeholder="Ролик, клип, фильм" data-i18n-attr="placeholder:f.project.ph" aria-describedby="e-project">
                 <p class="field-error" id="e-project"></p>
               </div>
             </div>
 
             <div class="slate-row slate-2">
               <div class="field">
-                <label for="f-name">Заказчик</label>
-                <input id="f-name" name="name" type="text" required autocomplete="name" placeholder="Имя и компания" aria-describedby="e-name">
+                <label for="f-name" data-i18n="f.name">Заказчик</label>
+                <input id="f-name" name="name" type="text" required autocomplete="name" placeholder="Имя и компания" data-i18n-attr="placeholder:f.name.ph" aria-describedby="e-name">
                 <p class="field-error" id="e-name"></p>
               </div>
               <div class="field">
-                <label for="f-contact">Связь</label>
-                <input id="f-contact" name="contact" type="text" required autocomplete="email" placeholder="Телефон, Telegram или почта" aria-describedby="e-contact">
+                <label for="f-contact" data-i18n="f.contact">Связь</label>
+                <input id="f-contact" name="contact" type="text" required autocomplete="tel" placeholder="Телефон, мессенджер или почта" data-i18n-attr="placeholder:f.contact.ph" aria-describedby="e-contact">
                 <p class="field-error" id="e-contact"></p>
               </div>
             </div>
 
             <div class="slate-row slate-3" aria-hidden="true">
-              <div class="stat"><span>Сцена</span><b>1</b></div>
-              <div class="stat"><span>Дубль</span><b data-take>1</b></div>
-              <div class="stat"><span>Дата</span><b data-date></b></div>
+              <div class="stat"><span data-i18n="slate.scene">Сцена</span><b>1</b></div>
+              <div class="stat"><span data-i18n="slate.take">Дубль</span><b data-take>1</b></div>
+              <div class="stat"><span data-i18n="slate.date">Дата</span><b data-date></b></div>
             </div>
 
             <div class="slate-row slate-2">
               <div class="field">
-                <label for="f-dates">Сроки</label>
-                <input id="f-dates" name="dates" type="text" autocomplete="off" placeholder="Например, съёмка в ноябре">
+                <label for="f-dates" data-i18n="f.dates">Сроки</label>
+                <input id="f-dates" name="dates" type="text" autocomplete="off" placeholder="Например, съёмка в ноябре" data-i18n-attr="placeholder:f.dates.ph">
               </div>
               <div class="field">
-                <label for="f-budget">Бюджет</label>
+                <label for="f-budget" data-i18n="f.budget">Бюджет</label>
+                <!-- value остаётся на русском: так письмо студии читается одинаково на обоих языках -->
                 <select id="f-budget" name="budget">
-                  <option value="Пока не знаю">Пока не знаю</option>
-                  <option value="До 1 млн руб.">До 1 млн руб.</option>
-                  <option value="1-3 млн руб.">1-3 млн руб.</option>
-                  <option value="3-10 млн руб.">3-10 млн руб.</option>
-                  <option value="Больше 10 млн руб.">Больше 10 млн руб.</option>
+                  <option value="Пока не знаю" data-i18n="budget.unknown">Пока не знаю</option>
+                  <option value="До 500 тыс. сом" data-i18n="budget.b1">До 500 тыс. сом</option>
+                  <option value="500 тыс. - 1,5 млн сом" data-i18n="budget.b2">500 тыс. - 1,5 млн сом</option>
+                  <option value="1,5-5 млн сом" data-i18n="budget.b3">1,5-5 млн сом</option>
+                  <option value="Больше 5 млн сом" data-i18n="budget.b4">Больше 5 млн сом</option>
                 </select>
               </div>
             </div>
 
             <div class="slate-row">
               <div class="field">
-                <label for="f-brief">Задача</label>
-                <textarea id="f-brief" name="brief" rows="3" placeholder="Пара предложений о задаче и ссылки на референсы"></textarea>
+                <label for="f-brief" data-i18n="f.brief">Задача</label>
+                <textarea id="f-brief" name="brief" rows="3" placeholder="Пара предложений о задаче и ссылки на референсы" data-i18n-attr="placeholder:f.brief.ph"></textarea>
               </div>
             </div>
           </div>
 
           <div class="slate-foot">
-            <button class="btn btn-red" type="submit" data-submit>Мотор!</button>
-            <p class="consent">Нажимая кнопку, вы соглашаетесь на&nbsp;обработку персональных данных.</p>
+            <button class="btn btn-red" type="submit" data-submit data-i18n="slate.go">Мотор!</button>
+            <p class="consent" data-i18n-html="slate.consent">Нажимая кнопку, вы соглашаетесь на&nbsp;обработку персональных данных.</p>
           </div>
           <p class="slate-status" role="status" aria-live="polite" data-status></p>
 
           <div class="slate-done" hidden data-done tabindex="-1">
-            <p class="slate-done-title">Снято!</p>
-            <p class="slate-done-text" data-done-text>Заявка у нас. Продюсер ответит в течение рабочего дня.</p>
-            <button class="btn-ghost btn-ghost-sm" type="button" data-again>Ещё один дубль</button>
+            <p class="slate-done-title" data-i18n="done.title">Снято!</p>
+            <p class="slate-done-text" data-done-text data-i18n="done.text">Заявка у нас. Продюсер ответит в течение рабочего дня.</p>
+            <button class="btn-ghost btn-ghost-sm" type="button" data-again data-i18n="done.again">Ещё один дубль</button>
           </div>
         </form>
       </div>
@@ -420,24 +437,24 @@
   <footer class="footer" data-light-footer>
     <div class="wrap footer-top">
       <ul class="socials">
+        <li><a href="https://www.instagram.com/kaganfilm" rel="noopener">Instagram</a></li>
+        <li><a href="https://www.tiktok.com/@kaganfilm" rel="noopener">TikTok</a></li>
         <li><a href="https://www.youtube.com/@kaganfilm" rel="noopener">YouTube</a></li>
-        <li><a href="https://vimeo.com/kaganfilm" rel="noopener">Vimeo</a></li>
-        <li><a href="https://vk.com/kaganfilm" rel="noopener">VK Видео</a></li>
         <li><a href="https://t.me/kaganfilm" rel="noopener">Telegram</a></li>
       </ul>
-      <a class="footer-mail" href="mailto:hello@kaganfilm.ru">hello@kaganfilm.ru</a>
+      <a class="footer-mail" href="mailto:hello@kaganfilm.kg">hello@kaganfilm.kg</a>
     </div>
     <p class="footer-mark" aria-hidden="true">KAGANFILM</p>
     <div class="wrap footer-bottom">
       <p>&copy; 2026 Kaganfilm</p>
-      <a href="#top">Наверх</a>
+      <a href="#top" data-i18n="footer.top">Наверх</a>
     </div>
   </footer>
 
   <!-- Просмотр шоурила и проектов -->
   <dialog class="viewer" aria-labelledby="viewer-title" data-viewer>
     <div class="viewer-inner">
-      <button class="viewer-close" type="button" aria-label="Закрыть" data-viewer-close>
+      <button class="viewer-close" type="button" aria-label="Закрыть" data-i18n-attr="aria-label:viewer.close" data-viewer-close>
         <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>
       </button>
       <div class="viewer-media" data-viewer-media></div>
