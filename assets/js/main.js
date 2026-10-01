@@ -9,14 +9,56 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   // Одна сломанная часть не должна гасить остальные
-  const safe = (fn) => {
-    try { fn(); } catch (err) { console.error(err); }
+  const safe = (fn, ...args) => {
+    try { return fn(...args); } catch (err) { console.error(err); return undefined; }
   };
 
   const hero = $("[data-hero]");
   const lightOn = () => hero && hero.classList.add("is-lit");
+
+  /* ---------- Сцены, привязанные к прокрутке ----------
+     Один цикл rAF читает положение блоков, пока хотя бы один из них
+     на экране. Как только все ушли из кадра, цикл останавливается. */
+  const scenes = [];
+  let sceneRaf = 0;
+
+  const sceneTick = () => {
+    const vh = window.innerHeight;
+    const active = scenes.filter((s) => s.visible);
+    const rects = active.map((s) => s.el.getBoundingClientRect());
+    active.forEach((s, i) => {
+      const r = rects[i];
+      if (r.top === s.lastTop && r.height === s.lastH && vh === s.lastVh) return;
+      s.lastTop = r.top;
+      s.lastH = r.height;
+      s.lastVh = vh;
+      s.update(r, vh);
+    });
+    sceneRaf = active.length ? requestAnimationFrame(sceneTick) : 0;
+  };
+  const kickScenes = () => {
+    if (!sceneRaf) sceneRaf = requestAnimationFrame(sceneTick);
+  };
+  const sceneIO = "IntersectionObserver" in window
+    ? new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        const s = scenes.find((x) => x.el === e.target);
+        if (s) s.visible = e.isIntersecting;
+      });
+      kickScenes();
+    }, { rootMargin: "25% 0px" })
+    : null;
+
+  const addScene = (el, update) => {
+    const s = { el, update, visible: true, lastTop: NaN, lastH: NaN, lastVh: NaN };
+    scenes.push(s);
+    if (sceneIO) sceneIO.observe(el);
+    kickScenes();
+    return () => { s.lastTop = NaN; kickScenes(); };
+  };
 
   /* ---------- Навигация ---------- */
   function initNav() {
@@ -59,17 +101,49 @@
     });
   }
 
-  /* ---------- Hero: дым и красный прибор (WebGL) ---------- */
+  /* ---------- Открывающие титры ---------- */
+  function initIntro() {
+    const root = document.documentElement;
+    const intro = $("[data-intro]");
+    if (!intro || !root.classList.contains("intro-pending")) return Promise.resolve();
+
+    try { sessionStorage.setItem("kf-intro", "1"); } catch (err) { /* приватный режим */ }
+    intro.hidden = false;
+    root.classList.add("intro-lock");
+
+    return new Promise((resolve) => {
+      let opened = false;
+      const open = () => {
+        if (opened) return;
+        opened = true;
+        intro.classList.add("is-open");
+        root.classList.remove("intro-lock", "intro-pending");
+        resolve();
+        setTimeout(() => intro.remove(), 1200);
+      };
+      requestAnimationFrame(() => intro.classList.add("is-playing"));
+      setTimeout(open, 1350);
+      intro.addEventListener("click", open);
+      document.addEventListener("keydown", open, { once: true });
+    });
+  }
+
+  /* ---------- Hero: дым и пушка (WebGL) ---------- */
   const VERT = `
     attribute vec2 aPos;
     void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
   `;
 
   const FRAG = `
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+    #else
     precision mediump float;
+    #endif
     uniform vec2 uRes;
     uniform float uTime;
-    uniform vec2 uLight;
+    uniform vec2 uTarget;
+    uniform vec2 uSource;
     uniform float uPower;
 
     float hash(vec2 p) {
@@ -102,38 +176,46 @@
     }
 
     void main() {
-      vec2 uv = gl_FragCoord.xy / uRes;
-      float asp = uRes.x / uRes.y;
-      // Размер клубов привязан к меньшей стороне, чтобы на телефоне дым был таким же плотным
-      vec2 p = gl_FragCoord.xy / min(uRes.x, uRes.y) * 1.7;
+      // Всё считаем в долях меньшей стороны: одинаково на телефоне и на мониторе
+      float m = min(uRes.x, uRes.y);
+      vec2 P = gl_FragCoord.xy / m;
+      vec2 S = uSource / m;
+      vec2 T = uTarget / m;
       float t = uTime * 0.05;
 
-      // Дым: fbm с искажением области, медленно тянется вверх и вбок
+      // Дым: fbm с искажением области
+      vec2 p = P * 1.7;
       vec2 q = vec2(fbm(p + vec2(0.0, -t)), fbm(p + vec2(5.2, 1.3) - t * 0.7));
       vec2 r = vec2(
         fbm(p + 2.2 * q + vec2(1.7, 9.2) + t * 0.9),
         fbm(p + 2.2 * q + vec2(8.3, 2.8) - t * 0.6)
       );
-      float d = fbm(p + 1.9 * r);
-      d = smoothstep(0.3, 0.92, d);
+      float dens = smoothstep(0.3, 0.92, fbm(p + 1.9 * r));
 
-      // Прибор
-      vec2 lp = uLight / uRes;
-      vec2 dv = vec2((uv.x - lp.x) * asp, uv.y - lp.y);
-      float dist2 = dot(dv, dv);
-      float core = exp(-dist2 * 10.0);
-      float halo = 1.0 / (1.0 + dist2 * 22.0);
-      float lit = (core * 1.35 + halo * 0.3) * uPower;
-      float smoke = d * lit;
+      // Луч пушки: конус от прибора над кадром к точке под курсором
+      vec2 D = T - S;
+      float L = max(length(D), 0.001);
+      vec2 dir = D / L;
+      float along = dot(P - S, dir);
+      float k = clamp(along / L, 0.0, 1.0);
+      float off = length(P - (S + dir * along));
+      float radius = mix(0.02, 0.17, k);
+      float inBeam = step(0.0, along) * (1.0 - smoothstep(L * 0.95, L * 1.15, along));
+      float core = (1.0 - smoothstep(radius * 0.5, radius, off)) * inBeam;
+      float edge = exp(-off * off / (radius * radius * 2.6)) * inBeam;
+      vec2 pd = P - T;
+      float pool = exp(-dot(pd, pd) * 30.0);
+      float beam = (core * 0.55 + edge * 0.3) * (0.45 + 0.55 * k);
+      float lit = (beam + pool * 1.1) * uPower;
+      float smoke = dens * lit;
 
       vec3 red = vec3(0.89, 0.16, 0.12);
-      // Немного света рассеивается в самом воздухе, даже где дым редкий
-      vec3 col = red * (smoke * 1.5 + lit * 0.07);
+      vec3 col = red * (smoke * 1.5 + lit * 0.09);
       // Пересвет в центре пятна уходит в тёплый белый, как на плёнке
       col += vec3(1.0, 0.62, 0.48) * pow(smoke, 3.2) * 0.6;
-      // Едва заметный дым вне пятна
-      col += vec3(d) * 0.03;
+      col += vec3(dens) * 0.03;
 
+      vec2 uv = gl_FragCoord.xy / uRes;
       vec2 vv = uv - 0.5;
       col *= 1.0 - dot(vv, vv) * 0.9;
 
@@ -144,9 +226,20 @@
     }
   `;
 
-  function initHero() {
+  function initHero(introReady) {
     const canvas = $("[data-haze]");
     if (!hero || !canvas) return;
+
+    // Буквы заголовка раскаляются в пятне: координаты пятна в системе каждой строки
+    const spans = $$("[data-hot] .line > span", hero);
+    const heat = (clientX, clientY) => {
+      spans.forEach((sp) => {
+        const r = sp.getBoundingClientRect();
+        sp.style.setProperty("--sx", `${(clientX - r.left).toFixed(1)}px`);
+        sp.style.setProperty("--sy", `${(clientY - r.top).toFixed(1)}px`);
+      });
+    };
+    hero.classList.add("has-spot");
 
     const gl = canvas.getContext("webgl", {
       alpha: false,
@@ -158,8 +251,8 @@
 
     const program = gl && buildProgram(gl, VERT, FRAG);
     if (!program) {
-      cssLamp();
-      setTimeout(lightOn, reduce ? 0 : 250);
+      cssLamp(heat);
+      introReady.then(() => setTimeout(lightOn, reduce ? 0 : 250));
       return;
     }
 
@@ -173,7 +266,8 @@
 
     const uRes = gl.getUniformLocation(program, "uRes");
     const uTime = gl.getUniformLocation(program, "uTime");
-    const uLight = gl.getUniformLocation(program, "uLight");
+    const uTarget = gl.getUniformLocation(program, "uTarget");
+    const uSource = gl.getUniformLocation(program, "uSource");
     const uPower = gl.getUniformLocation(program, "uPower");
 
     // Дым мягкий, поэтому рендерим в пониженном разрешении и растягиваем
@@ -182,27 +276,17 @@
     let cssW = Math.max(1, firstRect.width);
     let cssH = Math.max(1, firstRect.height);
 
-    const resize = () => {
-      const rect = hero.getBoundingClientRect();
-      cssW = Math.max(1, rect.width);
-      cssH = Math.max(1, rect.height);
-      canvas.width = Math.max(1, Math.round(cssW * density));
-      canvas.height = Math.max(1, Math.round(cssH * density));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      if (!running) draw(performance.now());
-    };
-
-    // Пока зритель не взял прибор, он медленно ищет кадр сам
+    // Пока зритель не взял пушку, оператор сам ведёт луч и иногда проходит по заголовку
     const drift = (t) => ({
-      x: cssW * (0.66 + 0.15 * Math.sin(t * 0.21)),
-      y: cssH * (0.36 + 0.11 * Math.sin(t * 0.29 + 1.2)),
+      x: cssW * (0.5 + 0.28 * Math.sin(t * 0.17) + 0.07 * Math.sin(t * 0.61)),
+      y: cssH * (0.42 + 0.16 * Math.sin(t * 0.23 + 1.1)),
     });
 
-    const start = performance.now();
+    let start = Infinity;
     const pos = drift(0);
     let target = { ...pos };
     let lastPointer = -Infinity;
-    let lastFrame = start;
+    let lastFrame = performance.now();
     let running = false;
     let visible = true;
     let litFired = false;
@@ -210,6 +294,7 @@
     // Вспышка при включении: прибор «цепляется» не с первого раза
     const flicker = [[0, 0], [0.1, 0.65], [0.16, 0.05], [0.3, 0.9], [0.36, 0.25], [0.55, 1]];
     const power = (t) => {
+      if (t < 0) return 0;
       if (reduce) return 1;
       for (let i = 1; i < flicker.length; i++) {
         const [t1, v1] = flicker[i];
@@ -226,22 +311,38 @@
       const dt = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
 
-      if (!reduce && now - lastPointer > 3500) target = drift(t);
+      if (!reduce && now - lastPointer > 3500) target = drift(Math.max(0, t));
       const k = reduce ? 1 : 1 - Math.exp(-dt * 4.2);
       pos.x += (target.x - pos.x) * k;
       pos.y += (target.y - pos.y) * k;
 
+      const pw = power(t);
       gl.uniform2f(uRes, canvas.width, canvas.height);
-      gl.uniform1f(uTime, t);
-      gl.uniform2f(uLight, pos.x * density, (cssH - pos.y) * density);
-      gl.uniform1f(uPower, power(t));
+      gl.uniform1f(uTime, Math.max(0, t));
+      gl.uniform2f(uTarget, pos.x * density, (cssH - pos.y) * density);
+      gl.uniform2f(uSource, cssW * (finePointer ? 0.82 : 0.76) * density, cssH * 1.06 * density);
+      gl.uniform1f(uPower, pw);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      const rect = hero.getBoundingClientRect();
+      if (pw > 0.5) heat(rect.left + pos.x, rect.top + pos.y);
+      else heat(-9999, -9999);
 
       if (!litFired && (reduce || t > 0.32)) {
         litFired = true;
         lightOn();
       }
     }
+
+    const resize = () => {
+      const rect = hero.getBoundingClientRect();
+      cssW = Math.max(1, rect.width);
+      cssH = Math.max(1, rect.height);
+      canvas.width = Math.max(1, Math.round(cssW * density));
+      canvas.height = Math.max(1, Math.round(cssH * density));
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      if (!running) draw(performance.now());
+    };
 
     // На телефонах хватает 30 кадров в секунду: дым медленный, а батарею жалко
     const frameGap = finePointer ? 0 : 1000 / 30 - 2;
@@ -256,7 +357,7 @@
     };
 
     const setRunning = () => {
-      const should = !reduce && visible && !document.hidden;
+      const should = !reduce && start !== Infinity && visible && !document.hidden;
       if (should && !running) {
         running = true;
         lastFrame = performance.now();
@@ -288,12 +389,18 @@
     canvas.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
       running = false;
-      cssLamp();
+      cssLamp(heat);
     });
 
     resize();
-    setRunning();
-    if (reduce) draw(performance.now());
+    introReady.then(() => {
+      start = performance.now();
+      if (reduce) {
+        draw(start);
+        lightOn();
+      }
+      setRunning();
+    });
   }
 
   function buildProgram(gl, vsSrc, fsSrc) {
@@ -318,8 +425,8 @@
     return prog;
   }
 
-  // Запасной прибор без WebGL: радиальный градиент за курсором
-  function cssLamp() {
+  // Запасная пушка без WebGL: радиальный градиент за курсором
+  function cssLamp(heat) {
     hero.classList.add("no-gl");
     if (!finePointer) return;
     let frame = 0;
@@ -330,8 +437,220 @@
         const rect = hero.getBoundingClientRect();
         hero.style.setProperty("--lx", `${((e.clientX - rect.left) / rect.width) * 100}%`);
         hero.style.setProperty("--ly", `${((e.clientY - rect.top) / rect.height) * 100}%`);
+        heat(e.clientX, e.clientY);
       });
     }, { passive: true });
+  }
+
+  /* ---------- Манифест: слова загораются по мере прокрутки ---------- */
+  function initManifest() {
+    const sec = $("[data-manifest]");
+    const text = $("[data-manifest-text]");
+    if (!sec || !text || reduce) return;
+
+    const words = [];
+    Array.from(text.childNodes).forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const frag = document.createDocumentFragment();
+        node.textContent.split(/(\s+)/).forEach((part) => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) {
+            frag.append(part);
+            return;
+          }
+          const w = document.createElement("span");
+          w.className = "w";
+          w.textContent = part;
+          words.push(w);
+          frag.append(w);
+        });
+        node.replaceWith(frag);
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        node.classList.add("w", "key");
+        words.push(node);
+      }
+    });
+    sec.classList.add("is-split");
+
+    let lit = -1;
+    addScene(text, (r, vh) => {
+      const p = clamp((vh * 0.82 - r.top) / (r.height + vh * 0.3), 0, 1);
+      const count = Math.round(p * words.length);
+      if (count === lit) return;
+      lit = count;
+      words.forEach((w, i) => w.classList.toggle("on", i < count));
+    });
+  }
+
+  /* ---------- Шоурил: щель раскрывается, внутри идёт монтаж ---------- */
+  function initReel() {
+    const frame = $("[data-letterbox]");
+    const screen = $("[data-reel-screen]");
+    if (!frame || !screen) return;
+
+    if (reduce) {
+      frame.classList.add("is-scope");
+      return;
+    }
+
+    let lastGate = -1;
+    addScene(screen, (r, vh) => {
+      const from = vh * 0.95;
+      const to = Math.max((vh - r.height) / 2, 0);
+      const p = clamp((from - r.top) / Math.max(1, from - to), 0, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const gate = Math.round((1 - eased) * 1000) / 1000;
+      if (gate !== lastGate) {
+        lastGate = gate;
+        screen.style.setProperty("--gate", gate);
+      }
+      if (p > 0.97) frame.classList.add("is-scope");
+    });
+
+    // Монтаж: жёсткие склейки примерно раз в секунду, только пока кадр виден
+    const shots = $$("[data-montage] img", screen);
+    let idx = 0;
+    let timer = 0;
+    const cut = () => {
+      shots[idx].classList.remove("is-on");
+      idx = (idx + 1) % shots.length;
+      shots[idx].classList.add("is-on");
+    };
+    if (shots.length > 1 && "IntersectionObserver" in window) {
+      new IntersectionObserver(([entry]) => {
+        clearInterval(timer);
+        if (entry.isIntersecting) timer = setInterval(cut, 1150);
+      }, { threshold: 0.2 }).observe(screen);
+    }
+
+    // Метка «Смотреть шоурил» идёт за курсором с небольшой инерцией
+    const label = $("[data-reel-cursor]", screen);
+    if (!label || !finePointer) return;
+    let x = 0;
+    let y = 0;
+    let tx = 0;
+    let ty = 0;
+    let inside = false;
+    let raf = 0;
+    const step = () => {
+      x += (tx - x) * 0.2;
+      y += (ty - y) * 0.2;
+      label.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+      raf = inside || Math.abs(tx - x) + Math.abs(ty - y) > 0.5 ? requestAnimationFrame(step) : 0;
+    };
+    const local = (e) => {
+      const r = screen.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
+    screen.addEventListener("pointerenter", (e) => {
+      [x, y] = local(e);
+      [tx, ty] = [x, y];
+      inside = true;
+      label.classList.add("is-on");
+      if (!raf) raf = requestAnimationFrame(step);
+    });
+    screen.addEventListener("pointermove", (e) => {
+      [tx, ty] = local(e);
+      if (!raf) raf = requestAnimationFrame(step);
+    });
+    screen.addEventListener("pointerleave", () => {
+      inside = false;
+      label.classList.remove("is-on");
+    });
+  }
+
+  /* ---------- Работы: световой стол и плёнка, которая едет при прокрутке ---------- */
+  function initPan() {
+    const sec = $("[data-pan]");
+    const pin = $("[data-pan-pin]");
+    const track = $("[data-pan-track]");
+    if (!sec || !pin || !track) return;
+    const frames = $$(".frame", track);
+    const titleEl = $("[data-pan-title]", sec);
+    const metaEl = $("[data-pan-meta]", sec);
+
+    // Стол включается, когда его верх доходит до середины экрана
+    if ("IntersectionObserver" in window && !reduce) {
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting) return;
+        sec.classList.add("is-on");
+        io.disconnect();
+      }, { rootMargin: "0px 0px -45% 0px" });
+      io.observe(sec);
+    } else {
+      sec.classList.add("is-on");
+    }
+
+    // Без закрепления (уменьшение движения): кадр отмечается, когда его долистали
+    if (reduce || !("IntersectionObserver" in window)) {
+      if (!("IntersectionObserver" in window)) return;
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          entry.target.classList.toggle("is-marked", entry.intersectionRatio >= 0.8);
+        });
+      }, { threshold: [0, 0.8, 1] });
+      frames.forEach((f) => io.observe(f));
+      return;
+    }
+
+    sec.classList.add("is-pinned");
+    let distance = 0;
+    let vw = 0;
+    let centers = [];
+    let current = -1;
+
+    const setCurrent = (i) => {
+      if (i === current) return;
+      if (current >= 0) frames[current].classList.remove("is-marked");
+      current = i;
+      const f = frames[i];
+      f.classList.add("is-marked");
+      if (titleEl) {
+        titleEl.textContent = $(".caption h3", f).textContent;
+        titleEl.classList.remove("is-cut");
+        void titleEl.offsetWidth;
+        titleEl.classList.add("is-cut");
+      }
+      if (metaEl) metaEl.textContent = $(".caption p", f).textContent;
+    };
+
+    let refresh = () => {};
+    const measure = () => {
+      vw = pin.clientWidth;
+      distance = Math.max(0, track.scrollWidth - vw);
+      centers = frames.map((f) => f.offsetLeft + f.offsetWidth / 2);
+      sec.style.height = `${pin.offsetHeight + distance}px`;
+      refresh();
+    };
+
+    refresh = addScene(sec, (r) => {
+      const p = distance ? clamp(-r.top / distance, 0, 1) : 0;
+      const x = p * distance;
+      track.style.transform = `translate3d(${(-x).toFixed(1)}px, 0, 0) rotate(-1deg)`;
+      track.style.transformOrigin = `${(x + vw / 2).toFixed(1)}px 50%`;
+      let best = 0;
+      let bestD = Infinity;
+      centers.forEach((c, i) => {
+        const d = Math.abs(c - x - vw / 2);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      setCurrent(best);
+    });
+
+    new ResizeObserver(measure).observe(pin);
+    measure();
+
+    // Клавиатура: фокус на кадре прокручивает страницу так, чтобы кадр встал в центр
+    track.addEventListener("focusin", (e) => {
+      const i = frames.indexOf(e.target.closest(".frame"));
+      if (i < 0) return;
+      const top = sec.getBoundingClientRect().top + window.scrollY;
+      const x = clamp(centers[i] - vw / 2, 0, distance);
+      window.scrollTo({ top: top + x, behavior: "instant" });
+    });
   }
 
   /* ---------- Появление блоков ---------- */
@@ -351,53 +670,11 @@
     items.forEach((el) => io.observe(el));
   }
 
-  /* ---------- Шоурил: шторки синемаскопа ---------- */
-  function initLetterbox() {
-    const frame = $("[data-letterbox]");
-    if (!frame) return;
-    if (reduce || !("IntersectionObserver" in window)) {
-      frame.classList.add("is-scope");
-      return;
-    }
-    const io = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      frame.classList.add("is-scope");
-      io.disconnect();
-    }, { threshold: 0.55 });
-    io.observe(frame);
-  }
-
-  /* ---------- Контактный лист ---------- */
-  function initSheet() {
-    const sheet = $("[data-sheet]");
-    if (!sheet || !("IntersectionObserver" in window)) return;
-
-    if (finePointer) {
-      // На десктопе один кадр уже отмечен, остальные отмечаются наведением
-      const featured = $(".frame[data-featured]", sheet);
-      if (!featured) return;
-      const io = new IntersectionObserver(([entry]) => {
-        if (!entry.isIntersecting) return;
-        setTimeout(() => featured.classList.add("is-marked"), reduce ? 0 : 650);
-        io.disconnect();
-      }, { threshold: 0.35 });
-      io.observe(sheet);
-      return;
-    }
-
-    // На телефоне кадр отмечается, когда его долистали до центра
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        entry.target.classList.toggle("is-marked", entry.intersectionRatio >= 0.8);
-      });
-    }, { threshold: [0, 0.8, 1] });
-    $$(".frame", sheet).forEach((el) => io.observe(el));
-  }
-
-  /* ---------- Что снимаем: свет за курсором ---------- */
+  /* ---------- Что снимаем: свет и кадр в красном за курсором ---------- */
   function initServices() {
     if (!finePointer) return;
-    $$("[data-light]").forEach((row) => {
+    const rows = $$("[data-light]");
+    rows.forEach((row) => {
       let frame = 0;
       row.addEventListener("pointermove", (e) => {
         if (frame) return;
@@ -407,6 +684,52 @@
           row.style.setProperty("--mx", `${((e.clientX - rect.left) / rect.width) * 100}%`);
         });
       }, { passive: true });
+    });
+
+    const list = $("[data-svc-list]");
+    const preview = $("[data-svc-preview]");
+    if (reduce || !list || !preview) return;
+    const img = $("img", preview);
+    let x = 0;
+    let y = 0;
+    let tx = 0;
+    let ty = 0;
+    let on = false;
+    let raf = 0;
+
+    // Кадр слегка заваливается в сторону движения, как карточка в руке
+    const step = () => {
+      const dx = (tx - x) * 0.14;
+      x += dx;
+      y += (ty - y) * 0.14;
+      const tilt = clamp(dx * 0.35, -8, 8);
+      preview.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -55%) rotate(${tilt.toFixed(2)}deg)`;
+      raf = on || Math.abs(dx) > 0.2 ? requestAnimationFrame(step) : 0;
+    };
+    const kick = () => {
+      if (!raf) raf = requestAnimationFrame(step);
+    };
+
+    rows.forEach((row) => {
+      row.addEventListener("pointerenter", (e) => {
+        if (row.dataset.img && img.getAttribute("src") !== row.dataset.img) img.src = row.dataset.img;
+        if (!on) {
+          x = tx = e.clientX;
+          y = ty = e.clientY;
+        }
+        on = true;
+        preview.classList.add("is-on");
+        kick();
+      });
+    });
+    list.addEventListener("pointermove", (e) => {
+      tx = e.clientX;
+      ty = e.clientY;
+      kick();
+    }, { passive: true });
+    list.addEventListener("pointerleave", () => {
+      on = false;
+      preview.classList.remove("is-on");
     });
   }
 
@@ -611,10 +934,19 @@
       });
     });
 
+    // Хлопок: палка падает, в момент удара короткая вспышка, как метка синхронизации
+    const flash = $("[data-flash]");
     const clap = () => new Promise((resolve) => {
       form.classList.remove("is-clap");
       void form.offsetWidth;
       form.classList.add("is-clap");
+      if (flash && !reduce) {
+        setTimeout(() => {
+          flash.classList.remove("is-on");
+          void flash.offsetWidth;
+          flash.classList.add("is-on");
+        }, 130);
+      }
       setTimeout(resolve, reduce ? 0 : 480);
     });
 
@@ -710,12 +1042,14 @@
     }, { passive: true });
   }
 
+  const introReady = safe(initIntro) || Promise.resolve();
   safe(initNav);
   safe(initMenu);
-  safe(initHero);
+  safe(initHero, introReady);
+  safe(initManifest);
+  safe(initReel);
+  safe(initPan);
   safe(initReveal);
-  safe(initLetterbox);
-  safe(initSheet);
   safe(initServices);
   safe(initRoll);
   safe(initViewer);
@@ -723,5 +1057,6 @@
   safe(initFooter);
 
   // Страховка: титр hero появится, даже если с WebGL что-то пошло не так
-  setTimeout(lightOn, 1600);
+  introReady.then(() => setTimeout(lightOn, 1600));
+  setTimeout(lightOn, 4500);
 })();

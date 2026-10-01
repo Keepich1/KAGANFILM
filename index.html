@@ -18,19 +18,40 @@
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/fonts/sofia-sans-extra-condensed-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/sofia-sans-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    // Класс js и решение о титрах до первой отрисовки, чтобы не мелькала страница
+    (function (d) {
+      d.classList.add("js");
+      try {
+        if (!sessionStorage.getItem("kf-intro") && !location.hash && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          d.classList.add("intro-pending");
+        }
+      } catch (e) {}
+    })(document.documentElement);
+  </script>
   <link rel="stylesheet" href="assets/css/style.css">
   <script src="assets/js/main.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">К содержимому</a>
 
-  <!-- Общие SVG: текстура воскового карандаша для пометок на контактном листе -->
+  <!-- Текстура воскового карандаша для пометок на плёнке -->
   <svg class="defs" aria-hidden="true" focusable="false">
     <filter id="wax" x="-5%" y="-5%" width="110%" height="110%">
       <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="4" result="n"/>
       <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
     </filter>
   </svg>
+
+  <!-- Открывающие титры: нить загорается, шторки расходятся. Показываются раз за сессию. -->
+  <div class="intro" aria-hidden="true" data-intro hidden>
+    <div class="intro-half intro-top"><span class="intro-word">KAGAN</span></div>
+    <div class="intro-half intro-bottom"><span class="intro-word intro-word-thin">FILM</span></div>
+    <span class="intro-line"></span>
+  </div>
+
+  <!-- Вспышка синхронизации при хлопке -->
+  <div class="flash" aria-hidden="true" data-flash></div>
 
   <header class="nav" data-nav>
     <div class="nav-inner">
@@ -61,63 +82,82 @@
 
   <main id="main">
 
-    <!-- HERO: тёмная площадка в дыму, красный прибор ведёт зритель -->
+    <!-- HERO: дым и пушка. Зритель сам ведёт луч, буквы в пятне раскаляются -->
     <section class="hero" id="top" data-hero>
       <canvas class="hero-haze" aria-hidden="true" data-haze></canvas>
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="wrap hero-inner">
-        <h1 class="hero-title">
+        <h1 class="hero-title" data-hot>
           <span class="line"><span>Снимаем кино.</span></span>
           <span class="line"><span>Даже когда это реклама.</span></span>
         </h1>
-        <p class="hero-sub">Продакшн полного цикла: сценарий, кастинг, съёмка, монтаж и цвет. Реклама, клипы и&nbsp;короткий метр.</p>
-        <div class="hero-cta">
-          <a class="btn" href="#contact">Обсудить проект</a>
-          <button class="btn-ghost" type="button" data-open-reel>
-            <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
-            Смотреть шоурил
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ШОУРИЛ: кадр 16:9 уходит в синемаскоп, когда попадает в поле зрения -->
-    <section class="reel" id="showreel" aria-labelledby="reel-title">
-      <div class="wrap">
-        <!--
-          Ссылка на шоурил: YouTube, Vimeo, RuTube, VK Видео или путь к .mp4.
-          Пример: data-video="https://vimeo.com/123456789"
-        -->
-        <div class="reel-frame" data-letterbox data-reel data-video="">
-          <div class="reel-screen">
-            <img src="assets/img/showreel.jpg" alt="Луч кинопроектора в тёмном зале" width="1500" height="1000" loading="lazy" decoding="async">
-            <div class="bar bar-top" aria-hidden="true"></div>
-            <div class="bar bar-bottom" aria-hidden="true"></div>
-          </div>
-          <div class="reel-caption">
-            <h2 class="reel-title" id="reel-title">Шоурил 2026</h2>
-            <button class="reel-play" type="button" aria-label="Смотреть шоурил" data-open-reel>
+        <div class="hero-foot">
+          <p class="hero-sub">Продакшн полного цикла: сценарий, кастинг, съёмка, монтаж и цвет. Реклама, клипы и&nbsp;короткий метр.</p>
+          <div class="hero-cta">
+            <a class="btn" href="#contact">Обсудить проект</a>
+            <button class="btn-ghost" type="button" data-open-reel>
               <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
+              Смотреть шоурил
             </button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- РАБОТЫ: контактный лист на бумаге, выбор отмечен красным восковым карандашом -->
-    <section class="work" id="work" aria-labelledby="work-title">
+    <!-- МАНИФЕСТ: слова загораются, когда по ним проходит свет -->
+    <section class="manifest" aria-label="О студии" data-manifest>
       <div class="wrap">
-        <h2 class="h2" id="work-title" data-reveal>Работы</h2>
-        <p class="lead" data-reveal>Кадры из проектов последних лет. Нажмите на&nbsp;кадр, чтобы открыть проект.</p>
+        <p class="manifest-text" data-manifest-text>Каждый проект мы снимаем как кино: со сценарием, кастингом, репетициями и <em>светом</em>, который выставлен под конкретный кадр.</p>
       </div>
+    </section>
 
-      <div class="sheet" data-sheet>
+    <!-- ШОУРИЛ: кадр раскрывается из щели, внутри идёт монтаж -->
+    <section class="reel" id="showreel" aria-labelledby="reel-title" data-reel-section>
+      <!--
+        Ссылка на шоурил: YouTube, Vimeo, RuTube, VK Видео или путь к .mp4.
+        Пример: data-video="https://vimeo.com/123456789"
+      -->
+      <div class="reel-frame" data-letterbox data-reel data-video="">
+        <div class="reel-screen" data-reel-screen>
+          <div class="montage" aria-hidden="true" data-montage>
+            <img src="assets/img/showreel.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async" class="is-on">
+            <img src="assets/img/work-cold.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+            <img src="assets/img/work-ferry.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+            <img src="assets/img/work-salt.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+            <img src="assets/img/work-citysleeps.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+            <img src="assets/img/work-nightshift.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+            <img src="assets/img/work-secondtake.jpg" alt="" width="1500" height="1000" loading="lazy" decoding="async">
+          </div>
+          <div class="bar bar-top" aria-hidden="true"></div>
+          <div class="bar bar-bottom" aria-hidden="true"></div>
+          <div class="reel-cursor" aria-hidden="true" data-reel-cursor>
+            <svg viewBox="0 0 256 256"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
+            <span>Смотреть шоурил</span>
+          </div>
+        </div>
+        <div class="reel-caption">
+          <h2 class="reel-title" id="reel-title">Шоурил 2026</h2>
+          <button class="reel-play" type="button" aria-label="Смотреть шоурил" data-open-reel>
+            <svg viewBox="0 0 256 256" aria-hidden="true"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- РАБОТЫ: световой стол, плёнка едет при прокрутке, кадр в центре обводится карандашом -->
+    <section class="work" id="work" aria-labelledby="work-title" data-pan>
+      <div class="work-pin" data-pan-pin>
+        <div class="wrap work-head">
+          <h2 class="h2" id="work-title">Работы</h2>
+          <p class="work-note">Кадры из проектов последних лет. Нажмите на&nbsp;кадр, чтобы открыть проект.</p>
+        </div>
+
         <!--
           Каждый проект: кадр (img), название (h3), формат и год (p),
           описание в data-desc и ссылка на видео в data-video (необязательно).
         -->
-        <ol class="strip" style="--tilt:-0.5deg" data-reveal>
-          <li class="frame" data-featured>
+        <ol class="strip" data-pan-track>
+          <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
               <button class="frame-btn" type="button" data-project data-desc="Паромщик последнего рейса отказывается уходить на пенсию. Шесть ночей на воде и почти никакого искусственного света." data-video="">
@@ -161,9 +201,6 @@
               <p>Реклама, 2024</p>
             </div>
           </li>
-        </ol>
-
-        <ol class="strip" style="--tilt:0.4deg" data-reveal>
           <li class="frame">
             <div class="film">
               <span class="edge edge-top" aria-hidden="true">KAGANFILM 5222</span>
@@ -209,38 +246,42 @@
             </div>
           </li>
         </ol>
+
+        <div class="wrap work-now" aria-hidden="true">
+          <p class="work-now-title" data-pan-title>Последний паром</p>
+          <p class="work-now-meta" data-pan-meta>Короткий метр, 2025</p>
+        </div>
       </div>
     </section>
 
-    <!-- ЧТО СНИМАЕМ: строка подсвечивается прибором, который идёт за курсором -->
+    <!-- ЧТО СНИМАЕМ: строка подсвечивается, за курсором плывёт кадр в красном свете -->
     <section class="services" id="services" aria-labelledby="services-title">
       <div class="wrap">
         <h2 class="h2" id="services-title" data-reveal>Что снимаем</h2>
-        <p class="lead" data-reveal>Небольшая студия, которая ведёт проект от&nbsp;идеи до&nbsp;финальной копии. Один продюсер на проект и понятная смета.</p>
 
-        <ul class="svc-list">
-          <li class="svc" data-light data-reveal>
+        <ul class="svc-list" data-svc-list>
+          <li class="svc" data-light data-img="assets/img/work-nightshift.jpg" data-reveal>
             <h3 class="svc-name">Реклама</h3>
             <div class="svc-body">
               <p>ТВ и digital-ролики под ключ: от сценария до мастер-копий для всех площадок.</p>
               <ul class="tags"><li>Сценарий</li><li>Кастинг</li><li>Съёмка</li><li>Постпродакшн</li></ul>
             </div>
           </li>
-          <li class="svc" data-light data-reveal>
+          <li class="svc" data-light data-img="assets/img/work-cold.jpg" data-reveal>
             <h3 class="svc-name">Клипы</h3>
             <div class="svc-body">
               <p>Придумываем визуальную историю под трек и снимаем её вместе с артистом.</p>
               <ul class="tags"><li>Идея</li><li>Раскадровка</li><li>Съёмка</li><li>Цвет</li></ul>
             </div>
           </li>
-          <li class="svc" data-light data-reveal>
+          <li class="svc" data-light data-img="assets/img/work-ferry.jpg" data-reveal>
             <h3 class="svc-name">Кино</h3>
             <div class="svc-body">
               <p>Короткий метр, пилоты сериалов и документальные проекты. Ведём до фестивальной копии.</p>
               <ul class="tags"><li>Девелопмент</li><li>Продюсирование</li><li>Съёмка</li><li>Фестивали</li></ul>
             </div>
           </li>
-          <li class="svc" data-light data-reveal>
+          <li class="svc" data-light data-img="assets/img/work-secondtake.jpg" data-reveal>
             <h3 class="svc-name">Для брендов</h3>
             <div class="svc-body">
               <p>Имиджевые фильмы и серии роликов для соцсетей, снятые в одном визуальном языке.</p>
@@ -249,6 +290,7 @@
           </li>
         </ul>
       </div>
+      <div class="svc-preview" aria-hidden="true" data-svc-preview><img alt="" src="assets/img/work-nightshift.jpg" width="1500" height="1000" decoding="async"></div>
     </section>
 
     <!-- КОМАНДА: финальные титры -->
