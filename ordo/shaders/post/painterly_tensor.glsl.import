@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dphbghxf0rvea"
+path="res://.godot/imported/painterly_tensor.glsl-bcb7246bba846de752084391ace49815.res"
+
+[deps]
+
+source_file="res://shaders/post/painterly_tensor.glsl"
+dest_files=["res://.godot/imported/painterly_tensor.glsl-bcb7246bba846de752084391ace49815.res"]
+
+[params]
+

@@ -1,0 +1,115 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/world.gd" id="1"]
+[ext_resource type="Shader" path="res://shaders/sky.gdshader" id="2"]
+[ext_resource type="Script" path="res://scripts/world/terrain_mesh.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/world/river_water.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/world/grass_field.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/world/painterly_post.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/world/world_scatter.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/world/fog_banks.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/world/world_quality.gd" id="9"]
+[ext_resource type="Texture2D" path="res://assets/textures/world/brush_world.png" id="10"]
+
+[sub_resource type="ShaderMaterial" id="SkyMat"]
+shader = ExtResource("2")
+shader_parameter/brush_tex = ExtResource("10")
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+radiance_size = 3
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.29, 0.47, 0.6, 1)
+ambient_light_sky_contribution = 0.0
+ambient_light_energy = 1.25
+reflected_light_source = 2
+tonemap_mode = 4
+tonemap_exposure = 1.1
+ssao_enabled = true
+ssao_radius = 1.5
+ssao_intensity = 1.2
+ssao_power = 1.5
+ssao_light_affect = 0.1
+glow_enabled = true
+glow_levels/1 = 0.0
+glow_levels/2 = 0.6
+glow_levels/3 = 1.0
+glow_levels/4 = 0.8
+glow_levels/5 = 0.6
+glow_intensity = 0.6
+glow_strength = 1.0
+glow_bloom = 0.04
+glow_blend_mode = 1
+glow_hdr_threshold = 1.1
+fog_enabled = true
+fog_light_color = Color(0.42, 0.45, 0.56, 1)
+fog_light_energy = 0.7
+fog_sun_scatter = 0.05
+fog_density = 0.0005
+fog_aerial_perspective = 0.75
+fog_height = -2.0
+fog_height_density = 0.025
+fog_sky_affect = 0.0
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.0007
+volumetric_fog_albedo = Color(0.62, 0.62, 0.64, 1)
+volumetric_fog_emission = Color(0.05, 0.08, 0.12, 1)
+volumetric_fog_anisotropy = 0.5
+volumetric_fog_length = 320.0
+volumetric_fog_detail_spread = 2.5
+volumetric_fog_ambient_inject = 0.5
+volumetric_fog_sky_affect = 0.0
+
+[sub_resource type="CompositorEffect" id="Post"]
+script = ExtResource("6")
+
+[sub_resource type="Compositor" id="Comp"]
+compositor_effects = Array[CompositorEffect]([SubResource("Post")])
+
+[node name="World" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Environment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+compositor = SubResource("Comp")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 50, 0)
+light_color = Color(1, 0.706, 0.431, 1)
+light_energy = 3.2
+light_volumetric_fog_energy = 1.0
+shadow_enabled = true
+shadow_bias = 0.04
+shadow_normal_bias = 1.2
+shadow_blur = 1.5
+directional_shadow_mode = 2
+directional_shadow_split_1 = 0.06
+directional_shadow_split_2 = 0.18
+directional_shadow_split_3 = 0.45
+directional_shadow_blend_splits = true
+directional_shadow_max_distance = 700.0
+directional_shadow_pancake_size = 40.0
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("3")
+
+[node name="Water" type="MeshInstance3D" parent="."]
+script = ExtResource("4")
+
+[node name="Grass" type="Node3D" parent="."]
+script = ExtResource("5")
+
+[node name="Scatter" type="Node3D" parent="."]
+script = ExtResource("7")
+
+[node name="FogBanks" type="Node3D" parent="."]
+script = ExtResource("8")
+
+[node name="Quality" type="Node" parent="."]
+script = ExtResource("9")
+
+[node name="Markers" type="Node3D" parent="."]
