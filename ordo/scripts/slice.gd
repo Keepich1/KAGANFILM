@@ -8,7 +8,8 @@ extends Node3D
 ##
 ## Клавиши (ТЗ 10): камера — WASD, края экрана, колесо, Q/E, средняя кнопка; 1–4 — виды;
 ## C — кинокамера / стратегия; P — пауза; + / − — скорость; R — бой заново; F1 — подсказка;
-## F2 — качество «Высокое» / «Низкое» (ТЗ 11.7).
+## F2 — качество «Высокое» / «Низкое» (ТЗ 11.7); F9 — нагрузочная проверка: +1000 / +3000 солдат
+## на южной части луга и счётчик кадров (выкл → 1000 → 3000 → выкл).
 ##
 ## Кадры героев — камеры Cam* в узле Cameras (tools/shot.sh … --cam=CamRTS --at=19).
 ## Серия кадров за один прогон:  -- --hero=9.6@CamVolley,14@CamImpact --hero_out=/abs/dir [--hero_prefix=p_]
@@ -34,11 +35,32 @@ var _busy := false
 var _fast := false
 var _shot_at := -1.0
 var _frames := 0
+var _help: PanelContainer
+var _stats: Label
+var _help_t := 10.0
+var _stress_level := 0
+var _stress: Node3D
+var _quiet := false              # съёмка кадра или ролика: без подсказок
+
+const STRESS_LEVELS := [0, 1000, 3000]
+const HELP_TEXT := """Управление (ТЗ 10)
+
+Камера:  W A S D, края экрана — сдвиг;  колесо — ближе / дальше;
+         Q / E — поворот;  средняя кнопка мыши — поворот и наклон
+1 – 4    готовые виды: всё поле, кокандская линия, конница, лагерь
+C        кинокамера ↔ камера стратегии
+ЛКМ      выбрать отряд (двойной щелчок — все такие)
+P        пауза        + / −  скорость боя        R  бой заново
+F2       качество: «Высокое» / «Низкое»
+F9       нагрузка: +1000 → +3000 солдат → выкл (с счётчиком кадров)
+F1       показать / скрыть эту подсказку"""
 
 
 func _ready() -> void:
 	_ordo = get_node_or_null("/root/Ordo")
+	_quiet = _ordo != null and (_ordo.has_arg("shot") or _ordo.has_arg("movie") or _ordo.has_arg("hero"))
 	camp.snap_to_terrain()
+	_build_hud()
 	_clear_grass()
 	_place_cameras()
 	if _ordo:
@@ -106,18 +128,113 @@ func _place_cameras() -> void:
 			_aim(f[0], _ground(a[0], a[2], a[1]), _ground(b[0], b[2], b[1]), float(f[3]))
 
 
+# ---------------------------------------------------------------- подсказка и счётчик
+
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "SliceHud"
+	layer.layer = 6
+	add_child(layer)
+	_help = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.11, 0.075, 0.05, 0.86)      # тёмный орех
+	sb.border_color = Color(0.72, 0.56, 0.3, 0.9)     # латунь
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(3)
+	sb.set_content_margin_all(16)
+	_help.add_theme_stylebox_override("panel", sb)
+	_help.position = Vector2(24, 24)
+	_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := Label.new()
+	l.text = HELP_TEXT
+	l.add_theme_font_size_override("font_size", 17)
+	l.add_theme_color_override("font_color", Color(0.95, 0.89, 0.76))
+	_help.add_child(l)
+	layer.add_child(_help)
+	_help.visible = not _quiet
+	_stats = Label.new()
+	_stats.add_theme_font_size_override("font_size", 18)
+	_stats.add_theme_color_override("font_color", Color(1.0, 0.93, 0.78))
+	_stats.add_theme_color_override("font_shadow_color", Color(0.05, 0.03, 0.02, 0.95))
+	_stats.add_theme_constant_override("shadow_offset_x", 1)
+	_stats.add_theme_constant_override("shadow_offset_y", 1)
+	_stats.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_stats.offset_left = -440.0
+	_stats.offset_right = -20.0
+	_stats.offset_top = 16.0
+	_stats.offset_bottom = 90.0
+	_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_stats.visible = false
+	layer.add_child(_stats)
+	# своя подсказка боя не нужна — её заменяет эта
+	var hud := battle.get_node_or_null("HUD")
+	if hud and hud.get("show_help") != null:
+		hud.set("show_help", false)
+		var h: Variant = hud.get("_help")
+		if h is Label:
+			(h as Label).visible = false
+
+
+func _update_hud(delta: float) -> void:
+	if _help.visible and not _quiet and _help_t > 0.0:
+		_help_t -= delta
+		if _help_t <= 0.0:
+			_help.visible = false
+	if _stats.visible:
+		var units: int = battle.scenario.sim.n if battle.scenario and battle.scenario.sim else 0
+		if _stress and _stress.get_node_or_null("Scenario"):
+			var ss := _stress.get_node("Scenario") as ScenarioClash
+			if ss.sim:
+				units += ss.sim.n
+		_stats.text = "Кадров в секунду: %d\nСолдат в бою: %d   (F9 — дальше)\nВызовов отрисовки: %d" % [
+			Engine.get_frames_per_second(), units,
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))]
+
+
+## Нагрузочная проверка: выкл → +1000 → +3000 солдат → выкл
+func _cycle_stress() -> void:
+	_stress_level = (_stress_level + 1) % STRESS_LEVELS.size()
+	if _stress:
+		_stress.queue_free()
+		_stress = null
+	var n: int = STRESS_LEVELS[_stress_level]
+	_stats.visible = n > 0
+	if n == 0:
+		return
+	_stress = Node3D.new()
+	_stress.name = "Stress"
+	add_child(_stress)
+	var sc := StressScenario.new()
+	sc.name = "Scenario"
+	sc.soldiers = n
+	_stress.add_child(sc)
+	var view := BattleView.new()
+	view.name = "View"
+	view.ambient_path = ^"../NoAmbient"
+	_stress.add_child(view)
+	sc.start(7)
+
+
 # ---------------------------------------------------------------- клавиши
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
-	if (event as InputEventKey).physical_keycode == KEY_F2 and _ordo:
-		_ordo.call("set_quality", Ordo.QUALITY_HIGH if _ordo.call("is_low") else Ordo.QUALITY_LOW)
+	match (event as InputEventKey).physical_keycode:
+		KEY_F1:
+			_help.visible = not _help.visible
+			_help_t = 0.0
+		KEY_F2:
+			if _ordo:
+				_ordo.call("set_quality", Ordo.QUALITY_HIGH if _ordo.call("is_low") else Ordo.QUALITY_LOW)
+		KEY_F9:
+			_cycle_stress()
 
 
 # ---------------------------------------------------------------- съёмка
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_hud(delta)
 	_frames += 1
 	if _frames == 2 and _fast:
 		# WorldQuality применяет качество отложенно (после _ready) — промотку ставим поверх

@@ -16,5 +16,5 @@ for a in "$@"; do
 done
 mkdir -p "$(dirname "$OUT")"
 XVFB_SIZE="${SIZE}x24" timeout "${SHOT_TIMEOUT:-900}" "$ROOT/tools/godot.sh" --path "$ROOT" --resolution "$SIZE" \
-  --audio-driver Dummy --fixed-fps 30 "$SCENE" -- --shot="$OUT" "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio driver|audio_server|alsa|^\s*$" || true
+  --audio-driver Dummy --fixed-fps 30 "$SCENE" -- --shot="$OUT" "${EXTRA[@]}" 2>&1 | grep --line-buffered -vE "ALSA|audio driver|audio_server|alsa|^\s*$" || true
 [ -f "$OUT" ] && echo "OK $OUT" || { echo "НЕТ КАДРА $OUT"; exit 1; }
