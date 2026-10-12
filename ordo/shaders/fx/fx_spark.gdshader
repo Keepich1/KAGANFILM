@@ -1,7 +1,7 @@
 // Искры в рукопашной: короткие раскалённые чёрточки вдоль скорости, гаснут на лету (add).
 // Ось X трансформа частицы — скорость × длина следа (её пишет fx_spark_move.gdshader).
 shader_type spatial;
-render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
 uniform vec4 hot : source_color = vec4(1.0, 0.86, 0.5, 1.0);
 uniform vec4 cool : source_color = vec4(1.0, 0.36, 0.1, 1.0);

@@ -34,7 +34,7 @@ const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELO
 ## Пух ковыля и пепел вокруг камеры
 @export var ambient_motes := true
 ## Пыль за скачущими конями: клубов в секунду на каждый м/с сверх рыси
-@export var dust_rate := 0.4
+@export var dust_rate := 0.6
 @export var fx_seed := 5
 
 var scenario: ScenarioClash
@@ -69,13 +69,14 @@ func _ready() -> void:
 	smoke = _make_puffs("Smoke", int(1100 * k), 11.0, ATLAS_SMOKE, Vector2(4, 4), {
 		"drag": 2.1, "buoyancy": 0.2, "wind_scale": 0.55, "grow": 3.4, "spin": 0.1},
 		{"col_lit": Color(0.86, 0.76, 0.62), "col_mid": Color(0.5, 0.46, 0.47), "col_shade": Color(0.2, 0.31, 0.38),
-		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.7, "opacity": 0.97, "stretch": 1.45,
+		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.7, "opacity": 0.78, "stretch": 1.45,
 		"age_thin": 0.35, "glow_strength": 0.85})
 	dust = _make_puffs("Dust", int(1600 * k), 4.5, ATLAS_DUST, Vector2(4, 2), {
 		"drag": 2.0, "buoyancy": 0.3, "wind_scale": 0.7, "grow": 3.2, "spin": 0.05, "grow_curve": 3.0},
 		{"col_lit": Color(0.84, 0.7, 0.5), "col_mid": Color(0.6, 0.5, 0.38), "col_shade": Color(0.36, 0.32, 0.3),
 		"col_glow": Color(1.0, 0.8, 0.5), "glow_strength": 0.6, "erode_start": 0.1, "erode_end": 0.5,
-		"opacity": 0.62, "stretch": 1.5, "lit_edge": 0.3, "shade_edge": -0.2, "edge": 0.05, "soft_dist": 1.6,
+		"opacity": 0.55, "stretch": 1.9, "lit_edge": 0.3, "shade_edge": -0.2, "edge": 0.05, "soft_dist": 1.6,
+		"core_soft": 0.8,
 		"age_thin": 0.85, "col_haze": Color(0.56, 0.5, 0.42), "near_fade": 9.0})
 	flash = _make_system("Flash", 160, 0.11, SH_STILL, {}, _material(SH_FLASH, {"atlas": ATLAS_FLASH}))
 	_ray_mat = _material(SH_RAY, {})
@@ -209,6 +210,10 @@ func _on_shot(_u: int, muzzle: Vector3, dir: Vector3, _hit: bool) -> void:
 
 ## Лучи сквозь дым залпа: ленты по солнечному лучу вдоль дымовой стены перед шеренгой
 func _on_volley(s: int, _rank: int, center: Vector3, count: int) -> void:
+	# лучи сквозь дым видны только против солнца: иначе 64 больших полотна рисуются впустую
+	var cam := get_viewport().get_camera_3d()
+	if cam and _sun and (-cam.global_basis.z).dot(_sun.global_basis.z.normalized()) < 0.1:
+		return
 	var sim := scenario.sim
 	var f := sim.squad_forward(s)
 	var fw := Vector3(f.x, 0.0, f.y)
@@ -371,7 +376,7 @@ func _gallop_dust(dt: float) -> void:
 			var side := Vector3(f.z, 0.0, -f.x)
 			var x := sim.u_x[u]
 			var z := sim.u_z[u]
-			var p := Vector3(x, 0.0, z) - f * _rng.range_f(0.6, 1.4) + side * _rng.range_f(-0.45, 0.45)
-			p.y = Terrain.height_at(p.x, p.z) + 0.35
+			var p := Vector3(x, 0.0, z) - f * _rng.range_f(0.3, 2.4) + side * _rng.range_f(-0.9, 0.9)
+			p.y = Terrain.height_at(p.x, p.z) + _rng.range_f(0.2, 0.5)
 			var v := -f * _rng.range_f(0.8, 2.2) + side * _rng.range_f(-0.8, 0.8) + Vector3(0, _rng.range_f(0.3, 0.9), 0)
-			puff(dust, p, v, _rng.range_f(0.9, 1.4), _rng.range_f(0.55, 0.9))
+			puff(dust, p, v, _rng.range_f(0.7, 1.8), _rng.range_f(0.45, 0.95))

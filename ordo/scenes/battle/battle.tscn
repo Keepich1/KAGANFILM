@@ -34,7 +34,6 @@ script = ExtResource("9")
 [node name="Cameras" type="Node3D" parent="."]
 
 [node name="CamCine" type="Camera3D" parent="Cameras"]
-current = true
 fov = 45.0
 far = 3000.0
 script = ExtResource("5")

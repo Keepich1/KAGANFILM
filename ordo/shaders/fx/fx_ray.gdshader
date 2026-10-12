@@ -3,7 +3,7 @@
 // своей оси; длина — масштаб X, ширина — масштаб Y трансформа частицы. Видны, когда камера
 // смотрит в сторону солнца; рождаются в дыму залпа, живут, пока дым висит (CUSTOM.y — возраст).
 shader_type spatial;
-render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
 uniform vec3 sun_dir = vec3(-0.9, 0.17, 0.38);
 uniform vec3 sun_color = vec3(1.0, 0.74, 0.52);

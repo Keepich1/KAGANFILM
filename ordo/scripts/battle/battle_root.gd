@@ -37,6 +37,8 @@ func _ready() -> void:
 	var ordo := get_node_or_null("/root/Ordo")
 	_shot_mode = ordo != null and (ordo.has_arg("shot") or ordo.has_arg("movie"))
 	if rts:
+		# камера стратегии слушает клавиши, только если бой сам управляет камерой
+		rts.interactive = rts.interactive and take_camera
 		rts.moved_by_player.connect(_use_rts)
 	if take_camera:
 		if start_cinematic and cine:
@@ -76,6 +78,8 @@ func _capture(item: Array) -> void:
 
 
 func _use_rts() -> void:
+	if not take_camera:
+		return
 	if rts and not rts.current:
 		# стратегическая камера продолжает с того места, куда смотрела кинокамера
 		if cine and cine.current:
@@ -101,6 +105,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_R:
 			scenario.restart()
 		KEY_C:
+			if not take_camera:
+				return
 			if cine and not cine.current:
 				cine.make_current()
 			else:

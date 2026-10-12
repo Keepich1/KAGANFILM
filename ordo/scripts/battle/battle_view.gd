@@ -157,6 +157,10 @@ func _update_battle() -> void:
 		var x := lerpf(sim.u_px[u], sim.u_x[u], a)
 		var z := lerpf(sim.u_pz[u], sim.u_z[u], a)
 		var h := lerp_angle(sim.u_ph[u], sim.u_h[u], a)
+		if sim.u_life[u] != BattleSim.Life.ALIVE:
+			# павшие лежат вразнобой, а не ровными рядами (поворот растёт за время падения)
+			var k := 1.0 if sim.u_life[u] == BattleSim.Life.DEAD else clampf((t - sim.u_death_t[u]) / 0.8, 0.0, 1.0)
+			h += (BattleRng.hash01(u * 7 + 3) - 0.5) * 1.5 * k
 		var moved := Vector2(x - _lx[u], z - _lz[u]).length()
 		_lx[u] = x
 		_lz[u] = z
@@ -215,6 +219,10 @@ func _rider_custom(sim: BattleSim, u: int, t: float, spd: float, moved: float) -
 	if act == BattleSim.Act.MELEE and at >= 0.0:
 		return AnimSpec.custom(R.MELEE, clampf(at / AnimSpec.DURATION_HORSE[R.MELEE], 0.0, 1.0), 0.0, w)
 	if act == BattleSim.Act.CHEER and at >= 0.0 and spd < HORSE_TROT_FROM:
+		# клич полководца: конь сначала встаёт на дыбы, потом ликование
+		var rear: float = AnimSpec.DURATION_HORSE[R.REAR]
+		if sim.u_role[u] == BattleSim.Role.GENERAL and at < rear:
+			return AnimSpec.custom(R.REAR, at / rear, 0.0, w)
 		return AnimSpec.custom(R.CHEER, clampf(at / AnimSpec.DURATION_HORSE[R.CHEER], 0.0, 1.0), 0.0, w)
 	if spd > 0.05:
 		var st := R.WALK

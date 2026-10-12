@@ -90,7 +90,7 @@ func _process(delta: float) -> void:
 	else:
 		shot_time += delta * scenario.time_scale * (0.0 if scenario.paused else 1.0)
 	var plan := _plan(current_shot, t, shot_time)
-	var p: Vector3 = plan[0]
+	var p: Vector3 = _clear_of_units(plan[0], 4.0)
 	var l: Vector3 = plan[1]
 	var f: float = plan[2]
 	if cut:
@@ -103,7 +103,7 @@ func _process(delta: float) -> void:
 		_pos = _pos.lerp(p, k)
 		_look = _look.lerp(l, k)
 		_fov = lerpf(_fov, f, k)
-	var pos := _pos
+	var pos := _clear_of_units(_pos, 2.5)
 	pos.y = maxf(pos.y, Terrain.height_at(pos.x, pos.z) + 1.0)
 	# тряска: затухающий шум
 	_trauma = maxf(0.0, _trauma - delta * 1.4)
@@ -113,6 +113,25 @@ func _process(delta: float) -> void:
 	global_position = pos + jitter
 	look_at(_look + jitter * 0.5, Vector3.UP)
 	fov = _fov
+
+
+## Камера не входит в бойцов: отодвигается от живых юнитов ближе radius м и чуть поднимается
+func _clear_of_units(p: Vector3, radius: float) -> Vector3:
+	var sim := scenario.sim
+	var push := Vector3.ZERO
+	var r2 := radius * radius
+	for u in sim.n:
+		if sim.u_life[u] != BattleSim.Life.ALIVE:
+			continue
+		var dx := p.x - sim.u_x[u]
+		var dz := p.z - sim.u_z[u]
+		var d2 := dx * dx + dz * dz
+		if d2 < r2:
+			var d := sqrt(d2) + 0.001
+			push += Vector3(dx / d, 0.0, dz / d) * (radius - d)
+	if push == Vector3.ZERO:
+		return p
+	return p + push + Vector3(0.0, push.length() * 0.6, 0.0)
 
 
 ## Режиссёр: какой план сейчас
@@ -171,8 +190,9 @@ func _plan(name: String, t: float, st: float) -> Array:
 			var fwd := Vector3(kf.x, 0.0, kf.y)
 			var half := sim.sq_files[kip] * 2.1 * 0.5
 			var front := Vector3(ka.x, 0.0, ka.y)
-			var p := front + fwd * 9.0 + side * (half + 7.0) + Vector3(0.0, 1.7, 0.0)
-			return [p, front + side * (half * 0.25) - fwd * 2.0 + Vector3(0.0, 2.0, 0.0), 46.0]
+			# сбоку, чуть позади первой шеренги: пыль из-под копыт тянется за строем, солнце сзади
+			var p := front - fwd * 3.0 + side * (half + 10.0) + Vector3(0.0, 1.5, 0.0)
+			return [p, front + side * (half * 0.2) + fwd * 1.0 + Vector3(0.0, 1.9, 0.0), 46.0]
 		"volley":
 			# из-за спин стрелков, над плечами, против солнца
 			var back := Vector3(-of.x, 0.0, -of.y)
@@ -198,15 +218,16 @@ func _plan(name: String, t: float, st: float) -> Array:
 			var p := a + Vector3(-5.0, 1.7, 33.0) + Vector3(st * 0.4, st * 0.25, 0.0)
 			return [p, a + Vector3(-1.0, 1.2, -2.0), 46.0]
 		"general":
-			# полководец на первом плане, за ним — удар и свалка; камера со стороны солнца
-			# (свет спереди на полководце и бойцах, длинные тени уходят от камеры)
+			# полководец и свалка в одном кадре: камера с юга, между ними; солнце слева сбоку,
+			# полководец на первом-среднем плане слева, удар и знамёна справа
 			var g := sim.general[1]
 			var gp := Vector3(sim.u_x[g], 0.0, sim.u_z[g])
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
-			var d := Vector3(mid.x - gp.x, 0.0, mid.z - gp.z).normalized()
-			var sd := Vector3(-d.z, 0.0, d.x)
-			var p := gp - d * (9.0 + st * 0.25) + sd * 3.0 + Vector3(0.0, 2.3, 0.0)
-			return [p, gp + d * 20.0 + Vector3(0.0, 1.8, 0.0), 42.0]
+			var v := Vector3(mid.x - gp.x, 0.0, mid.z - gp.z)
+			var ln := maxf(v.length(), 12.0)
+			var perp := Vector3(0.0, 0.0, 1.0)        # с юга: солнце слева сбоку
+			var p := gp + v * 0.25 + perp * ln * 1.1 + Vector3(st * 0.3, 3.4, 0.0)
+			return [p, gp + v * 0.55 + Vector3(0.0, 1.6, 0.0), 44.0]
 		"melee":
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
 			var p := mid + Vector3(8.0 + st * 0.3, 3.2 + st * 0.25, 24.0)

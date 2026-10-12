@@ -5,6 +5,8 @@ extends CanvasLayer
 
 @export var scenario_path: NodePath = ^"../Scenario"
 @export var selection_path: NodePath = ^"../Selection"
+## Своя подсказка клавиш (выключается, когда подсказку показывает сборка среза)
+@export var show_help := true
 
 var scenario: ScenarioClash
 var _bars: SquadBars
@@ -25,14 +27,17 @@ func _ready() -> void:
 	_bars.selection = get_node_or_null(selection_path) as SquadSelection
 	_status = _label(Vector2(0, 0), 20)
 	_status.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_status.position = Vector2(-120, 18)
-	_status.size = Vector2(240, 30)
+	_status.offset_left = -120.0
+	_status.offset_right = 120.0
+	_status.offset_top = 18.0
+	_status.offset_bottom = 48.0
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help = _label(Vector2(18, 0), 13)
 	_help.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_help.position = Vector2(18, -60)
+	_help.offset_left = 18.0
+	_help.offset_top = -60.0
 	_help.text = "C — кинокамера / стратегия    WASD, края, колесо, Q/E, средняя кнопка — камера    1–4 — виды\nЛКМ — отряд, двойной — все такие    P — пауза    + / − — скорость    R — бой заново    F1 — подсказка"
-	_help.visible = not _shot_mode
+	_help.visible = not _shot_mode and show_help
 
 
 func _label(pos: Vector2, size: int) -> Label:
@@ -49,7 +54,7 @@ func _label(pos: Vector2, size: int) -> Label:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and (event as InputEventKey).physical_keycode == KEY_F1:
+	if show_help and event is InputEventKey and event.pressed and (event as InputEventKey).physical_keycode == KEY_F1:
 		_help_t = 9.0
 		_help.visible = true
 
