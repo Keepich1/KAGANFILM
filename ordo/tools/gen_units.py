@@ -42,18 +42,24 @@ def S(A, name, frac):
 
 def _head(A, part, c, d, hat):
     """Голова-яйцо: лицо на u = 0.5 (start=180), низ — подбородок."""
-    rx, ry, rz = 0.094, 0.118, 0.106
+    rx, ry, rz = 0.098, 0.122, 0.11
     lo = d < 0.8
     t = np.linspace(-math.pi / 2, math.radians(48 if hat else 90), (3 if lo else 4) + 1)
     prof = np.column_stack([np.cos(t), np.sin(t)])
     prof[np.abs(prof[:, 0]) < 1e-6, 0] = 0
-    h = lathe(prof, 6 if lo else 7, start=180.0)
+    h = lathe(prof, 6, start=180.0)
     h.transform(np.diag([rx, ry, rz])).translate(*c)
-    # подбородок вперёд и челюсть шире — не «яйцо»
+    # подбородок и борода вперёд, скулы шире — не «яйцо»
     low = h.P[:, 1] < c[1] - 0.03
-    h.P[low, 2] += 0.012
+    h.P[low, 2] += 0.016
+    front = (h.P[:, 2] > c[2] + 0.05) & (np.abs(h.P[:, 1] - c[1] + 0.01) < 0.05)
+    h.P[front, 2] += 0.012  # нос и надбровья
     tag(h, part, S(A, "skin", SKIN_SUB["head"]))
-    return h
+    # нос: маленькая трёхгранная пирамидка — профиль лица читается
+    nose = lathe([(0.019, 0.0), (0.0, 0.034)], 3, start=60.0, normals="crease")
+    nose.rotate_x(100).translate(c[0], c[1] - 0.004, c[2] + rz - 0.012)
+    tag(nose, part, S(A, "skin", (0.22, 0.4, 0.28, 0.6)))
+    return Mesh.merge([h, nose])
 
 
 def _hat(A, part, c, d, kind, variant=True):
@@ -64,14 +70,16 @@ def _hat(A, part, c, d, kind, variant=True):
     lo = d < 0.8
     n = 6 if lo else 7
     if kind == "turban":
-        prof = [(0.101, 0.03), (0.142, 0.07), (0.153, 0.15), (0.128, 0.235), (0.07, 0.272)]
+        prof = [(0.104, 0.025), (0.145, 0.09), (0.132, 0.2), (0.078, 0.255)]
         if lo:
-            prof = [prof[0], prof[2], prof[4]]
+            prof = [prof[0], prof[1], prof[3]]
         t = lathe(prof, n).translate(cx, cy, cz - 0.005)
+        # витки чалмы чуть наискось: спереди ниже, сзади выше
+        t.P[:, 1] += 0.025 * (cz - t.P[:, 2]) / 0.15
         out.append(tag(t, part, S(A, "hat0", (0, 0.34, 1, 1)), coat=coat))
-        kp = [(0.078, 0.26), (0.0, 0.44)] if lo else [(0.078, 0.26), (0.05, 0.37), (0.0, 0.44)]
-        k = lathe(kp, n).translate(cx, cy, cz - 0.01)
-        out.append(tag(k, part, S(A, "hat0", (0, 0, 1, 0.34)), coat=coat))
+        kp = [(0.082, 0.24), (0.0, 0.5)] if lo else [(0.082, 0.24), (0.058, 0.38), (0.0, 0.5)]
+        k = lathe(kp, n).translate(cx, cy, cz - 0.015)
+        out.append(tag(k, part, S(A, "hat0", (0, 0, 1, 0.34)), coat=coat, side=1.0))  # кулах — цвет стороны
     elif kind == "kalpak":
         bp = [(0.102, 0.025), (0.132, 0.05), (0.127, 0.088)]
         brim = lathe([bp[0], bp[2]] if lo else bp, n).translate(cx, cy, cz)
@@ -93,7 +101,7 @@ def _hat(A, part, c, d, kind, variant=True):
         if kind == "helmet_plume":
             path = [(cx, cy + 0.40, cz), (cx, cy + 0.52, cz - 0.03), (cx, cy + 0.66, cz - 0.10), (cx, cy + 0.74, cz - 0.20)]
             pl = limb(path if not lo else [path[0], path[2], path[3]],
-                      [0.018, 0.05, 0.05, 0.012] if not lo else [0.018, 0.05, 0.012], sides=3 if lo else 4)
+                      [0.018, 0.05, 0.05, 0.012] if not lo else [0.018, 0.05, 0.012], sides=3)
             out.append(tag(pl, part, A.rect("plume"), side=0.0, flip=False,
                            weight=lambda m: (m.P[:, 1] - (cy + 0.4)) / 0.34))
     return out
@@ -109,12 +117,14 @@ def human_upper(A, spec, d, P, ids):
     side_t, side_sl = spec.get("side_torso", 1.0), spec.get("side_sleeve", 1.0)
     lo = d < 0.8
     k = 7 if lo else 8
-    # торс: от пояса до шеи; широкие плечи
-    sec = [(0.985, 0.152, 0.116, 0.0), (1.2, 0.18, 0.134, 0.014), (1.37, 0.22, 0.13, 0.0),
-           (1.455, 0.19, 0.10, -0.01), (1.505, 0.078, 0.074, 0.0), (1.56, 0.058, 0.06, 0.005)]
+    # торс: от пояса до шеи; грудь колесом, широкие покатые плечи (плечевые «шапки» — у рук)
+    sec = [(0.985, 0.152, 0.116, 0.0), (1.22, 0.182, 0.138, 0.02), (1.39, 0.208, 0.128, 0.008),
+           (1.47, 0.16, 0.098, -0.012), (1.52, 0.082, 0.078, 0.0), (1.57, 0.068, 0.07, 0.01)]
     if lo:
         sec = [sec[0], sec[2], sec[3], sec[5]]
-    rings = [ring((0, y + dy, z + dz), rx, rz, k, phase=180.0) for y, rx, rz, z in sec]
+    # кольцо чуть уже спереди-сзади у боков: плоская грудь и спина, круглые бока
+    sq = lambda a: 1.0 + 0.06 * math.cos(2.0 * a)  # noqa: E731
+    rings = [ring((0, y + dy, z + dz), rx, rz, k, phase=180.0, squash=sq) for y, rx, rz, z in sec]
     torso = loft(rings)
     if spec.get("bulk", 1.0) != 1.0:
         b = spec["bulk"]
@@ -132,7 +142,7 @@ def human_upper(A, spec, d, P, ids):
         sash.transform(np.diag([spec.get("bulk", 1.0), 1, spec.get("bulk", 1.0) * 0.9]))
         sash.P[:, 2] += dz * (1 - spec.get("bulk", 1.0) * 0.9)
         out.append(tag(sash, ids["PELVIS"], A.rect(spec["sash"]), side=spec.get("side_sash", 0.0), flip=False))
-        if d > 0.8 and dy < 0.1:  # свисающие концы кушака (у пехоты)
+        if d > 0.8 and dy < 0.1 and not spec.get("lean"):  # свисающие концы кушака (у пехоты)
             for sx in (0.09,):
                 g = two_sided(grid(0.05, 0.2, 1, 2).translate(-0.025, -0.2, 0))
                 g.translate(sx, 0.985 + dy, 0.118 + dz)
@@ -142,26 +152,32 @@ def human_upper(A, spec, d, P, ids):
     for s, ua, fa in ((1, "UARM_L", "FARM_L"), (-1, "UARM_R", "FARM_R")):
         side = "L" if s > 0 else "R"
         sh, el, hd = v3(P["SHOULDER_" + side]), v3(P["ELBOW_" + side]), v3(P["HAND_" + side])
+        rs = 5 if (lo or spec.get("rider")) else 6
         if lo:
-            up = limb([sh + (0, 0.035, 0), el], [0.072, 0.06], sides=4)
+            up = limb([sh + (0.01 * s, 0.0, 0), el], [0.078, 0.064], sides=4)
         else:
-            up = limb([sh + (0, 0.035, 0), sh + (0.012 * s, -0.08, 0), el], [0.07, 0.072, 0.06], sides=5)
+            up = limb([sh + (0.01 * s, 0.0, 0), sh + (0.016 * s, -0.12, -0.005), el], [0.078, 0.075, 0.066], sides=rs)
         out.append(tag(up, ids[ua], S(A, reg_sl, (0, 0, 1, 0.5)), side=side_sl, flip=False))
+        # плечевая «шапка»: круглое плечо вместо торца трубы
+        dl = lathe([(0.0, 0.07), (0.07, 0.035), (0.084, -0.02)], 4 if lo else 5)
+        dl.transform(np.diag([1.0, 1.0, 0.95])).translate(sh[0] + 0.012 * s, sh[1] - 0.005, sh[2])
+        out.append(tag(dl, ids[ua], S(A, reg_sl, (0, 0, 1, 0.12)), side=side_sl))
         dirv = (hd - el) / np.linalg.norm(hd - el)
-        cuff = hd - dirv * 0.05
-        fo = limb([el, cuff], [0.06, 0.074], sides=4) if lo else limb([el, (el + cuff) / 2, cuff], [0.058, 0.061, 0.074], sides=5)
+        cuff = hd - dirv * 0.04
+        fo = limb([el, cuff], [0.066, 0.084], sides=4) if lo else \
+            limb([el, (el + cuff) / 2, cuff], [0.064, 0.068, 0.086], sides=rs)
         out.append(tag(fo, ids[fa], S(A, reg_sl, (0, 0.5, 1, 1)), side=side_sl, flip=False))
-        hand = ellipsoid(0.036, 0.05, 0.044, 3 if lo else 4, 2).translate(*(hd - dirv * 0.005))
+        hand = ellipsoid(0.04, 0.056, 0.048, 3 if lo else 4, 2).translate(*(hd - dirv * 0.0))
         out.append(tag(hand, ids[fa], S(A, "skin", SKIN_SUB["hand"])))
     # меховой ворот и плащ (полководец)
     if spec.get("fur_collar"):
         pts = [(0.16 * math.sin(a), 1.47 + dy, 0.12 * math.cos(a) + dz - 0.01)
-               for a in np.linspace(0, 2 * math.pi, 5 if lo else 8)]
+               for a in np.linspace(0, 2 * math.pi, 5 if lo else 6)]
         fc = limb(pts, 0.05, sides=3 if lo else 4)
         out.append(tag(fc, ids["CHEST"], A.rect("fur"), flip=False))
     if spec.get("cloak"):
         cpf = [(0.2, 0.0), (0.3, -0.36), (0.40, -0.72)] if not lo else [(0.2, 0.0), (0.40, -0.72)]
-        cl = lathe(cpf, 4 if lo else 6, sweep=200, start=80)
+        cl = lathe(cpf, 4 if lo else 5, sweep=200, start=80)
         cl.translate(0, 1.45 + dy, dz - 0.02)
         cl.P[:, 2] -= 0.12 * np.clip(-(cl.P[:, 1] - 1.45 - dy), 0, None)  # отлетает назад
         cl = two_sided(cl)
@@ -177,27 +193,33 @@ def human_legs(A, spec, d):
     for s, th, sh in ((1, "THIGH_L", "SHIN_L"), (-1, "THIGH_R", "SHIN_R")):
         side = "L" if s > 0 else "R"
         hip, kn, an = v3(HUMAN_PIV["HIP_" + side]), v3(HUMAN_PIV["KNEE_" + side]), v3(HUMAN_PIV["ANKLE_" + side])
-        t = limb([hip + (0, 0.04, 0), kn], [0.078, 0.06], sides=4 if lo else 5)
+        # широкие шаровары, заправленные в сапоги
+        t = limb([hip + (0.006 * s, 0.05, 0), (hip + kn) / 2 + (0.012 * s, 0, 0.012), kn + (0, 0.03, 0)],
+                 [0.086, 0.088, 0.068], sides=4 if lo else 5) if not lo else \
+            limb([hip + (0, 0.05, 0), kn + (0, 0.03, 0)], [0.088, 0.068], sides=4)
         out.append(tag(t, HP[th], A.rect(spec["trousers"]), flip=False))
+        # сапог: икра, узкая щиколотка, раструб голенища
         if lo:
-            b = limb([kn + (0, 0.03, 0.005), an + (0, 0.01, 0)], [0.064, 0.047], sides=4)
+            b = limb([kn + (0, 0.02, 0.005), an + (0, 0.01, 0)], [0.066, 0.048], sides=4)
         else:
-            b = limb([kn + (0, 0.03, 0.005), (kn + an) / 2 + (0, 0, 0.01), an + (0, 0.01, 0)], [0.064, 0.056, 0.047],
-                     sides=5)
+            b = limb([kn + (0, 0.02, 0.008), kn * 0.55 + an * 0.45 + (0, 0, -0.008), an + (0, 0.012, 0)],
+                     [0.068, 0.06, 0.046], sides=5)
         out.append(tag(b, HP[sh], S(A, "leather", LEATHER_SUB["boot"]), flip=False))
-        f = ellipsoid(0.046, 0.05, 0.122, 4 if lo else 5, 1 if lo else 2, y_from=-0.35).translate(an[0], 0.045, an[2] + 0.042)
+        f = ellipsoid(0.048, 0.052, 0.125, 4, 1 if lo else 2, y_from=-0.35).translate(an[0], 0.045, an[2] + 0.045)
         toe = f.P[:, 2] > an[2] + 0.1
-        f.P[toe, 1] += (f.P[toe, 2] - an[2] - 0.1) * 0.7  # загнутый носок
+        f.P[toe, 1] += (f.P[toe, 2] - an[2] - 0.1) * 0.8  # загнутый носок
         f.P[:, 1] = np.maximum(f.P[:, 1], 0.0)
         out.append(tag(f, HP[sh], S(A, "leather", LEATHER_SUB["boot"])))
-    # подол кафтана: две половины, каждая следует за своим бедром (передний и задний разрез)
-    hem = spec.get("hem", 0.42)
-    prof = [(0.158, 1.03), (0.186, 0.9), (0.232, 0.68), (0.278, hem)]
+    # подол кафтана: две половины, каждая следует за своим бедром (передний и задний разрез);
+    # левая пола запахнута поверх правой (чуть шире и заходит за середину)
+    hem = spec.get("hem", 0.4)
+    prof = [(0.16, 1.03), (0.19, 0.9), (0.245, 0.66), (0.305, hem)]
     if lo:
         prof = [prof[0], prof[2], prof[3]]
-    for s, name, start in ((1, "SKIRT_L", 0.0), (-1, "SKIRT_R", 180.0)):
-        sk = lathe(prof, 3 if lo else 5, sweep=180.0, start=start)
-        sk.P[:, 2] = sk.P[:, 2] * 0.9 + 0.012
+    for s, name, start, sweep, grow in ((1, "SKIRT_L", -10.0, 200.0, 1.018), (-1, "SKIRT_R", 180.0, 180.0, 1.0)):
+        sk = lathe(prof, 3 if lo else (4 if spec.get("lean") else 5), sweep=sweep, start=start)
+        sk.P[:, 0] *= grow
+        sk.P[:, 2] = sk.P[:, 2] * 0.88 * grow + 0.014
         b = spec.get("bulk", 1.0)
         sk.P[:, 0] *= b
         if s < 0:  # u = 0 у переднего края у обеих половин
@@ -301,7 +323,7 @@ def banner_pole(A, part, cloth_part, W, d, kind):
     out.append(tag(pole, part, S(A, "wood", WOOD_SUB["shaft"]), flip=False))
     if kind == "kokand":  # золотой шар и навершие-полумесяц
         fin = lathe([(0.0, hi), (0.045, hi + 0.04), (0.045, hi + 0.08), (0.0, hi + 0.12), (0.012, hi + 0.13),
-                     (0.0, hi + 0.3)], seg(6, d), normals="crease").translate(W[0], W[1], W[2])
+                     (0.0, hi + 0.3)], 4 if d < 0.8 else 5, normals="crease").translate(W[0], W[1], W[2])
         out.append(tag(fin, part, S(A, "metal", METAL_SUB["gold"]), metal=1.0))
     else:  # туг: конский хвост под навершием-трезубцем
         tug = lathe([(0.0, hi - 0.02), (0.1, hi - 0.16), (0.12, hi - 0.34), (0.06, hi - 0.46), (0.0, hi - 0.5)],
@@ -310,7 +332,7 @@ def banner_pole(A, part, cloth_part, W, d, kind):
         for zx in (-0.07, 0.0, 0.07):
             pr = limb([W + (0, hi, 0) + (0, 0, zx * 0.3), W + (0, hi + 0.22 - abs(zx) * 0.8, zx)], [0.012, 0.002], sides=3)
             out.append(tag(pr, part, S(A, "metal", METAL_SUB["steel"]), metal=1.0, flip=False))
-    g = grid(cw, chh, 3 if d < 0.8 else 5, 1 if d < 0.8 else 2)
+    g = grid(cw, chh, 3 if d < 0.8 else 4, 1 if d < 0.8 else 2)
     g.rotate_y(90).translate(W[0], W[1] + ctop - chh, W[2] - 0.02)  # x полотна → −Z
     g = two_sided(g)
     out.append(tag(g, cloth_part, A.rect("banner"), side=1.0, weight=lambda m: (W[2] - 0.02 - m.P[:, 2]) / cw))
@@ -320,10 +342,10 @@ def banner_pole(A, part, cloth_part, W, d, kind):
 def shield(A, part, center, d, r=0.27):
     """Круглый калкан на левом предплечье, лицом вперёд (+Z)."""
     c = v3(center)
-    dome = lathe([(0.0, 0.07), (r, 0.0)] if d < 0.8 else [(0.0, 0.07), (r * 0.55, 0.055), (r, 0.0)], 6 if d < 0.8 else 9)
+    dome = lathe([(0.0, 0.07), (r, 0.0)] if d < 0.8 else [(0.0, 0.07), (r * 0.55, 0.055), (r, 0.0)], 6 if d < 0.8 else 8)
     dome.rotate_x(90).translate(*c)
     dome.UV = np.column_stack([0.5 - (dome.P[:, 0] - c[0]) / (2 * r), 0.5 - (dome.P[:, 1] - c[1]) / (2 * r)])
-    back = disc(r, 6 if d < 0.8 else 9).rotate_x(-90).translate(*c)
+    back = disc(r, 6 if d < 0.8 else 8).rotate_x(-90).translate(*c)
     back.UV = np.column_stack([0.5 + (back.P[:, 0] - c[0]) / (2 * r), 0.5 - (back.P[:, 1] - c[1]) / (2 * r)])
     return [tag(dome, part, A.rect("shield"), side=0.6, flip=False),
             tag(back, part, S(A, "leather", LEATHER_SUB["belt"]), flip=False)]
@@ -372,7 +394,7 @@ def build_infantry(A, spec, d):
         parts += flask(A, HP["PELVIS"], d)
     if spec.get("back") == "musket":
         # ружьё за спиной: наискось от правого бедра к левому плечу
-        bm = Mesh.merge(musket(A, HP["CHEST"], (0, 0, 0), 0.5, back=True))
+        bm = Mesh.merge(musket(A, HP["CHEST"], (0, 0, 0), 0.4, back=True))
         bm.rotate_z(-32).translate(0.0, 1.12, -0.17)
         parts.append(bm)
     m = Mesh.merge(parts)
@@ -395,37 +417,44 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
     hs = lambda nm: S(A, coat_cell, HORSE_SUB_X[nm])  # noqa: E731
     lo = d < 0.8
     k = 6 if lo else 8
-    sec = [(-0.99, 1.31, 0.09, 0.12), (-0.9, 1.28, 0.2, 0.26), (-0.7, 1.245, 0.268, 0.335), (-0.45, 1.205, 0.285, 0.35),
-           (-0.15, 1.165, 0.298, 0.345), (0.15, 1.165, 0.3, 0.352), (0.42, 1.21, 0.272, 0.36), (0.62, 1.22, 0.218, 0.325),
-           (0.75, 1.17, 0.13, 0.22)]
+    # профиль корпуса: круп, провис спины, холка выше, грудь вперёд; сечение уже к хребту
+    sec = [(-0.99, 1.30, 0.09, 0.12), (-0.9, 1.275, 0.205, 0.26), (-0.7, 1.24, 0.27, 0.33), (-0.45, 1.205, 0.288, 0.345),
+           (-0.15, 1.16, 0.3, 0.338), (0.15, 1.16, 0.302, 0.35), (0.42, 1.215, 0.27, 0.37), (0.62, 1.2, 0.215, 0.33),
+           (0.76, 1.13, 0.13, 0.22)]
     if lo:
         sec = [sec[0], sec[2], sec[4], sec[6], sec[7], sec[8]]
-    rings = [ring_z((0, y, z), rx, ry, k) for z, y, rx, ry in sec]
+    spine = lambda a: 1.0 - 0.1 * max(math.cos(a), 0.0) ** 3 + 0.04 * max(-math.cos(a), 0.0)  # noqa: E731
+    # корпус короче (длина ≈ высоте в холке), передняя часть остаётся на месте
+    rings = [ring_z((0, y, 0.62 + (z - 0.62) * 0.9), rx, ry, k, squash=spine) for z, y, rx, ry in sec]
     body = loft(rings, cap_start=True, cap_end=True)
     out.append(tag(body, RP["BODY"], hs("body"), coat=coat_mask))
     # шея с гребнем гривы
     ax = v3((0, 1.84, 0.92)) - v3((0, 1.33, 0.56))
-    crest = lambda a: 1.0 + 0.22 * max(math.cos(a), 0.0) ** 6  # noqa: E731
-    ns = [((0, 1.30, 0.55), 0.26, 0.145), ((0, 1.56, 0.73), 0.19, 0.112), ((0, 1.79, 0.89), 0.14, 0.088)]
-    neck = loft([ring_axis(c, ax, rc, rs, 5 if lo else 8, squash=crest) for c, rc, rs in (ns[::2] if lo else ns)])
-    out.append(tag(neck, RP["NECK"], hs("neck"), coat=coat_mask, flip=False))
+    crest = lambda a: 1.0 + 0.28 * max(math.cos(a), 0.0) ** 5  # noqa: E731
+    ns = [((0, 1.25, 0.5), 0.3, 0.17), ((0, 1.46, 0.68), 0.25, 0.145), ((0, 1.65, 0.8), 0.19, 0.115),
+          ((0, 1.8, 0.9), 0.14, 0.095)]
+    neck = loft([ring_axis(c, ax, rc, rs, 5 if lo else 8, squash=crest) for c, rc, rs in ([ns[0], ns[3]] if lo else ns)])
+    # вес изгиба: 0 у основания (сидит в корпусе) → 1 у затылка; шея гнётся, а не поворачивается целиком
+    axn = ax / np.linalg.norm(ax)
+    out.append(tag(neck, RP["NECK"], hs("neck"), coat=coat_mask, flip=False,
+                   weight=lambda m: (m.P - v3((0, 1.3, 0.56))) @ axn / 0.5))
     # голова: от затылка к морде
     hax = v3((0, 1.43, 1.36)) - v3((0, 1.86, 0.96))
-    hsec = [((0, 1.87, 0.955), 0.1, 0.075), ((0, 1.75, 1.04), 0.135, 0.088), ((0, 1.56, 1.23), 0.08, 0.066),
-            ((0, 1.445, 1.345), 0.072, 0.066)]
+    hsec = [((0, 1.88, 0.955), 0.1, 0.072), ((0, 1.745, 1.03), 0.145, 0.095), ((0, 1.56, 1.225), 0.082, 0.068),
+            ((0, 1.445, 1.34), 0.078, 0.07)]
     if d < 0.8:
         hsec = [hsec[0], hsec[1], hsec[3]]
     head = loft([ring_axis(c, hax, rc, rs, 5 if lo else 7) for c, rc, rs in hsec], cap_end=not lo)
     out.append(tag(head, RP["HEAD"], hs("head"), coat=coat_mask, flip=False))
     for s in (() if lo else (1, -1)):
-        ear = limb([(0.05 * s, 1.9, 0.93), (0.065 * s, 2.02, 0.96)], [0.03, 0.004], sides=3)
+        ear = limb([(0.045 * s, 1.9, 0.935), (0.068 * s, 2.05, 0.965)], [0.034, 0.003], sides=3)
         out.append(tag(ear, RP["HEAD"], hs("hair"), coat=coat_mask, flip=False))
     # ноги
     sides = 5 if d > 0.8 else 4
     for s, sd in ((1, "L"), (-1, "R")):
         x = 0.15 * s
         fu = limb([(x, 1.06, 0.49), (x, 0.5, 0.55)] if lo else [(x, 1.06, 0.49), (x, 0.8, 0.52), (x, 0.5, 0.55)],
-                  [0.085, 0.047] if lo else [0.092, 0.07, 0.047], sides=sides)
+                  [0.09, 0.048] if lo else [0.1, 0.075, 0.048], sides=sides)
         out.append(tag(fu, RP["FU_" + sd], hs("legs_up"), coat=coat_mask, flip=False))
         if lo:
             fl = limb([(x, 0.53, 0.55), (x, 0.13, 0.566), (x, 0.075, 0.576)], [0.045, 0.04, 0.037], sides=sides)
@@ -438,7 +467,7 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
         x = 0.165 * s
         hu = limb([(x * 1.06, 1.1, -0.52), (x, 0.56, -0.7)] if lo else
                   [(x * 1.06, 1.1, -0.52), (x * 1.03, 0.84, -0.61), (x, 0.56, -0.7)],
-                  [0.1, 0.05] if lo else [0.112, 0.08, 0.05], sides=sides)
+                  [0.11, 0.052] if lo else [0.125, 0.085, 0.052], sides=sides)
         out.append(tag(hu, RP["HU_" + sd], hs("legs_up"), coat=coat_mask, flip=False))
         if lo:
             hl = limb([(x, 0.59, -0.705), (x, 0.13, -0.632), (x, 0.075, -0.622)], [0.05, 0.04, 0.037], sides=sides)
@@ -449,14 +478,14 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
         hf = lathe([(0.052, 0.0), (0.04, 0.08)], sides, normals="crease").translate(x, 0, -0.615)
         out.append(tag(hf, RP["HL_" + sd], hs("hoof"), coat=coat_mask))
     # хвост: вес по длине — для взмаха
-    tp = [(0, 1.43, -0.93), (0, 1.32, -1.04), (0, 1.05, -1.1), (0, 0.72, -1.08)]
-    tl = limb(tp if not lo else [tp[0], tp[2], tp[3]], [0.045, 0.078, 0.07, 0.028] if not lo else [0.05, 0.07, 0.028],
+    tp = [(0, 1.42, -0.85), (0, 1.31, -0.95), (0, 1.05, -1.01), (0, 0.72, -0.99)]
+    tl = limb(tp if not lo else [tp[0], tp[2], tp[3]], [0.05, 0.088, 0.082, 0.035] if not lo else [0.055, 0.08, 0.035],
               sides=4 if lo else 5)
     out.append(tag(tl, RP["TAIL"], hs("hair"), coat=coat_mask, flip=False, weight=lambda m: (1.43 - m.P[:, 1]) / 0.71))
     return out
 
 
-def caparison_mesh(A, region, d, z0=-0.95, z1=0.62, hem=0.8, side=1.0, top_off=0.035, sub=None):
+def caparison_mesh(A, region, d, z0=-0.8, z1=0.62, hem=0.8, side=1.0, top_off=0.035, sub=None):
     """Попона: открытые дуги через спину, бока висят отвесно до подола."""
     nz = 6 if d > 0.8 else 4
     zs = np.linspace(z0, z1, nz)
@@ -465,6 +494,7 @@ def caparison_mesh(A, region, d, z0=-0.95, z1=0.62, hem=0.8, side=1.0, top_off=0
     tbl = np.array([(-0.99, 1.31, 0.09, 0.12), (-0.9, 1.28, 0.2, 0.26), (-0.7, 1.245, 0.268, 0.335),
                     (-0.45, 1.205, 0.285, 0.35), (-0.15, 1.165, 0.298, 0.345), (0.15, 1.165, 0.3, 0.352),
                     (0.42, 1.21, 0.272, 0.36), (0.62, 1.22, 0.218, 0.325), (0.75, 1.17, 0.13, 0.22)])
+    tbl[:, 0] = 0.62 + (tbl[:, 0] - 0.62) * 0.9  # как укороченный корпус в horse_body
     secs = []
     for z in zs:
         cy = np.interp(z, tbl[:, 0], tbl[:, 1])
@@ -485,7 +515,7 @@ def caparison_mesh(A, region, d, z0=-0.95, z1=0.62, hem=0.8, side=1.0, top_off=0
 
 
 def saddle(A, d, region="saddle"):
-    s = ellipsoid(0.19, 0.075, 0.27, 4 if d < 0.8 else 6, 2, y_from=-0.2).translate(0, 1.565, 0.03)
+    s = ellipsoid(0.19, 0.075, 0.27, 4 if d < 0.8 else 5, 2, y_from=-0.2).translate(0, 1.565, 0.03)
     po = limb([(0, 1.6, 0.24), (0, 1.69, 0.29)], [0.06, 0.03], sides=4)
     ca = limb([(0, 1.6, -0.2), (0, 1.69, -0.25)], [0.08, 0.05], sides=4)
     return [tag(s, RP["BODY"], A.rect(region)), tag(po, RP["BODY"], A.rect(region), flip=False),
@@ -501,11 +531,10 @@ def rider_legs(A, spec, d):
         an = v3((0.31 * s, 1.07, 0.2))
         t = limb([hip, kn], [0.082, 0.064], sides=seg(5, d) if d > 0.8 else 4)
         out.append(tag(t, RP["BODY"], A.rect(spec["trousers"]), flip=False))
-        b = limb([kn + (0, 0.02, 0), an + (0, 0.02, 0)], [0.062, 0.05], sides=seg(5, d) if d > 0.8 else 4)
+        # сапог и ступня одной трубкой (носок в стремени вперёд)
+        b = limb([kn + (0, 0.02, 0), an + (0, 0.02, 0), an + (0.01 * s, -0.03, 0.13)], [0.062, 0.05, 0.035],
+                 sides=5 if d > 0.8 else 4)
         out.append(tag(b, RP["BODY"], S(A, "leather", LEATHER_SUB["boot"]), flip=False))
-        if d > 0.8:
-            f = ellipsoid(0.044, 0.048, 0.115, 4, 2).translate(an[0], an[1] - 0.03, an[2] + 0.04)
-            out.append(tag(f, RP["BODY"], S(A, "leather", LEATHER_SUB["boot"])))
     # подол кафтана всадника: две полы по бокам седла, вперёд по бёдрам
     for s, start in ((1, 0.0), (-1, 180.0)):
         sp = [(0.16, 0.0), (0.21, -0.13), (0.3, -0.34)]
@@ -523,12 +552,12 @@ def build_rider(A, spec, d):
     parts = horse_body(A, d, spec.get("coat", "coat0"), spec.get("coat_mask", 1.0))
     if spec.get("caparison"):
         cz = spec["caparison"]
-        parts.append(caparison_mesh(A, cz["region"], d, cz.get("z0", -0.95), cz.get("z1", 0.62), cz.get("hem", 0.8)))
+        parts.append(caparison_mesh(A, cz["region"], d, cz.get("z0", -0.8), cz.get("z1", 0.62), cz.get("hem", 0.8)))
     parts += saddle(A, d)
     ids = {"PELVIS": RP["R_PELVIS"], "CHEST": RP["R_TORSO"], "HEAD": RP["R_HEAD"], "UARM_L": RP["R_UARM_L"],
            "FARM_L": RP["R_FARM_L"], "UARM_R": RP["R_UARM_R"], "FARM_R": RP["R_FARM_R"]}
     P = {k[2:]: v for k, v in HORSE_PIV.items() if k.startswith("R_")}
-    parts += human_upper(A, spec, d, P, ids)
+    parts += human_upper(A, dict(spec, rider=True), d, P, ids)
     parts += rider_legs(A, spec, d)
     W = P["HAND_R"]
     wpn = spec.get("weapon")
@@ -611,7 +640,8 @@ MALCHY = dict(torso="work_torso", skirt="work_skirt", sleeve="work_torso", trous
 
 UNITS = {
     "kok_sarboz": ("infantry", KOK, SARBOZ),
-    "kok_sarboz_banner": ("infantry", KOK, dict(SARBOZ, weapon="banner_kokand", item=None, flask=False, back="musket")),
+    "kok_sarboz_banner": ("infantry", KOK, dict(SARBOZ, weapon="banner_kokand", item=None, flask=False, back="musket",
+                                                 lean=True)),
     "kok_yuzboshi": ("rider", KOK, dict(torso="torso2", skirt="skirt2", sleeve="sleeve2", trousers="trousers",
                                          hat="turban", hat_variant=False, sash="sash", weapon="saber", coat="coat0",
                                          caparison=dict(region="saddlecloth", z0=-0.5, z1=0.38, hem=1.0))),

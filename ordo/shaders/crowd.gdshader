@@ -25,10 +25,15 @@ uniform float unit_lift = 0.14;    // юниты светлее земли (ТЗ
 uniform float unit_sat = 0.22;     // и насыщеннее
 uniform float rim_strength = 1.7;  // контровой свет сильнее, чем у зданий
 uniform float brush_scale = 2.6;   // мазки на теле юнита (в осях модели — не «плывут»)
+uniform float band_soft_mul = 2.2; // граница света мягче, чем у зданий (мелкие круглые формы)
+uniform float side_glow_near = 0.03;  // цвет стороны чуть светится: узнаётся и в тени…
+uniform float side_glow_far = 0.15;   // …и сильнее издали, с камеры RTS (ТЗ 11.2)
+uniform vec2 glow_range = vec2(14.0, 70.0);
 
 global uniform vec4 ordo_wind;     // xy — направление ветра (x, z), z — сила, w — порывистость
 
 #include "res://shaders/include/painterly.gdshaderinc"
+#include "res://shaders/include/crowd_light.gdshaderinc"
 #include "res://shaders/include/crowd_common.gdshaderinc"
 #include "res://shaders/include/crowd_skeletons.gdshaderinc"
 #include "res://shaders/include/crowd_human.gdshaderinc"
@@ -41,6 +46,7 @@ varying float v_metal;
 varying vec3 v_body_pos;
 varying vec3 v_body_nrm;
 varying float v_metal_f;
+varying float v_dist;
 
 void vertex() {
 	vec4 ic = INSTANCE_CUSTOM;
@@ -93,6 +99,7 @@ void vertex() {
 	v_metal = COLOR.a;
 	v_body_pos = rest * brush_scale + vec3(var * 13.0, var * 7.0, 0.0);
 	v_body_nrm = NORMAL;
+	v_dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	PAINT_VERTEX;
 }
 
@@ -104,13 +111,14 @@ void fragment() {
 	a = mix(vec3(l), a, 1.0 + unit_sat);
 	a *= 1.0 + unit_lift;
 	ALBEDO = clamp(a, vec3(0.0), vec3(1.0));
+	EMISSION = ALBEDO * v_side * mix(side_glow_near, side_glow_far, smoothstep(glow_range.x, glow_range.y, v_dist));
 	ROUGHNESS = mix(0.9, 0.45, v_metal);
 	paint_brush_v = paint_brush(v_body_pos, v_body_nrm);
 	v_metal_f = v_metal;
 }
 
 void light() {
-	PAINT_LIGHT(rim_strength);
+	CROWD_LIGHT(rim_strength, band_soft_mul);
 	if (v_metal_f > 0.01) {
 		// узкий тёплый блик на золоте и стали
 		vec3 h = normalize(LIGHT + VIEW);

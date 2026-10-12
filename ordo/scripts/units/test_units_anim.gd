@@ -255,23 +255,27 @@ func _build_world() -> void:
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var psm := ProceduralSkyMaterial.new()
-	psm.sky_top_color = Color(0.1, 0.16, 0.3)
-	psm.sky_horizon_color = Color(0.92, 0.55, 0.32)
-	psm.ground_horizon_color = Color(0.45, 0.33, 0.25)
+	psm.sky_top_color = Color(0.06, 0.1, 0.22)
+	psm.sky_horizon_color = Color(0.88, 0.5, 0.3)
+	psm.sky_curve = 0.12
+	psm.ground_horizon_color = Color(0.35, 0.27, 0.22)
 	psm.ground_bottom_color = Color(0.12, 0.1, 0.1)
 	psm.sun_angle_max = 8.0
 	sky.sky_material = psm
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.32, 0.45, 0.62)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_color = Color(0.26, 0.4, 0.55)
+	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.05
+	env.tonemap_exposure = 1.0
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.05
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.62, 0.5, 0.48)
-	env.fog_density = 0.004
-	env.fog_sun_scatter = 0.25
-	env.fog_aerial_perspective = 0.3
+	env.fog_light_color = Color(0.42, 0.42, 0.5)
+	env.fog_density = 0.005
+	env.fog_sun_scatter = 0.35
+	env.fog_aerial_perspective = 0.4
 	env.glow_enabled = true
 	env.glow_intensity = 0.4
 	env.glow_hdr_threshold = 1.2
@@ -280,19 +284,19 @@ func _build_world() -> void:
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.7, 0.45)
-	sun.light_energy = 2.3
-	sun.rotation_degrees = Vector3(-11.0, -67.5, 0.0)  # солнце с запада-юго-запада, низко
+	sun.light_color = Color(1.0, 0.64, 0.38)
+	sun.light_energy = 2.6
+	sun.rotation_degrees = Vector3(-9.0, -67.5, 0.0)  # солнце с запада-юго-запада, низко
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 120.0
 	sun.shadow_blur = 1.5
 	add_child(sun)
 	var ground := MeshInstance3D.new()
-	ground.mesh = _ground_mesh(240.0, 6.0)
+	ground.mesh = _ground_mesh(700.0, 6.0)
 	var gm := ShaderMaterial.new()
 	gm.shader = preload("res://shaders/painterly_surface.gdshader")
 	gm.set_shader_parameter("albedo_tex", preload("res://assets/textures/common/brush_noise.png"))
-	gm.set_shader_parameter("albedo_tint", Color(0.26, 0.24, 0.16))
+	gm.set_shader_parameter("albedo_tint", Color(0.2, 0.2, 0.13))
 	ground.material_override = gm
 	add_child(ground)
 	_cam("CamLineup", Vector3(-1.5, 15.5, 17.0), Vector3(-1.5, 0.6, -2.6), 50.0)

@@ -292,8 +292,11 @@ RPose rider_pose(int st, float ph, float aux, float var, float t) {
 			// пасётся: голова к траве, жуёт, изредка переступает
 			float g = fract(t / 21.0 + var);
 			float graze = smoothstep(0.08, 0.22, g) * (1.0 - smoothstep(0.82, 0.95, g));
-			p.neck_rot = mix(p.neck_rot, vec3(1.05, 0.15 * look, 0.0), graze);
-			p.head_rot = mix(p.head_rot, vec3(0.5 + 0.06 * sin(t * 7.0 + var * 9.0), 0.0, 0.0), graze);
+			// шея круто вниз, голова отвесно к траве (поворот головы складывается с шеей)
+			p.neck_rot = mix(p.neck_rot, vec3(1.72, 0.12 * look, 0.0), graze);
+			p.head_rot = mix(p.head_rot, vec3(-0.92 + 0.05 * sin(t * 7.0 + var * 9.0), 0.0, 0.0), graze);
+			p.body_rot.x += 0.05 * graze;
+			p.hoof_fl.z += 0.12 * graze;
 			float stp = win(fract(t / 4.7 + var * 3.0), 0.0, 0.14, 0.04) * graze;
 			p.hoof_fl += vec3(0.0, 0.1 * stp, 0.12 * stp * (1.0 - 2.0 * step(0.5, fract(t / 9.4 + var))));
 		}
@@ -388,7 +391,8 @@ Xf rider_bone(int part, RPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 	Xf B = rp_body(p);
 	vec3 fwd = B.b * vec3(0.0, 0.0, 1.0);
 	if (part == R_NECK) {
-		X = xf_mul(B, xf_piv(eul(p.neck_rot), RP_NECK, vec3(0.0)));
+		// шея гнётся: поворот растёт от основания (вес 0) к затылку (вес 1)
+		X = xf_mul(B, xf_piv(eul(p.neck_rot * smoothstep(0.0, 1.0, wgt)), RP_NECK, vec3(0.0)));
 	} else if (part == R_HEAD) {
 		X = xf_mul(xf_mul(B, xf_piv(eul(p.neck_rot), RP_NECK, vec3(0.0))), xf_piv(eul(p.head_rot), RP_HEAD, vec3(0.0)));
 		// уши шевелятся

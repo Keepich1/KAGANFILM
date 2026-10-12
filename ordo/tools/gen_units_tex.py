@@ -276,44 +276,57 @@ def kalpak(felt, felt_shade, brim, brim_light, seed=0, tassel="#b0392f"):
 # ---------------------------------------------------------------- кожа, металл, дерево
 
 def skin_region(skin, skin_dark, hair, beard=True, seed=0):
+    """Голова (левая половина: u — вокруг, лицо на u = 0.5; картинка вверх — темя), кисти, волосы.
+    Высоты черт подобраны под развёртку головы в gen_units._head (срез под шапкой на +48°)."""
     def p(c: Canvas, w, h):
         hw = int(w * 0.5)
-        c.underpaint([skin_dark, skin, _mix(skin, "#ffd6b0", 0.25)], cell=26, seed=seed)
-        c.strokes(500, [skin, _shade(skin, 0.9), _mix(skin, "#ffcfa8", 0.3)], length=(6, 16), width=(3, 6),
-                  angle=90, angle_jitter=40, alpha=(0.15, 0.35))
-        # лицо в центре головы (u 0.5): глаза, брови, нос, усы и борода
+        c.underpaint([_shade(skin, 0.92), skin, _mix(skin, "#ffd6b0", 0.15)], cell=30, seed=seed)
+        c.strokes(400, [skin, _shade(skin, 0.92), _mix(skin, "#ffcfa8", 0.25)], length=(6, 16), width=(3, 6),
+                  angle=90, angle_jitter=40, alpha=(0.12, 0.3))
         fx = hw * 0.5
-        # затылок и волосы под шапкой: края по u
-        for x0, x1 in ((0, hw * 0.24), (hw * 0.76, hw)):
-            c.rect(x0, 0, x1, h * 0.55, hair, 0.92)
-        c.rect(0, 0, hw, h * 0.16, hair, 0.9)
-        ey = h * 0.42
+        # затылок, виски и уши
+        for x0, x1 in ((0, hw * 0.2), (hw * 0.8, hw)):
+            c.rect(x0, 0, x1, h, hair, 0.94)
         for s in (-1, 1):
-            c.ellipse(fx + s * hw * 0.085, ey, hw * 0.06, h * 0.045, _shade(skin_dark, 0.85), 0.55)  # глазницы
-            c.line([(fx + s * hw * 0.04, ey - h * 0.06), (fx + s * hw * 0.13, ey - h * 0.075)], 4.5, hair, 0.95,
-                   seed=seed + s)  # брови
-            c.line([(fx + s * hw * 0.05, ey), (fx + s * hw * 0.11, ey)], 3.2, "#1d1410", 0.95, seed=seed + 2 + s)  # глаза
-            c.ellipse(fx + s * hw * 0.12, h * 0.56, hw * 0.05, h * 0.04, "#c86a50", 0.25)  # румянец
-        c.line([(fx, ey + h * 0.01), (fx + 2, h * 0.58)], 6, _shade(skin_dark, 0.9), 0.5, seed=seed + 7)  # нос (тень)
-        c.line([(fx - 3, ey + h * 0.01), (fx - 1, h * 0.56)], 3, _mix(skin, "#ffe0c0", 0.5), 0.6, seed=seed + 8)
+            c.polygon([(fx + s * hw * 0.2, 0), (fx + s * hw * 0.32, 0), (fx + s * hw * 0.32, h * 0.62),
+                       (fx + s * hw * 0.24, h * 0.5), (fx + s * hw * 0.19, h * 0.36)], hair, 0.9)
+            c.ellipse(fx + s * hw * 0.25, h * 0.42, hw * 0.03, h * 0.06, _shade(skin, 0.85), 0.9)  # ухо
+        c.rect(0, 0, hw, h * 0.24, hair, 0.85)
+        # лепка лица: тень под бровями (холодная), свет на скулах и лбу (тёплый)
+        for s in (-1, 1):
+            c.ellipse(fx + s * hw * 0.075, h * 0.35, hw * 0.06, h * 0.05, _mix(skin_dark, "#5a6a8a", 0.25), 0.55)
+            c.ellipse(fx + s * hw * 0.1, h * 0.47, hw * 0.05, h * 0.05, _mix(skin, "#ffb090", 0.35), 0.4)
+        c.ellipse(fx, h * 0.28, hw * 0.1, h * 0.04, _mix(skin, "#ffe6c8", 0.4), 0.45)
+        # брови и глаза (миндалины), нос — тень сбоку и свет на спинке
+        for s in (-1, 1):
+            c.line([(fx + s * hw * 0.03, h * 0.31), (fx + s * hw * 0.08, h * 0.295), (fx + s * hw * 0.125, h * 0.31)],
+                   4.0, hair, 0.95, seed=seed + s)
+            c.polygon([(fx + s * hw * 0.04, h * 0.35), (fx + s * hw * 0.075, h * 0.338), (fx + s * hw * 0.11, h * 0.35),
+                       (fx + s * hw * 0.075, h * 0.362)], "#1d1410", 0.95, wobble=0.3)
+        c.line([(fx + 3, h * 0.36), (fx + 4, h * 0.48)], 5, _shade(skin_dark, 0.9), 0.55, seed=seed + 7)
+        c.line([(fx - 2, h * 0.36), (fx - 2, h * 0.47)], 2.5, _mix(skin, "#ffe6c8", 0.55), 0.6, seed=seed + 8)
+        c.ellipse(fx, h * 0.495, hw * 0.035, h * 0.018, _shade(skin_dark, 0.8), 0.5)
         if beard:
-            c.line([(fx - hw * 0.1, h * 0.66), (fx, h * 0.62), (fx + hw * 0.1, h * 0.66)], 5, hair, 0.95,
-                   seed=seed + 9)  # усы
-            c.polygon([(fx - hw * 0.12, h * 0.72), (fx + hw * 0.12, h * 0.72), (fx + hw * 0.05, h * 0.95),
-                       (fx - hw * 0.05, h * 0.95)], hair, 0.92)  # борода
+            c.polygon([(fx - hw * 0.1, h * 0.56), (fx - hw * 0.02, h * 0.525), (fx, h * 0.535), (fx + hw * 0.02, h * 0.525),
+                       (fx + hw * 0.1, h * 0.56), (fx + hw * 0.08, h * 0.575), (fx, h * 0.55),
+                       (fx - hw * 0.08, h * 0.575)], hair, 0.95)  # усы
+            c.polygon([(fx - hw * 0.13, h * 0.55), (fx - hw * 0.07, h * 0.62), (fx + hw * 0.07, h * 0.62),
+                       (fx + hw * 0.13, h * 0.55), (fx + hw * 0.1, h * 0.8), (fx + hw * 0.03, h * 0.98),
+                       (fx - hw * 0.03, h * 0.98), (fx - hw * 0.1, h * 0.8)], hair, 0.93)  # борода
+            c.strokes(60, [_mix(hair, "#ffffff", 0.18), _shade(hair, 0.6)], length=(8, 16), width=(1.5, 3), angle=90,
+                      angle_jitter=12, alpha=(0.3, 0.6), region=(fx - hw * 0.1, h * 0.62, fx + hw * 0.1, h * 0.95))
+            c.line([(fx - hw * 0.035, h * 0.595), (fx + hw * 0.035, h * 0.595)], 2.5, "#5a2a22", 0.8, seed=seed + 10)
         else:
-            c.line([(fx - hw * 0.08, h * 0.66), (fx + hw * 0.08, h * 0.66)], 3, _shade(skin_dark, 0.8), 0.7,
-                   seed=seed + 9)
-        c.line([(fx - hw * 0.05, h * 0.7), (fx + hw * 0.05, h * 0.7)], 2.5, "#5a2a22", 0.7, seed=seed + 10)
-        # кисти: костяшки и тень
-        c.strokes(80, [_shade(skin, 0.8)], length=(6, 12), width=(2, 4), angle=0, alpha=(0.2, 0.4),
+            c.line([(fx - hw * 0.05, h * 0.59), (fx + hw * 0.05, h * 0.59)], 2.5, "#6a3028", 0.8, seed=seed + 10)
+        # кисти: тыльная сторона светлее, костяшки
+        c.strokes(80, [_shade(skin, 0.82)], length=(6, 12), width=(2, 4), angle=0, alpha=(0.2, 0.4),
                   region=(hw, 0, int(w * 0.75), h))
         # волосы/мех (тёмная полоса справа)
         c.rect(int(w * 0.75), 0, w, h, hair)
         c.strokes(200, [_mix(hair, "#ffffff", 0.15), _shade(hair, 0.7)], length=(10, 24), width=(2, 4), angle=90,
                   alpha=(0.3, 0.6), region=(int(w * 0.75), 0, w, h))
-        vgrad(c, 1.1, 0.82)
-        c.grain(0.02)
+        vgrad(c, 1.06, 0.84)
+        c.grain(0.018)
     return p
 
 
@@ -557,6 +570,21 @@ HORSE_COATS = [
 ]
 
 
+def _shade_rect(c: Canvas, rect, fn):
+    """Нарисованная лепка формы: умножает область на fn(u, v) (u, v — 0..1 внутри области)."""
+    x0, y0, x1, y1 = [int(round(t * c.ss)) for t in rect]
+    arr = np.asarray(c.img, dtype=np.float64).copy()
+    u = np.linspace(0, 1, x1 - x0)[None, :]
+    v = np.linspace(0, 1, y1 - y0)[:, None]
+    k = np.broadcast_to(fn(u, v), (y1 - y0, x1 - x0))
+    arr[y0:y1, x0:x1] *= k[..., None]
+    c._blend(arr)
+
+
+def _bump(x, c, w):
+    return np.exp(-((x - c) / w) ** 2)
+
+
 def horse_cell(coat, seed=0):
     body, dark, light, hair, legc, hoof, sock, dapple = coat
 
@@ -565,74 +593,84 @@ def horse_cell(coat, seed=0):
             f = HORSE_SUB[name]
             return (f[0] * w, f[1] * h, f[2] * w, f[3] * h)
 
-        # тело: u вокруг (0 верх, 0.25 правый бок, 0.5 живот, 0.75 левый бок), v (картинка вверх) — к груди
-        x0, y0, x1, y1 = sub("body")
+        # тело: u вокруг (0 хребет, 0.25 правый бок, 0.5 живот, 0.75 левый бок), картинка вверх — к груди
+        r = sub("body")
+        x0, y0, x1, y1 = r
         c.rect(x0, y0, x1, y1, body)
-        c.underpaint([dark, body, _mix(body, light, 0.35)], cell=40, seed=seed,
+        c.underpaint([_shade(body, 0.92), body, _mix(body, light, 0.12)], cell=56, seed=seed,
                      mask=_rect_mask(c, x0, y0, x1, y1))
-        xs = np.linspace(0, 1, c.w * c.ss)
-        lit = 0.62 + 0.55 * np.cos(xs * 2 * np.pi) ** 2 * (np.cos(xs * 2 * np.pi) > 0)  # спина светлее
-        lit += 0.18 * np.exp(-((xs - 0.25) / 0.1) ** 2) + 0.18 * np.exp(-((xs - 0.75) / 0.1) ** 2)  # округлость боков
-        arr = np.asarray(c.img, dtype=np.float64)
-        yy0, yy1 = int(y0 * c.ss), int(y1 * c.ss)
-        arr[yy0:yy1] = arr[yy0:yy1] * lit[None, :, None]
-        c._blend(arr)
-        # лепка мышц: светлые мазки на крупе и плече, тень за лопаткой
-        for vy, k in ((0.82, 1.0), (0.18, 1.0)):
-            for ux in (0.25, 0.75):
-                c.strokes(40, [_mix(body, light, 0.6)], length=(20, 40), width=(6, 12), angle=90, angle_jitter=40,
-                          alpha=(0.15, 0.3), region=(ux * w - 40, y0 + (1 - vy) * (y1 - y0) - 30,
-                                                     ux * w + 40, y0 + (1 - vy) * (y1 - y0) + 30))
-        c.strokes(500, [body, _mix(body, light, 0.25), _shade(body, 0.85)], length=(10, 26), width=(3, 6),
-                  angle=90, angle_jitter=12, alpha=(0.12, 0.3), region=(x0, y0, x1, y1))
+        c.strokes(700, [body, _mix(body, light, 0.3), _shade(body, 0.8)], length=(14, 34), width=(3, 7),
+                  angle=90, angle_jitter=10, alpha=(0.12, 0.32), region=r)
+        # лепка: светлая спина, тёмный живот, круглые мышцы плеча (v≈0.8) и крупа (v≈0.2)
+        def form(u, v):
+            top = np.cos(u * 2 * np.pi)                       # 1 на хребте, −1 на животе
+            k = 0.78 + 0.32 * np.clip(top, 0, 1) - 0.3 * np.clip(-top, 0, 1) ** 0.7
+            side = _bump(u, 0.25, 0.09) + _bump(u, 0.75, 0.09)
+            mus = (_bump(v, 0.18, 0.1) + _bump(v, 0.8, 0.09)) * side
+            k = k + 0.22 * mus - 0.1 * _bump(v, 0.62, 0.05) * side   # тень за лопаткой
+            return k
+        _shade_rect(c, r, form)
         if dapple:
-            for i in range(90):
+            for i in range(110):
                 cx, cy = c.rs.uniform(x0, x1), c.rs.uniform(y0, y1)
-                r = c.rs.uniform(5, 10)
-                c.ellipse(cx, cy, r, r * 0.8, _mix(body, "#ffffff", 0.45), 0.45)
-                c.ellipse(cx, cy, r * 1.4, r * 1.2, _shade(body, 0.85), 0.25)
-        # шея: u вокруг (0 гребень), v к голове; грива по гребню
-        for nm in ("neck", "head"):
-            x0, y0, x1, y1 = sub(nm)
-            c.rect(x0, y0, x1, y1, body)
-            c.strokes(160, [_mix(body, light, 0.3), _shade(body, 0.8)], length=(10, 24), width=(3, 6), angle=90,
-                      angle_jitter=20, alpha=(0.2, 0.4), region=(x0, y0, x1, y1))
-            # свет сверху (u≈0, 1) и тень снизу (u≈0.5)
-            for fx, a in ((0.5, 0.45),):
-                c.rect(x0 + (x1 - x0) * 0.32, y0, x0 + (x1 - x0) * 0.68, y1, dark, a)
-        x0, y0, x1, y1 = sub("neck")
-        for fx in (0.0, 1.0):
-            c.rect(x0 + (x1 - x0) * (fx - 0.1), y0, x0 + (x1 - x0) * (fx + 0.1), y1, hair, 0.95)
-        x0, y0, x1, y1 = sub("head")
-        # морда темнее к носу (низ картинки — морда), глаза по бокам, проточина
-        c.rect(x0, y1 - (y1 - y0) * 0.25, x1, y1, _shade(body, 0.55), 0.6)
-        for fx in (0.25, 0.75):
-            c.ellipse(x0 + (x1 - x0) * fx, y0 + (y1 - y0) * 0.3, 6, 5, "#120c0a", 0.95)
-            c.ellipse(x0 + (x1 - x0) * fx - 1, y0 + (y1 - y0) * 0.3 - 1, 2, 2, "#e8e0d8", 0.8)
-        if sock:
-            c.line([(x0 + (x1 - x0) * 0.0 + 4, y0), (x0 + 6, y1)], 10, sock, 0.9, seed=seed)
-            c.line([(x1 - 4, y0), (x1 - 6, y1)], 10, sock, 0.9, seed=seed + 1)
-        # ноги: u вокруг, v (картинка вверх) — вверх ноги; низ ног темнее (отметины)
-        x0, y0, x1, y1 = sub("legs")
+                rr = c.rs.uniform(5, 11)
+                c.ellipse(cx, cy, rr * 1.35, rr * 1.15, _shade(body, 0.86), 0.22)
+                c.ellipse(cx, cy, rr, rr * 0.8, _mix(body, "#ffffff", 0.4), 0.4)
+        # шея: u вокруг (0 гребень с гривой, 0.5 горло), картинка вниз — к голове
+        r = sub("neck")
+        x0, y0, x1, y1 = r
         c.rect(x0, y0, x1, y1, body)
-        c.strokes(200, [_mix(body, light, 0.3), _shade(body, 0.8)], length=(10, 26), width=(3, 6), angle=90,
-                  alpha=(0.2, 0.4), region=(x0, y0, x1, y1))
-        yb = y0 + (y1 - y0) * 0.55
-        c.rect(x0, yb, x1, y1, legc, 0.95)
+        c.strokes(200, [_mix(body, light, 0.25), _shade(body, 0.85)], length=(12, 28), width=(3, 6), angle=90,
+                  angle_jitter=20, alpha=(0.15, 0.35), region=r)
+        _shade_rect(c, r, lambda u, v: 0.8 + 0.3 * np.cos(u * 2 * np.pi) + 0.08 * (1 - v))
+        for fx in (0.0, 1.0):
+            c.rect(x0 + (x1 - x0) * (fx - 0.09), y0, x0 + (x1 - x0) * (fx + 0.09), y1, hair, 0.95)
+            c.strokes(60, [_mix(hair, "#ffffff", 0.18), _shade(hair, 0.6)], length=(14, 30), width=(2, 3),
+                      angle=60, angle_jitter=10, alpha=(0.4, 0.7),
+                      region=(x0 + (x1 - x0) * (fx - 0.1), y0, x0 + (x1 - x0) * (fx + 0.1), y1))
+        # голова: u вокруг (0 лоб, 0.5 нижняя челюсть), картинка вниз — к морде
+        r = sub("head")
+        x0, y0, x1, y1 = r
+        c.rect(x0, y0, x1, y1, body)
+        c.strokes(160, [_mix(body, light, 0.25), _shade(body, 0.85)], length=(10, 22), width=(3, 5), angle=90,
+                  angle_jitter=25, alpha=(0.15, 0.35), region=r)
+        _shade_rect(c, r, lambda u, v: (0.82 + 0.25 * np.cos(u * 2 * np.pi)) * (1.05 - 0.45 * np.clip(v - 0.62, 0, 1) / 0.38))
+        for fx in (0.25, 0.75):
+            ex, ey = x0 + (x1 - x0) * fx, y0 + (y1 - y0) * 0.24
+            c.ellipse(ex, ey + 2, 9, 6, _shade(body, 0.6), 0.5)
+            c.ellipse(ex, ey, 6, 4.5, "#120c0a", 0.95)
+            c.ellipse(ex - 1.5, ey - 1.5, 1.8, 1.5, "#e8e0d8", 0.85)
+            c.ellipse(ex, y0 + (y1 - y0) * 0.92, 4, 3, "#0e0a08", 0.8)  # ноздри
         if sock:
-            c.rect(x0, y0 + (y1 - y0) * 0.75, x1, y1, sock, 0.95)
+            c.line([(x0 + 5, y0 + 4), (x0 + 6, y1)], 10, sock, 0.9, seed=seed)
+            c.line([(x1 - 5, y0 + 4), (x1 - 6, y1)], 10, sock, 0.9, seed=seed + 1)
+        # ноги: верх — цвет корпуса, низ (пясть, бабки) — отметины; лепка вдоль
+        r = sub("legs")
+        x0, y0, x1, y1 = r
+        c.rect(x0, y0, x1, y1, body)
+        c.strokes(220, [_mix(body, light, 0.25), _shade(body, 0.8)], length=(10, 26), width=(3, 6), angle=90,
+                  alpha=(0.2, 0.4), region=r)
+        yb = y0 + (y1 - y0) * 0.58
+        c.rect(x0, yb, x1, y1, legc, 0.92)
+        c.strokes(80, [_mix(legc, "#ffffff", 0.12), _shade(legc, 0.7)], length=(10, 20), width=(2, 4), angle=90,
+                  alpha=(0.25, 0.5), region=(x0, yb, x1, y1))
+        if sock:
+            c.rect(x0, y0 + (y1 - y0) * 0.8, x1, y1, sock, 0.95)
+        _shade_rect(c, r, lambda u, v: 0.85 + 0.2 * np.cos(u * 2 * np.pi) - 0.12 * v)
         # грива и хвост
-        x0, y0, x1, y1 = sub("hair")
+        r = sub("hair")
+        x0, y0, x1, y1 = r
         c.rect(x0, y0, x1, y1, hair)
-        c.strokes(300, [_mix(hair, "#ffffff", 0.2), _shade(hair, 0.6), hair], length=(20, 50), width=(2, 4),
-                  angle=90, angle_jitter=6, alpha=(0.35, 0.7), region=(x0, y0, x1, y1))
-        x0, y0, x1, y1 = sub("hoof")
-        c.rect(x0, y0, x1, y1, hoof)
+        c.strokes(360, [_mix(hair, "#ffffff", 0.22), _shade(hair, 0.55), hair], length=(20, 50), width=(2, 4),
+                  angle=90, angle_jitter=6, alpha=(0.35, 0.7), region=r)
+        _shade_rect(c, r, lambda u, v: 0.8 + 0.3 * np.cos(u * 2 * np.pi))
+        r = sub("hoof")
+        c.rect(*r, hoof)
         c.strokes(60, [_mix(hoof, "#ffffff", 0.15)], length=(10, 20), width=(2, 4), angle=90, alpha=(0.3, 0.5),
-                  region=(x0, y0, x1, y1))
+                  region=r)
         x0, y0, x1, y1 = sub("eye")
         c.rect(x0, y0, x1, y1, "#3a2a20")
-        c.grain(0.02)
+        c.grain(0.018)
     return p
 
 
@@ -695,8 +733,9 @@ def build_kokand(path):
     for i, coat in enumerate(HORSE_COATS):
         region(img, A, f"coat{i}", horse_cell(coat, seed=10 + i), seed=10 + i)
     # чалмы: белая, белая в бирюзовую полоску, кремовая, белая в золотую полоску
-    hats = [("#f2eee4", "#b8b0a0", None, "#1f6e5a"), ("#f0ece2", "#b0a898", "#2aa39a", "#8e1f2f"),
-            ("#e8dcc0", "#a8987a", None, "#17463a"), ("#f4f0e8", "#b4ac9c", "#c9a24a", "#2f8f74")]
+    # кулах всегда бирюзовый/изумрудный (цвет стороны виден сверху), чалма — слоновая кость, не белая
+    hats = [("#e6dfcf", "#a39a87", None, "#2f8f74"), ("#e3dccc", "#a19884", "#2aa39a", "#1f7a5c"),
+            ("#d9ccb0", "#9b8b6f", None, "#2aa39a"), ("#e8e2d4", "#a69c8a", "#c9a24a", "#2f8f74")]
     for i, (cl, sh, st, cap) in enumerate(hats):
         region(img, A, f"hat{i}", turban(cl, sh, st, cap, gold, seed=20 + i), seed=20 + i)
     region(img, A, "skin", skin_region(MATERIAL["skin"], MATERIAL["skin_dark"], "#1e1612", True, seed=30), seed=30)
