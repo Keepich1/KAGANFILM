@@ -5,8 +5,8 @@ render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabl
 
 uniform vec4 hot : source_color = vec4(1.0, 0.86, 0.5, 1.0);
 uniform vec4 cool : source_color = vec4(1.0, 0.36, 0.1, 1.0);
-uniform float intensity = 3.0;
-uniform float width = 0.03;
+uniform float intensity = 6.0;
+uniform float width = 0.012;
 
 varying float v_age;
 

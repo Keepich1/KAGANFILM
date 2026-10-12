@@ -81,6 +81,8 @@ void fragment() {
 	float s2 = smoothstep(lit_edge - bw, lit_edge + bw, ndl);
 	vec3 col = mix(col_shade.rgb, col_mid.rgb * mix(vec3(1.0), sun_color, 0.35), s1);
 	col = mix(col, col_lit.rgb * sun_color * sun_energy, s2);
+	// мазки кисти видны и внутри заливки тона
+	col *= 0.9 + 0.2 * t.b;
 	// низ клуба темнее (небо светит сверху), верх светлее
 	col *= mix(0.72, 1.06, smoothstep(-0.6, 0.6, nw.y));
 	// порог плотности: клуб тает с края

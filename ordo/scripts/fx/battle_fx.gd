@@ -55,6 +55,7 @@ var _last_pop := -1.0
 var _dust_acc := PackedFloat32Array()
 var _spark_budget := 0
 var _low := false
+var _clock := 0.0           # своё время эффектов (идёт со скоростью боя)
 var _puff_mats: Array[ShaderMaterial] = []
 var _mote_mats: Array[ShaderMaterial] = []
 var _ray_mat: ShaderMaterial
@@ -67,7 +68,7 @@ func _ready() -> void:
 	var k := 0.5 if _low else 1.0
 	smoke = _make_puffs("Smoke", int(1100 * k), 11.0, ATLAS_SMOKE, Vector2(4, 4), {
 		"drag": 2.1, "buoyancy": 0.2, "wind_scale": 0.55, "grow": 3.4, "spin": 0.1},
-		{"col_lit": Color(0.8, 0.73, 0.63), "col_mid": Color(0.47, 0.45, 0.5), "col_shade": Color(0.22, 0.3, 0.4),
+		{"col_lit": Color(0.8, 0.73, 0.63), "col_mid": Color(0.47, 0.45, 0.5), "col_shade": Color(0.25, 0.3, 0.4),
 		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.7, "opacity": 0.97, "stretch": 1.45,
 		"age_thin": 0.35, "glow_strength": 0.85})
 	dust = _make_puffs("Dust", int(1600 * k), 4.5, ATLAS_DUST, Vector2(4, 2), {
@@ -221,7 +222,7 @@ func _on_volley(s: int, _rank: int, center: Vector3, count: int) -> void:
 
 
 func _pop_light(pos: Vector3) -> void:
-	var t := Time.get_ticks_msec() / 1000.0 if scenario == null else scenario.time
+	var t := _clock
 	# соседние выстрелы делят одну вспышку света
 	if t - _last_pop < 0.05:
 		return
@@ -320,7 +321,8 @@ func _update_sun() -> void:
 
 
 func _update_lights(dt: float) -> void:
-	var t := scenario.time if scenario else 0.0
+	_clock += dt
+	var t := _clock
 	for i in _lights.size():
 		var l := _lights[i]
 		if not l.visible:

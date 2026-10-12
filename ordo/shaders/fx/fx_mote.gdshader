@@ -12,6 +12,7 @@ uniform vec4 tint_shade : source_color = vec4(0.45, 0.52, 0.62, 1.0);
 uniform float glow = 2.2;            // вспышка против солнца
 uniform float fade_dist = 70.0;      // дальше — растворяется
 uniform float alpha_cut = 0.45;
+uniform float near_hide = 2.5;       // у самой камеры пылинку не рисуем (была бы огромной)
 
 varying float v_age;
 varying float v_cell;
@@ -40,7 +41,7 @@ void fragment() {
 	vec3 c = t.rgb * mix(tint_shade.rgb, tint_lit.rgb * sun_color, 0.55 + 0.45 * back);
 	c += t.rgb * sun_color * back * glow;
 	float life = smoothstep(0.0, 0.08, v_age) * (1.0 - smoothstep(0.85, 1.0, v_age));
-	float far = 1.0 - smoothstep(fade_dist * 0.6, fade_dist, v_dist);
+	float far = (1.0 - smoothstep(fade_dist * 0.6, fade_dist, v_dist)) * step(near_hide, v_dist);
 	ALBEDO = c;
 	ALPHA = t.a * life * far;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cut;

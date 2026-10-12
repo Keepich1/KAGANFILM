@@ -3,7 +3,7 @@ shader_type particles;
 
 uniform float gravity = 9.0;
 uniform float drag = 2.5;
-uniform float trail = 0.035;
+uniform float trail = 0.07;
 
 void start() {
 	if (RESTART_CUSTOM) {
