@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bys4ebtrkwcdw"
+path="res://.godot/imported/painterly_kuwahara_half.glsl-9d443ef060dd5e11b4182a12b197dd2a.res"
+
+[deps]
+
+source_file="res://shaders/post/painterly_kuwahara_half.glsl"
+dest_files=["res://.godot/imported/painterly_kuwahara_half.glsl-9d443ef060dd5e11b4182a12b197dd2a.res"]
+
+[params]
+

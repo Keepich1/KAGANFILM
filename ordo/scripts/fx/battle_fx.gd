@@ -8,7 +8,8 @@ extends Node3D
 ## против солнца светятся края. Сносятся ветром ordo_wind, долго висят и тают с края.
 ## События приходят от сценария (ScenarioClash): shot, volley, impact, charge_hit, melee_hit,
 ## death, war_cry; пыль за скачущими конями — каждый кадр по скорости из симуляции.
-## Скорость эффектов следует скорости боя (+/−, пауза). Качество low — вдвое меньше частиц.
+## Скорость эффектов следует скорости боя (+/−, пауза). Частиц по уровню качества
+## (WorldQuality.preset().fx): «Среднее» — ×0,75, «Низкое» — вдвое меньше. Время кадра — PerfMeter «fx».
 
 const ATLAS_SMOKE := preload("res://assets/textures/fx/smoke_billow.png")
 const ATLAS_DUST := preload("res://assets/textures/fx/dust_puff.png")
@@ -54,7 +55,7 @@ var _light_i := 0
 var _last_pop := -1.0
 var _dust_acc := PackedFloat32Array()
 var _spark_budget := 0
-var _low := false
+var _fx_k := 1.0            # доля частиц по уровню качества
 var _clock := 0.0           # своё время эффектов (идёт со скоростью боя)
 var _puff_mats: Array[ShaderMaterial] = []
 var _mote_mats: Array[ShaderMaterial] = []
@@ -64,8 +65,9 @@ var _ray_mat: ShaderMaterial
 func _ready() -> void:
 	_rng = BattleRng.new(fx_seed)
 	var ordo := get_node_or_null("/root/Ordo")
-	_low = ordo != null and ordo.has_method("is_low") and ordo.is_low()
-	var k := 0.5 if _low else 1.0
+	var q := String(ordo.get("quality")) if ordo != null and ordo.get("quality") != null else "high"
+	_fx_k = float(WorldQuality.preset(q).get("fx", 1.0))
+	var k := _fx_k
 	smoke = _make_puffs("Smoke", int(1100 * k), 11.0, ATLAS_SMOKE, Vector2(4, 4), {
 		"drag": 2.1, "buoyancy": 0.2, "wind_scale": 0.55, "grow": 3.4, "spin": 0.1},
 		{"col_lit": Color(0.86, 0.76, 0.62), "col_mid": Color(0.5, 0.46, 0.47), "col_shade": Color(0.2, 0.31, 0.38),
@@ -293,6 +295,12 @@ func _on_war_cry(_u: int, pos: Vector3) -> void:
 # ================================================================= каждый кадр
 
 func _process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	_frame(delta)
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
+
+
+func _frame(delta: float) -> void:
 	_spark_budget = 40
 	var scale := 1.0
 	if scenario:
@@ -369,7 +377,7 @@ func _gallop_dust(dt: float) -> void:
 		var sp := sqrt(vx * vx + vz * vz)
 		if sp < 4.0:
 			continue
-		_dust_acc[u] += (sp - 4.0) * dust_rate * dt * (0.5 if _low else 1.0)
+		_dust_acc[u] += (sp - 4.0) * dust_rate * dt * _fx_k
 		while _dust_acc[u] >= 1.0:
 			_dust_acc[u] -= 1.0
 			var f := Vector3(vx, 0.0, vz) / sp

@@ -187,11 +187,27 @@ var general := PackedInt32Array([-1, -1])   # юнит-полководец ст
 var _head := PackedInt32Array()
 var _next := PackedInt32Array()
 
+# --- ускорители (только скорость; результат шага тот же бит в бит, test_sim сверяет сумму)
+# стороны в клетках хэша и в блоках 4×4 клетки (бит 1 << сторона) — поиск врага пропускает пустое
+const _BLK_SHIFT := 2
+const _BLK_N := _GRID_N >> _BLK_SHIFT
+var _cmask := PackedInt32Array()
+var _bmask := PackedInt32Array()
+# места в строю: смещения считаются один раз на отряд, пока не сменились строй и ширина
+var _so_x := PackedFloat32Array()
+var _so_y := PackedFloat32Array()
+var _so_key := PackedInt64Array()
+# суша в клетке хэша: 0 — не проверено, 1 — точно суша (вода не ближе 0,05 м по высоте), 2 — может быть вода
+var _dry := PackedByteArray()
+
 
 func _init(p_seed := 1) -> void:
 	rng = BattleRng.new(p_seed)
 	_head.resize(_GRID_N * _GRID_N)
 	_head.fill(-1)
+	_cmask.resize(_GRID_N * _GRID_N)
+	_bmask.resize(_BLK_N * _BLK_N)
+	_dry.resize(_GRID_N * _GRID_N)
 
 
 # ================================================================= создание
@@ -324,6 +340,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float) -> int:
 	sq_volley_seen.append(-1)
 	sq_cry_t.append(-1000.0)
 	sq_single.append(0)
+	_so_key.append(-1)
 	return s
 
 
@@ -352,6 +369,9 @@ func _new_unit(s: int, type_i: int, role: int, slot: int) -> int:
 	u_rams.append(0)
 	u_fall.append(0)
 	u_var.append(BattleRng.hash01(u * 7919 + 13))
+	_so_x.append(0.0)
+	_so_y.append(0.0)
+	_so_key[s] = -1
 	return u
 
 
@@ -519,12 +539,21 @@ func front_distance(s: int, t: int) -> float:
 
 ## Мировая точка места юнита в строю (x, z)
 func slot_point(s: int, u: int) -> Vector2:
-	var o := _slot_offset(s, u)
+	# смещение из кэша отряда (те же числа, что дал бы _slot_offset)
+	var key := (sq_form[s] * 4096 + sq_files[s]) * 65536 + sq_members[s].size()
+	if _so_key[s] != key:
+		_so_key[s] = key
+		for m in sq_members[s]:
+			var om := _slot_offset(s, m)
+			_so_x[m] = om.x
+			_so_y[m] = om.y
+	var ox := _so_x[u]
+	var oy := _so_y[u]
 	var h := sq_h[s]
 	var fx := sin(h)
 	var fz := cos(h)
 	# боковая ось: вправо от курса
-	return Vector2(sq_x[s] - fz * o.x + fx * o.y, sq_z[s] + fx * o.x + fz * o.y)
+	return Vector2(sq_x[s] - fz * ox + fx * oy, sq_z[s] + fx * ox + fz * oy)
 
 
 ## Смещение места в строю: x — вбок (вправо), y — вперёд (в шеренгах — назад, минус)
@@ -603,20 +632,63 @@ func step() -> void:
 
 func _rebuild_hash() -> void:
 	_head.fill(-1)
+	_cmask.fill(0)
+	_bmask.fill(0)
 	if _next.size() < n:
 		_next.resize(n)
 	for u in n:
 		if u_life[u] != Life.ALIVE:
 			continue
-		var c := _cell(u_x[u], u_z[u])
+		# то же, что _cell(); заодно отмечаем сторону в клетке и в блоке
+		var cx := clampi(int((u_x[u] - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
+		var cz := clampi(int((u_z[u] - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
+		var c := cz * _GRID_N + cx
 		_next[u] = _head[c]
 		_head[c] = u
+		var bit := 1 << u_side[u]
+		_cmask[c] |= bit
+		_bmask[(cz >> _BLK_SHIFT) * _BLK_N + (cx >> _BLK_SHIFT)] |= bit
 
 
 func _cell(x: float, z: float) -> int:
 	var cx := clampi(int((x - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 	var cz := clampi(int((z - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 	return cz * _GRID_N + cx
+
+
+## Точно суша: в клетке хэша (4 м) нет высот ниже воды + 0,05 м (тогда Terrain.is_water — false).
+## Проверка клетки — один раз, по узлам сетки высот с запасом в узел (за краем карты — край).
+func _surely_dry(x: float, z: float) -> bool:
+	var c := _cell(x, z)
+	var d := _dry[c]
+	if d == 0:
+		d = 2
+		var hs := Terrain.heights()
+		var hn := Terrain.size()
+		if hn > 1:
+			var sp := Terrain.spacing()
+			var o := Terrain.origin()
+			var cx := c % _GRID_N
+			var cz := c / _GRID_N
+			var wx := _GRID_ORIGIN + cx * _CELL
+			var wz := _GRID_ORIGIN + cz * _CELL
+			var i0 := clampi(floori((wx - o.x) / sp) - 1, 0, hn - 1)
+			var i1 := clampi(ceili((wx + _CELL - o.x) / sp) + 1, 0, hn - 1)
+			var j0 := clampi(floori((wz - o.y) / sp) - 1, 0, hn - 1)
+			var j1 := clampi(ceili((wz + _CELL - o.y) / sp) + 1, 0, hn - 1)
+			# точка за краем карты берёт высоту края — край тоже в проверке
+			if cx == 0: i0 = 0
+			if cz == 0: j0 = 0
+			if cx == _GRID_N - 1: i1 = hn - 1
+			if cz == _GRID_N - 1: j1 = hn - 1
+			var lo := INF
+			for j in range(j0, j1 + 1):
+				for i in range(i0, i1 + 1):
+					lo = minf(lo, hs[j * hn + i])
+			if lo > Terrain.water_level() - 0.05 + 0.01:
+				d = 1
+		_dry[c] = d
+	return d == 1
 
 
 ## Ближайший живой враг юнита u в радиусе r (−1 — нет). Только впереди, если front > −1.
@@ -627,13 +699,34 @@ func nearest_enemy(u: int, r: float, front := -2.0) -> int:
 	var cr := ceili(r / _CELL)
 	var cx := clampi(int((x - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 	var cz := clampi(int((z - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
+	var x0 := maxi(cx - cr, 0)
+	var x1 := mini(cx + cr, _GRID_N - 1)
+	var z0 := maxi(cz - cr, 0)
+	var z1 := mini(cz + cr, _GRID_N - 1)
+	var foe := ~(1 << side)
+	# в блоках вокруг нет чужих — искать нечего (тот же ответ −1, без обхода клеток)
+	var any := false
+	for bz in range(z0 >> _BLK_SHIFT, (z1 >> _BLK_SHIFT) + 1):
+		for bx in range(x0 >> _BLK_SHIFT, (x1 >> _BLK_SHIFT) + 1):
+			if _bmask[bz * _BLK_N + bx] & foe != 0:
+				any = true
+				break
+		if any:
+			break
+	if not any:
+		return -1
+	if cr >= 3:
+		return _nearest_rings(u, r, front, cx, cz, x0, x1, z0, z1)
 	var best := -1
 	var bd := r * r
 	var fx := sin(u_h[u])
 	var fz := cos(u_h[u])
-	for gz in range(maxi(cz - cr, 0), mini(cz + cr, _GRID_N - 1) + 1):
-		for gx in range(maxi(cx - cr, 0), mini(cx + cr, _GRID_N - 1) + 1):
-			var v := _head[gz * _GRID_N + gx]
+	for gz in range(z0, z1 + 1):
+		for gx in range(x0, x1 + 1):
+			var c := gz * _GRID_N + gx
+			if _cmask[c] & foe == 0:
+				continue  # в клетке только свои
+			var v := _head[c]
 			while v >= 0:
 				if u_side[v] != side:
 					var dx := u_x[v] - x
@@ -644,6 +737,54 @@ func nearest_enemy(u: int, r: float, front := -2.0) -> int:
 							bd = d2
 							best = v
 				v = _next[v]
+	return best
+
+
+## Тот же поиск для большого радиуса (погоня, свалка): клетки кольцами от юнита, стоп, когда
+## кольцо заведомо дальше лучшего. Ответ тот же, что у обхода прямоугольника по строкам:
+## ближайший по d2, при равном d2 — тот, кого обход по строкам встретил бы первым
+## (клетка с меньшим номером, в клетке — больший номер юнита: списки идут по убыванию).
+func _nearest_rings(u: int, r: float, front: float, cx: int, cz: int, x0: int, x1: int, z0: int, z1: int) -> int:
+	var x := u_x[u]
+	var z := u_z[u]
+	var side := u_side[u]
+	var foe := ~(1 << side)
+	var best := -1
+	var best_c := 0
+	var bd := r * r
+	var fx := sin(u_h[u])
+	var fz := cos(u_h[u])
+	var kmax := maxi(maxi(cx - x0, x1 - cx), maxi(cz - z0, z1 - cz))
+	for k in kmax + 1:
+		if best >= 0 and k >= 2:
+			# до клеток кольца k не ближе (k − 1) клеток; запас 1 см на округление
+			var gap := (k - 1) * _CELL - 0.01
+			if gap * gap > bd:
+				break
+		for gz in range(maxi(cz - k, z0), mini(cz + k, z1) + 1):
+			# верхний и нижний ряды кольца — целиком, средние — только две крайние клетки
+			var full := gz == cz - k or gz == cz + k
+			var gx := maxi(cx - k, x0) if full else cx - k
+			var gx_end := mini(cx + k, x1) if full else cx + k
+			var gstep := 1 if full else 2 * k
+			while gx <= gx_end:
+				var c := gz * _GRID_N + gx
+				var inside := gx >= x0 and gx <= x1
+				gx += gstep
+				if not inside or _cmask[c] & foe == 0:
+					continue
+				var v := _head[c]
+				while v >= 0:
+					if u_side[v] != side:
+						var dx := u_x[v] - x
+						var dz := u_z[v] - z
+						var d2 := dx * dx + dz * dz
+						if d2 < bd or (d2 == bd and best >= 0 and (c < best_c or (c == best_c and v > best))):
+							if front <= -2.0 or (dx * fx + dz * fz) > front * sqrt(d2):
+								bd = d2
+								best = v
+								best_c = c
+					v = _next[v]
 	return best
 
 
@@ -931,7 +1072,7 @@ func _units_think() -> void:
 		var ti := u_type[u]
 		var mounted := t_flags[ti] & UnitStats.MOUNTED != 0
 		var vmax := t_speed[ti] * _tired(s)
-		if Terrain.is_water(u_x[u], u_z[u]):
+		if not _surely_dry(u_x[u], u_z[u]) and Terrain.is_water(u_x[u], u_z[u]):
 			vmax *= 0.55
 		var x := u_x[u]
 		var z := u_z[u]
@@ -1298,6 +1439,9 @@ func _integrate() -> void:
 
 ## Расталкивание: никто не стоит друг в друге (пространственный хэш, одна итерация)
 func _separate() -> void:
+	var rmax := 0.0
+	for r in t_radius:
+		rmax = maxf(rmax, r)
 	for u in n:
 		if u_life[u] != Life.ALIVE:
 			continue
@@ -1305,15 +1449,26 @@ func _separate() -> void:
 		var z := u_z[u]
 		var ru := t_radius[u_type[u]]
 		var mu := t_mass[u_type[u]]
+		var lim := ru + rmax
+		var xu := x
+		var zu := z
 		var cx := clampi(int((x - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 		var cz := clampi(int((z - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 		for gz in range(maxi(cz - 1, 0), mini(cz + 1, _GRID_N - 1) + 1):
 			for gx in range(maxi(cx - 1, 0), mini(cx + 1, _GRID_N - 1) + 1):
+				# списки клеток идут по убыванию номера: после v <= u пар (v > u) в клетке больше нет
 				var v := _head[gz * _GRID_N + gx]
-				while v >= 0:
-					if v > u and u_life[v] == Life.ALIVE:
-						var dx := u_x[v] - u_x[u]
-						var dz := u_z[v] - u_z[u]
+				while v > u:
+					# дальше суммы радиусов по x или z — не касаются (|dx| ≥ rr ⇒ d2 ≥ rr²): не считаем
+					var dx := u_x[v] - xu
+					if dx >= lim or dx <= -lim:
+						v = _next[v]
+						continue
+					var dz := u_z[v] - zu
+					if dz >= lim or dz <= -lim:
+						v = _next[v]
+						continue
+					if u_life[v] == Life.ALIVE:
 						var rr := ru + t_radius[u_type[v]]
 						var d2 := dx * dx + dz * dz
 						if d2 < rr * rr:
@@ -1330,6 +1485,8 @@ func _separate() -> void:
 							u_z[u] -= dz * over * ku
 							u_x[v] += dx * over * kv
 							u_z[v] += dz * over * kv
+							xu = u_x[u]
+							zu = u_z[u]
 					v = _next[v]
 
 

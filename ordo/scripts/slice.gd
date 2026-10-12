@@ -8,8 +8,11 @@ extends Node3D
 ##
 ## Клавиши (ТЗ 10): камера — WASD, края экрана, колесо, Q/E, средняя кнопка; 1–4 — виды;
 ## C — кинокамера / стратегия; P — пауза; + / − — скорость; R — бой заново; F1 — подсказка;
-## F2 — качество «Высокое» / «Низкое» (ТЗ 11.7); F9 — нагрузочная проверка: +1000 / +3000 солдат
-## на южной части луга и счётчик кадров (выкл → 1000 → 3000 → выкл).
+## F2 — качество «Высокое» → «Среднее» → «Низкое» (ТЗ 11.7, выбор запоминается);
+## F9 — нагрузочная проверка: +1000 / +3000 солдат на южной части луга и экран скорости
+## (выкл → 1000 → 3000 → выкл): кадры, шаг боя, толпа, эффекты, отрисовка на процессоре
+## и видеокарте, вызовы отрисовки, солдаты, качество и разрешение 3D. --perf — экран без нагрузки,
+## --perf_log — те же числа раз в секунду в консоль.
 ##
 ## Кадры героев — камеры Cam* в узле Cameras (tools/shot.sh … --cam=CamRTS --at=19).
 ## Серия кадров за один прогон:  -- --hero=9.6@CamVolley,14@CamImpact --hero_out=/abs/dir [--hero_prefix=p_]
@@ -36,7 +39,13 @@ var _fast := false
 var _shot_at := -1.0
 var _frames := 0
 var _help: PanelContainer
+var _stats_panel: PanelContainer
 var _stats: Label
+var _notice: Label
+var _notice_t := 0.0
+var _perf_on := false
+var _perf_log := false
+var _log_t := 0.0
 var _help_t := 10.0
 var _stress_level := 0
 var _stress: Node3D
@@ -51,8 +60,8 @@ const HELP_TEXT := """Управление (ТЗ 10)
 C        кинокамера ↔ камера стратегии
 ЛКМ      выбрать отряд (двойной щелчок — все такие)
 P        пауза        + / −  скорость боя        R  бой заново
-F2       качество: «Высокое» / «Низкое»
-F9       нагрузка: +1000 → +3000 солдат → выкл (с счётчиком кадров)
+F2       качество: «Высокое» → «Среднее» → «Низкое» (запоминается)
+F9       нагрузка: +1000 → +3000 солдат → выкл (с экраном скорости)
 F1       показать / скрыть эту подсказку"""
 
 
@@ -75,6 +84,9 @@ func _ready() -> void:
 			_hero_out = _ordo.arg("hero_out", ProjectSettings.globalize_path("user://"))
 			_hero_prefix = _ordo.arg("hero_prefix", "")
 	_update_fast()
+	if _ordo:
+		_perf_log = _ordo.has_arg("perf_log")
+		_show_perf(_ordo.has_arg("perf"))
 	# нагрузка сразу при запуске: --stress=1 (+1000) или --stress=2 (+3000)
 	if _ordo and _ordo.has_arg("stress"):
 		for i in clampi(int(_ordo.arg("stress")), 0, STRESS_LEVELS.size() - 1):
@@ -157,20 +169,41 @@ func _build_hud() -> void:
 	_help.add_child(l)
 	layer.add_child(_help)
 	_help.visible = not _quiet
+	# экран скорости (F9): тёмная подложка — читается на любом фоне
+	_stats_panel = PanelContainer.new()
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.07, 0.05, 0.035, 0.8)
+	ps.border_color = Color(0.72, 0.56, 0.3, 0.75)
+	ps.set_border_width_all(1)
+	ps.set_corner_radius_all(3)
+	ps.set_content_margin_all(10)
+	_stats_panel.add_theme_stylebox_override("panel", ps)
+	_stats_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stats_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_stats_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_stats_panel.offset_right = -16.0
+	_stats_panel.offset_top = 16.0
 	_stats = Label.new()
-	_stats.add_theme_font_size_override("font_size", 18)
-	_stats.add_theme_color_override("font_color", Color(1.0, 0.93, 0.78))
-	_stats.add_theme_color_override("font_shadow_color", Color(0.05, 0.03, 0.02, 0.95))
-	_stats.add_theme_constant_override("shadow_offset_x", 1)
-	_stats.add_theme_constant_override("shadow_offset_y", 1)
-	_stats.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_stats.offset_left = -440.0
-	_stats.offset_right = -20.0
-	_stats.offset_top = 16.0
-	_stats.offset_bottom = 90.0
-	_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_stats.visible = false
-	layer.add_child(_stats)
+	_stats.add_theme_font_size_override("font_size", 16)
+	_stats.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
+	_stats.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.02, 1.0))
+	_stats.add_theme_constant_override("outline_size", 3)
+	_stats.add_theme_constant_override("line_spacing", 1)
+	_stats_panel.add_child(_stats)
+	_stats_panel.visible = false
+	layer.add_child(_stats_panel)
+	# короткая надпись (смена качества F2)
+	_notice = Label.new()
+	_notice.add_theme_font_size_override("font_size", 22)
+	_notice.add_theme_color_override("font_color", Color(1.0, 0.94, 0.82))
+	_notice.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.02, 1.0))
+	_notice.add_theme_constant_override("outline_size", 5)
+	_notice.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_notice.offset_top = 24.0
+	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_notice.visible = false
+	layer.add_child(_notice)
 	# своя подсказка боя не нужна — её заменяет эта
 	var hud := battle.get_node_or_null("HUD")
 	if hud and hud.get("show_help") != null:
@@ -185,15 +218,83 @@ func _update_hud(delta: float) -> void:
 		_help_t -= delta
 		if _help_t <= 0.0:
 			_help.visible = false
-	if _stats.visible:
-		var units: int = battle.scenario.sim.n if battle.scenario and battle.scenario.sim else 0
-		if _stress and _stress.get_node_or_null("Scenario"):
-			var ss := _stress.get_node("Scenario") as ScenarioClash
-			if ss.sim:
-				units += ss.sim.n
-		_stats.text = "Кадров в секунду: %d\nСолдат в бою: %d   (F9 — дальше)\nВызовов отрисовки: %d" % [
-			Engine.get_frames_per_second(), units,
-			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))]
+	if _notice.visible:
+		_notice_t -= delta
+		if _notice_t <= 0.0:
+			_notice.visible = false
+	PerfMeter.add_frame(&"frame", delta * 1000.0)
+	if not (_perf_on or _perf_log):
+		return
+	var rid := get_viewport().get_viewport_rid()
+	PerfMeter.add_frame(&"render_cpu", RenderingServer.viewport_get_measured_render_time_cpu(rid))
+	PerfMeter.add_frame(&"render_gpu", RenderingServer.viewport_get_measured_render_time_gpu(rid))
+	if _perf_on:
+		_stats.text = _perf_text(false)
+	if _perf_log:
+		_log_t += delta
+		if _log_t >= 1.0:
+			_log_t = 0.0
+			print("[скорость] ", _perf_text(true))
+
+
+## Экран скорости: что сколько стоит за кадр (среднее за секунду, в скобках — худшее)
+func _perf_text(one_line: bool) -> String:
+	var units := 0
+	var threaded := false
+	var stress_sc: ScenarioClash = _stress.get_node_or_null("Scenario") as ScenarioClash if _stress else null
+	for sc: ScenarioClash in [battle.scenario, stress_sc]:
+		if sc and sc.sim:
+			units += sc.sim.n
+	# шаг боя: нагрузочного (F9), если он есть, иначе основного
+	var step_avg := PerfMeter.avg(&"sim")
+	var step_max := PerfMeter.peak(&"sim")
+	if _stress:
+		var v := _stress.get_node_or_null("View") as BattleView
+		if v != null and v.stepper() != null:
+			threaded = v.stepper().threaded
+			step_avg = v.stepper().step_avg
+			step_max = v.stepper().step_max
+	var vp := get_viewport()
+	var q: String = _ordo.quality if _ordo else "high"
+	var sim_where := " · в фоне, ожидание %s" % _ms(PerfMeter.avg(&"sim_wait")) if threaded else " · главный поток"
+	var lines := PackedStringArray([
+		"%d к/с · кадр %s мс (%s)" % [Engine.get_frames_per_second(), _ms(PerfMeter.avg(&"frame")), _ms(PerfMeter.peak(&"frame"))],
+		"Шаг боя %s мс (%s)%s" % [_ms(step_avg), _ms(step_max), sim_where],
+		"Толпа %s мс · эффекты %s мс" % [_ms(PerfMeter.avg(&"view")), _ms(PerfMeter.avg(&"fx"))],
+		"Отрисовка: процессор %s · видеокарта %s мс" % [_ms(PerfMeter.avg(&"render_cpu")), _ms(PerfMeter.avg(&"render_gpu"))],
+		"Вызовов %d · треугольников %s" % [int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+			_count(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))],
+		"Солдат %d · «%s» · 3D %d %% (%s)" % [units, WorldQuality.level_name(q), roundi(vp.scaling_3d_scale * 100.0),
+			WorldQuality.upscale_name(vp)],
+	])
+	if one_line:
+		return " | ".join(lines)
+	lines.append("F9 — нагрузка дальше · F2 — качество")
+	return "\n".join(lines)
+
+
+func _ms(v: float) -> String:
+	return String.num(v, 1).replace(".", ",") if v < 100.0 else str(roundi(v))
+
+
+func _count(v: float) -> String:
+	if v >= 1.0e6:
+		return String.num(v / 1.0e6, 1).replace(".", ",") + " млн"
+	if v >= 1.0e3:
+		return str(roundi(v / 1.0e3)) + " тыс."
+	return str(roundi(v))
+
+
+func _show_perf(on: bool) -> void:
+	_perf_on = on
+	_stats_panel.visible = on
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), on or _perf_log)
+
+
+func _show_notice(text: String) -> void:
+	_notice.text = text
+	_notice.visible = not _quiet
+	_notice_t = 2.5
 
 
 ## Нагрузочная проверка: выкл → +1000 → +3000 солдат → выкл
@@ -203,7 +304,7 @@ func _cycle_stress() -> void:
 		_stress.queue_free()
 		_stress = null
 	var n: int = STRESS_LEVELS[_stress_level]
-	_stats.visible = n > 0
+	_show_perf(n > 0 or (_ordo != null and _ordo.has_arg("perf")))
 	if n == 0:
 		return
 	_stress = Node3D.new()
@@ -231,7 +332,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_help_t = 0.0
 		KEY_F2:
 			if _ordo:
-				_ordo.call("set_quality", Ordo.QUALITY_HIGH if _ordo.call("is_low") else Ordo.QUALITY_LOW)
+				var next := WorldQuality.next_level(_ordo.quality)
+				_ordo.call("set_quality", next)
+				_show_notice("Качество: «%s»" % WorldQuality.level_name(next))
 		KEY_F9:
 			_cycle_stress()
 
@@ -279,16 +382,21 @@ func _update_fast() -> void:
 func _set_fast(on: bool) -> void:
 	_fast = on
 	var vp := get_viewport()
-	vp.scaling_3d_scale = FAST_SCALE if on else (0.75 if _ordo.call("is_low") else 1.0)
+	# после промотки — разрешение и увеличение уровня качества (WorldQuality)
+	if on:
+		vp.scaling_3d_scale = FAST_SCALE
+	else:
+		WorldQuality.apply_viewport(vp, _ordo.quality)
+	var p := WorldQuality.preset(_ordo.quality)
 	world.sun.shadow_enabled = not on
 	var post := world.painterly_post()
 	if post:
-		post.enabled = not on and not _ordo.call("is_low") and not _ordo.has_arg("nopost")
+		post.enabled = not on and p.post != "off" and not _ordo.has_arg("nopost")
 	var env := world.environment_node.environment
-	env.ssao_enabled = not on and not _ordo.call("is_low")
+	env.ssao_enabled = not on and bool(p.ssao)
 	# объёмный туман без накопления по кадрам: считается сразу, промотке он не нужен
 	env.volumetric_fog_temporal_reprojection_enabled = false
-	env.volumetric_fog_enabled = not on and not _ordo.call("is_low") and not _ordo.has_arg("nofog") \
+	env.volumetric_fog_enabled = not on and bool(p.volfog) and not _ordo.has_arg("nofog") \
 		and not _ordo.has_arg("novolfog")
 	var grass := world.get_node_or_null("Grass") as Node3D
 	if grass and not _ordo.has_arg("nograss"):

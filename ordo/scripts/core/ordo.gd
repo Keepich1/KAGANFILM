@@ -7,15 +7,22 @@ extends Node
 ##   --shot=путь.png   сохранить кадр и выйти
 ##   --at=секунды      момент кадра по времени сцены (по умолчанию 1.0)
 ##   --cam=Имя         сделать текущей камеру Camera3D с этим именем
-##   --quality=high|low  режим качества (ТЗ 11.7)
+##   --quality=high|medium|low  режим качества (ТЗ 11.7; не запоминается)
 ##   --seed=N          зерно случайностей сцены
+## Качество: выбор игрока (F2) хранится в user://settings.cfg; при первом запуске —
+## по видеокарте (WorldQuality.auto_level). Съёмка (--shot, --movie, --hero) — всегда «Высокое»,
+## если не задано --quality, и настройки не читает и не пишет.
 
 signal quality_changed(level: String)
 
 const QUALITY_HIGH := "high"
+const QUALITY_MEDIUM := "medium"
 const QUALITY_LOW := "low"
+const SETTINGS_PATH := "user://settings.cfg"
 
 var quality := QUALITY_HIGH
+## Откуда качество: arg (ключ), saved (выбор игрока), auto (по видеокарте), shot (съёмка), mobile
+var quality_source := "default"
 var seed := 1
 var scene_time := 0.0
 ## Живой ветер — зеркало global ordo_wind (RenderingServer отдаёт глобальные uniform только
@@ -45,8 +52,20 @@ func _ready() -> void:
 		wind = (g as Dictionary)["value"]
 	if _args.has("quality"):
 		quality = _args["quality"]
-	elif OS.has_feature("mobile"):
-		quality = QUALITY_LOW
+		quality_source = "arg"
+	elif _capturing():
+		quality_source = "shot"
+	else:
+		var saved := _load_quality()
+		if saved != "":
+			quality = saved
+			quality_source = "saved"
+		elif OS.has_feature("mobile"):
+			quality = QUALITY_LOW
+			quality_source = "mobile"
+		else:
+			quality = WorldQuality.auto_level()
+			quality_source = "auto"
 
 
 func arg(name: String, default_value := "") -> String:
@@ -57,9 +76,30 @@ func has_arg(name: String) -> bool:
 	return _args.has(name)
 
 
-func set_quality(level: String) -> void:
+## Сменить качество; remember — запомнить выбор игрока (user://settings.cfg)
+func set_quality(level: String, remember := true) -> void:
 	quality = level
+	if remember and not _capturing() and not _args.has("quality"):
+		quality_source = "saved"
+		var cfg := ConfigFile.new()
+		cfg.load(SETTINGS_PATH)
+		cfg.set_value("graphics", "quality", level)
+		cfg.set_value("graphics", "adapter", RenderingServer.get_video_adapter_name())
+		cfg.save(SETTINGS_PATH)
 	quality_changed.emit(level)
+
+
+func _load_quality() -> String:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return ""
+	var q := String(cfg.get_value("graphics", "quality", ""))
+	return q if q in [QUALITY_HIGH, QUALITY_MEDIUM, QUALITY_LOW] else ""
+
+
+## Съёмка кадра или ролика: качество не выбирается само и не запоминается
+func _capturing() -> bool:
+	return _args.has("shot") or _args.has("movie") or _args.has("hero")
 
 
 func set_wind(w: Vector4) -> void:
@@ -74,6 +114,10 @@ func set_sun_dir(d: Vector3) -> void:
 
 func is_low() -> bool:
 	return quality == QUALITY_LOW
+
+
+func is_medium() -> bool:
+	return quality == QUALITY_MEDIUM
 
 
 func _process(delta: float) -> void:
