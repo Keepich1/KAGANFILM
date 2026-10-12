@@ -1,0 +1,4 @@
+.godot/
+/renders/
+__pycache__/
+*.pyc
