@@ -284,8 +284,13 @@ func _test_fake_city() -> void:
 			kinds[SimEvents.name_of(city.events().e_kind[city.events().at(seq)])] = true
 		cursor = r.y
 	var bt := city.buildings()
+	var waters := {}
+	var dala := city.defs().building(&"dala")
 	for b in bt.hw:
 		states[bt.state[b]] = true
+		if bt.btype[b] == dala:
+			waters[city.building_panel(bt.handle(b))["water"]] = true
+	SimHarness.check(waters.has(1.0) and waters.has(0.0), "поля у арыка и «лалми»: полив 1 и 0")
 	SimHarness.check(city.tick() == 300 and sim.steps == 300, "300 тактов")
 	SimHarness.check(max_work >= 10, "работают (u_act = WORK) до %d юнитов" % max_work)
 	SimHarness.check(states.has(BuildingTable.State.SITE) and states.has(BuildingTable.State.ACTIVE) and states.has(BuildingTable.State.RUIN),

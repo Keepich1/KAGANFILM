@@ -2,8 +2,9 @@ class_name FakeCity
 extends GameQuery
 ## Поддельный живой город (ARCHITECTURE §19.0 #10) — GameQuery для VIEW и UI до I4.
 ## Настоящее ядро BattleSim и настоящие таблицы, но без экономики и навигации:
-##   • Коканд (игрок 0, команда 0) — урда на восточном лугу (184, 56), дома, поля, склады, стена с
-##     воротами и башней; кыпчаки (игрок 1, команда 1) — лагерь среза (−60, 20), юрты, загоны, кен;
+##   • Коканд (игрок 0, команда 0) — урда на восточном лугу (184, 56), тўғон на реке и Бош ариқ к городу,
+##     поля у воды и одно «лалми», дома, мельница, склад, хумдон, базар, стена с воротами и бурж;
+##     кыпчаки (игрок 1, команда 1) — лагерь среза (−60, 20): юрты, короо, жылкы, кен, частокол, мунара;
 ##   • стройки на разных стадиях (растут, достраиваются, BUILDING_DONE, потом снова стройка), руины;
 ##   • 40 одиночек-работников ходят по кругу: к дереву/залежи/полю/стройке → работа (u_act = WORK,
 ##     вид работы — work_aux / u_work) → назад с грузом (WORK_CARRY) → сдача (RES_DELIVERED);
@@ -87,17 +88,28 @@ func setup(p_seed := 1) -> void:
 
 
 func _build_town() -> void:
+	var site: Dictionary = MapValley.MAP["sites"][1]
 	_add(KOK, &"urda", KOK_HQ, 3)
+	# тўғон и Бош ариқ — как на карте (ECONOMY §2: стоят с начала)
+	for it: Array in site["buildings"]:
+		_add(KOK, StringName(it[0]), it[1], it[2])
+	for it: Array in site["links"]:
+		var pts: Array = it[1]
+		for k in range(1, pts.size()):
+			_line(KOK, _defs.building(StringName(it[0])), pts[k - 1], pts[k], 3)
 	_add(KOK, &"uy", Vector2(206, 30), 3)
 	_add(KOK, &"uy", Vector2(206, 82), 3)
 	_add(KOK, &"uy", Vector2(222, 44), 3)
 	_site(KOK, &"uy", Vector2(222, 70), 3, 400, 2)
-	_add(KOK, &"dala", Vector2(148, 98), 0)
-	_add(KOK, &"dala", Vector2(166, 98), 0)
-	_tegirmon = Vector2(170, 80)
+	_add(KOK, &"dala", Vector2(150, -40), 0)
+	_add(KOK, &"dala", Vector2(186, -40), 0)
+	_add(KOK, &"dala", Vector2(148, 98), 0)          # «лалми»: вдали от арыка, 25%
+	_tegirmon = Vector2(168, 10)
 	_add(KOK, &"tegirmon", _tegirmon, 3)
 	_ombor = Vector2(166, 30)
 	_add(KOK, &"ombor", _ombor, 3)
+	_add(KOK, &"xumdon", Vector2(188, -16), 0)
+	_site(KOK, &"bozor", Vector2(226, 136), 0, 600, 2)
 	_site(KOK, &"kazarma", Vector2(214, 8), 0, 300, 3)
 	_site(KOK, &"otxona", Vector2(234, 104), 2, 700, 1)
 	_add(KOK, &"topxona", Vector2(240, 36), 3, BuildingTable.State.RUIN)
@@ -121,7 +133,7 @@ func _build_town() -> void:
 func _build_camp() -> void:
 	_add(KIP, &"ordo", KIP_HQ, 0)
 	var site: Dictionary = MapValley.MAP["sites"][0]
-	for it: Array in site["buildings"]:
+	for it: Array in site["buildings"] + site["layout"]:
 		_add(KIP, StringName(it[0]), it[1], it[2])
 	_ken = Vector2(-42, 150)
 	_add(KIP, &"ken", _ken, 0)
@@ -152,7 +164,7 @@ func _build_nodes() -> void:
 
 
 func _build_herds() -> void:
-	for it: Array in [[KIP, &"sheep", &"koroo", 24], [KIP, &"horse", &"jylky", 12]]:
+	for it: Array in [[KIP, &"sheep", &"koroo", 40], [KIP, &"horse", &"jylky", 14]]:
 		var pen := _find_building(it[0], it[2])
 		var h := _herds.alloc(HerdTable.State.PEN)
 		var ht := _defs.herd(it[1])
@@ -174,16 +186,25 @@ func _build_fields() -> void:
 			var v := 600.0 + 400.0 * BattleRng.hash01(i * 131 + j * 7)
 			v *= clampf(p.distance_to(Vector2(-115, 65)) / 60.0, 0.15, 1.0)
 			_grass[j * 64 + i] = int(v * 255.0 / 1000.0)
+	# полив (8 м): река и зона 24 м вокруг звеньев арыка (ECONOMY §2.2)
+	var links := PackedVector2Array()
+	var aryk := _defs.building(&"aryk")
+	for b in _buildings.hw:
+		if _buildings.btype[b] == aryk and _buildings.state[b] == BuildingTable.State.ACTIVE:
+			links.append(Vector2(_buildings.x[b], _buildings.z[b]))
 	_water.resize(128 * 128)
 	for j in 128:
 		for i in 128:
 			var p := Vector2(-512.0 + (i + 0.5) * 8.0, -512.0 + (j + 0.5) * 8.0)
-			var v := 0.0
+			var v := 0
 			if Terrain.is_water(p.x, p.y):
-				v = 1000.0
-			elif p.distance_to(Vector2(157, 98)) < 26.0:
-				v = 800.0
-			_water[j * 128 + i] = int(v * 255.0 / 1000.0)
+				v = 255
+			else:
+				for c in links:
+					if p.distance_squared_to(c) <= 24.0 * 24.0:
+						v = 255
+						break
+			_water[j * 128 + i] = v
 
 
 func _build_units() -> void:
@@ -430,6 +451,21 @@ func _economy_second() -> void:
 			var inc := 6000 + 2000 * r if p == KOK else 5000 + 1500 * ((r + 1) % 4)
 			_players.income[p * R + r] = inc
 			_players.res[p * R + r] += inc / 60
+	# ғишт от хумдона (36 в минуту); кони — головы табунов (раз в 20 с +1, до предела двора)
+	var brick := _defs.res(&"brick")
+	_players.income[KOK * R + brick] = 36000
+	_players.res[KOK * R + brick] += 600
+	var horse := _defs.res(&"horse")
+	var heads := 0
+	for h in _herds.hw:
+		if _herds.state[h] == HerdTable.State.FREE or _herds.htype[h] != _defs.herd(&"horse"):
+			continue
+		var pen := _buildings.slot(_herds.pen_b[h])
+		if _tick % 600 == 0 and _herds.heads(h) < _defs.b_herd_cap[_buildings.btype[pen]]:
+			_herds.heads_milli[h] += 1000
+		heads += _herds.heads_milli[h]
+	_players.res[KIP * R + horse] = heads
+	_players.income[KIP * R + horse] = 3000
 	_update_pop()
 
 
@@ -854,6 +890,15 @@ func _site(p: int, id: StringName, center: Vector2, rot_q: int, progress: int, b
 	# скорость: промилле × 1000 за такт (≈ 1 мин на всю стройку при трёх строителях)
 	_sites.append({"b": b, "rate": 180 * builders, "acc": 0, "done_t": 0})
 	return b
+
+
+## Линия звеньев a → b с шагом len − overlap (арык, стена), все готовы
+func _line(p: int, bt: int, a: Vector2, b: Vector2, chain: int) -> void:
+	var pitch := maxf(_defs.b_link_len[bt] - _defs.b_link_overlap[bt], 0.5)
+	var seg := b - a
+	var k := maxi(1, ceili(seg.length() / pitch - 0.001))
+	for j in k:
+		_link(p, bt, a + seg * (float(j) / k), a + seg * (float(j + 1) / k), chain, BuildingTable.State.ACTIVE)
 
 
 func _link(p: int, bt: int, a: Vector2, b2: Vector2, chain: int, state: int) -> int:
