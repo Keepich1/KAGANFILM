@@ -11,7 +11,7 @@ const SHADER := preload("res://shaders/terrain.gdshader")
 ## Сторона куска, м
 @export var chunk_size := 64.0
 ## Дальность каждого уровня детализации, м (дальше последнего — самый грубый)
-@export var lod_ranges: PackedFloat32Array = PackedFloat32Array([150.0, 330.0, 700.0])
+@export var lod_ranges: PackedFloat32Array = PackedFloat32Array([220.0, 500.0, 1100.0])
 ## Глубина «юбки» под краем куска, м
 @export var skirt := 3.0
 @export var build_far_ring := true

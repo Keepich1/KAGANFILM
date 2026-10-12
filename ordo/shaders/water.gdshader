@@ -15,16 +15,17 @@ uniform sampler2D brush_tex : hint_default_white, filter_linear_mipmap_anisotrop
 uniform float water_level = -4.0;
 uniform vec4 scatter_color : source_color = vec4(0.07, 0.17, 0.18, 1.0);   // цвет толщи воды
 uniform vec3 absorb = vec3(0.55, 0.2, 0.16);                              // поглощение, 1/м
-uniform vec4 foam_color : source_color = vec4(0.93, 0.9, 0.84, 1.0);
+uniform vec4 foam_color : source_color = vec4(0.8, 0.77, 0.7, 1.0);
+uniform vec4 shallow_color : source_color = vec4(0.36, 0.33, 0.24, 1.0);   // мель: тёплая галька сквозь воду
 uniform float ripple = 0.05;              // сила ряби в нормали
 uniform float ripple_scale = 0.05;        // плотность мазков ряби, 1/м
 uniform float flow_speed = 0.7;           // м/с на стремнине
 uniform float refraction = 0.035;
 uniform float roughness = 0.07;
-uniform float shore_foam = 0.32;          // глубина, до которой у берега пена, м
+uniform float shore_foam = 0.14;          // глубина, до которой у берега пена, м
 uniform float ford_foam = 1.0;
 uniform float glint_power = 350.0;
-uniform float glint = 6.0;
+uniform float glint = 2.5;
 
 varying vec2 v_flow;
 varying float v_speed;
@@ -89,9 +90,13 @@ void fragment() {
 	// пена: у берега — тонкая кромка мазками, на перекате брода — штрихи по течению
 	float st = flow_strokes(wp.xz * 1.7, f, perp, t * 1.5, 5.0);
 	float st2 = texture(brush_tex, wp.xz * 0.45 + vec2(0.2, 0.6)).r;
-	float shore = smoothstep(shore_foam, 0.02, vdepth) * smoothstep(0.42, 0.62, st + st2 * 0.3);
-	float riffle = v_ford * v_speed * smoothstep(0.62, 0.78, st) * smoothstep(0.9, 0.2, vdepth) * ford_foam;
-	float foam = clamp(shore * 0.85 + riffle, 0.0, 1.0);
+	// пена мазками: прерывистая кромка у берега, штрихи на перекате брода
+	float shore = smoothstep(shore_foam, 0.03, vdepth) * smoothstep(0.55, 0.75, st * 0.7 + st2 * 0.6);
+	float riffle = v_ford * smoothstep(0.58, 0.74, st) * smoothstep(0.7, 0.15, vdepth) * ford_foam;
+	float foam = clamp(shore * 0.7 + riffle * 0.8, 0.0, 1.0);
+	// мель у брода: сквозь воду видна тёплая галька, рябь светлее
+	float shallow = v_ford * smoothstep(0.9, 0.25, vdepth);
+	water = mix(water, mix(water, shallow_color.rgb * (0.7 + 0.6 * st2), 0.6), shallow);
 
 	ALBEDO = foam_color.rgb * foam;
 	EMISSION = water * (1.0 - foam);

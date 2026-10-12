@@ -46,7 +46,10 @@ func _ready() -> void:
 		mat.set_shader_parameter("albedo_tex", atlas)
 		mat.set_shader_parameter("tint", TINTS[kind])
 		if kind == "juniper":
+			# плотная хвоя: почти не качается и не просвечивает
 			mat.set_shader_parameter("sway", 0.12)
+			mat.set_shader_parameter("translucency", 0.12)
+			mat.set_shader_parameter("rim_strength", 0.25)
 		_build_kind(kind, _data.get(kind, []), mat, false)
 	var rock_mat := ShaderMaterial.new()
 	rock_mat.shader = SURFACE

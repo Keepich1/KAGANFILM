@@ -31,6 +31,8 @@ func apply(level: String) -> void:
 		env.ssao_enabled = high
 		# без объёмного тумана низинам нужна обычная высотная дымка погуще
 		env.fog_height_density = 0.025 if high else 0.06
+		env.fog_density = 0.0005 if high else 0.0016
+		env.fog_sun_scatter = 0.05 if high else 0.25
 		if we.compositor:
 			for e in we.compositor.compositor_effects:
 				if e is PainterlyPost:
@@ -40,6 +42,8 @@ func apply(level: String) -> void:
 			else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 		sun.directional_shadow_max_distance = 700.0 if high else 320.0
 	RenderingServer.directional_shadow_atlas_set_size(8192 if high else 4096, true)
+	# сетка объёмного тумана подробнее: лучи сквозь деревья и юрты читаются чётче
+	RenderingServer.environment_set_volumetric_fog_volume_size(128 if high else 64, 128 if high else 64)
 	RenderingServer.directional_soft_shadow_filter_set_quality(
 		RenderingServer.SHADOW_QUALITY_SOFT_HIGH if high else RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
 	var grass := world.get_node_or_null("Grass") as GrassField

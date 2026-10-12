@@ -8,6 +8,10 @@ extends Node3D
 @export var height_falloff := 0.7
 @export var albedo := Color(0.86, 0.88, 0.92)
 @export var emission := Color(0.02, 0.03, 0.045)
+## Дымка над полем и лагерем (пыль, дым очагов): в ней видны лучи солнца
+@export var field_haze_density := 0.0038
+@export var field_haze_falloff := 0.16
+@export var field_haze_albedo := Color(0.95, 0.86, 0.76)
 
 
 func _ready() -> void:
@@ -21,6 +25,19 @@ func _ready() -> void:
 	mat.emission = emission
 	mat.height_falloff = height_falloff
 	mat.edge_fade = 0.6
+	# дымка над долиной: слой у земли, кверху тает
+	var haze := FogMaterial.new()
+	haze.density = field_haze_density
+	haze.albedo = field_haze_albedo
+	haze.height_falloff = field_haze_falloff
+	haze.edge_fade = 0.25
+	var hv := FogVolume.new()
+	hv.name = "FieldHaze"
+	hv.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	hv.size = Vector3(900.0, 60.0, 560.0)
+	hv.position = Vector3(-20.0, 0.0, 70.0)
+	hv.material = haze
+	add_child(hv)
 	var k := 0
 	for it: Array in data.get("fog", []):
 		var v := FogVolume.new()

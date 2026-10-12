@@ -17,6 +17,7 @@
 и в assets/textures/world/:
     splat.png    1024²: R сухая охра, G вытоптанная земля, B камень, A песок и галька
     grass.png    512²:  R густота травы, G высота травы, B доля ковыля, A сырость у воды
+    water.png    512²:  R глубина воды (0..2 м), G брод, B кромка берега
 """
 from __future__ import annotations
 
@@ -590,6 +591,11 @@ def build(preview_only=False):
     to_png(os.path.join(out_tex, "splat.png"), [maps["dry"], maps["earth"], np.maximum(maps["rock"], maps["snow"]),
                                                maps["sand"]], 1024)
     to_png(os.path.join(out_tex, "grass.png"), [maps["dens"], maps["tall"], maps["kovyl"], maps["wet"]], 512)
+    # маска воды: R — глубина (0..2 м), G — брод (мель для переправы), B — берег (0..1 у кромки), A — 1
+    depth = np.clip((WATER_LEVEL - Hs) / 2.0, 0, 1)
+    ford = np.exp(-(((Xs - FORD_X) / 26.0) ** 2 + ((Zs - river_z(FORD_X)) / 26.0) ** 2)) * (depth > 0)
+    bank = np.clip(1.0 - np.abs(Hs - WATER_LEVEL) / 1.0, 0, 1)
+    to_png(os.path.join(out_tex, "water.png"), [depth, ford, bank, np.ones_like(depth)], 512)
 
     print("расстановка…")
     # карты на сетке высот для расстановки

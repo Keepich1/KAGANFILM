@@ -100,20 +100,24 @@ def broad_cluster(w, h, seed, palette, n_sub=5, leaves=3000, leaf=(12, 20), spre
     return c.image()
 
 
-def willow_strands(w, h, seed, palette, strands=34):
-    """Ива: свисающие пряди узких листьев от верхнего края."""
+def willow_strands(w, h, seed, palette, strands=30):
+    """Ива: свисающие пряди узких листьев от верхнего края. Пряди к краям карточки
+    короче и реже, концы разной длины — прямоугольник карточки не читается."""
     c = Card(w, h, seed)
     rs = c.rs
     cols = _pal(palette)
     for s in range(strands):
-        x0 = rs.uniform(w * 0.08, w * 0.92)
-        L = rs.uniform(h * 0.55, h * 0.95)
+        x0 = w * 0.5 + rs.normal(0, w * 0.2)
+        if not (w * 0.06 < x0 < w * 0.94):
+            continue
+        edge = 1.0 - abs(x0 / w - 0.5) * 2.0          # 1 в центре, 0 у края
+        L = rs.uniform(h * 0.3, h * 0.95) * (0.45 + 0.55 * edge)
         sway = rs.normal(0, w * 0.04)
         n = int(L / 7)
         for i in range(n):
             t = i / max(n - 1, 1)
             x = x0 + sway * t * t + math.sin(t * 5 + s) * 3
-            y = 4 + t * L
+            y = 4 + rs.uniform(0, h * 0.12) * (1 - edge) + t * L
             for side in (-1, 1):
                 if rs.random() < 0.85:
                     ang = math.pi / 2 + side * rs.uniform(0.25, 0.6)

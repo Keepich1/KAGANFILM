@@ -77,11 +77,14 @@ func _update_density() -> void:
 	for r in _rings:
 		var cfg: Dictionary = r.cfg
 		var mm: MultiMesh = r.multimesh
-		mm.visible_instance_count = maxi(1, int(cfg.instances * density_scale))
+		var count := maxi(1, int(cfg.instances * density_scale))
+		mm.visible_instance_count = count
 		var mat: ShaderMaterial = r.material
+		# сетка участка под число пучков: при прореживании пучки редеют равномерно, а не рядами
+		mat.set_shader_parameter("grid_n", int(ceil(sqrt(float(count)))))
 		var f: Vector4 = cfg.fade
 		mat.set_shader_parameter("fade", Vector4(f.x * range_scale, f.y * range_scale, f.z * range_scale, f.w * range_scale))
-		mat.set_shader_parameter("density_comp", 1.0 / sqrt(density_scale))
+		mat.set_shader_parameter("density_comp", 1.0 / sqrt(sqrt(density_scale)))
 
 
 func _make_ring(cfg: Dictionary) -> Dictionary:
