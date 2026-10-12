@@ -6,10 +6,14 @@ extends CompositorEffect
 ## тёплый свет, фактура холста, виньетка. Работает после прозрачных объектов,
 ## до тональной кривой и свечения (shaders/post/*.glsl, вычислительные шейдеры).
 ##
-## Включается/выключается свойством enabled (качество «Низкое» выключает).
+## Включается/выключается свойством enabled. half_res («Среднее», «Низкое» — WorldQuality):
+## тензор и Кувахара в половине разрешения (shaders/post/painterly_*_half.glsl, painterly_down),
+## мазки возвращаются в кадр бережным увеличением по цвету исходной точки (painterly_up),
+## тон, холст и виньетка — в полном разрешении. «Высокое» — прежний путь, без изменений.
 ## Без RenderingDevice (рендер Compatibility) молча ничего не делает.
 
 const CTX := &"ordo_painterly_post"
+const CTX_HALF := &"ordo_painterly_post_half"
 
 ## Радиус мазка в пикселях при высоте кадра 1080 (масштабируется с разрешением)
 @export_range(0.0, 8.0, 0.1) var radius_1080 := 2.6
@@ -28,10 +32,15 @@ const CTX := &"ordo_painterly_post"
 @export var highlight_warm := Color(1.05, 0.98, 0.88, 0.6)
 @export_range(0.0, 0.2, 0.002) var canvas_grain := 0.03
 @export_range(0.0, 1.0, 0.01) var vignette := 0.32
+## Фильтр в половине разрешения (дешевле примерно вчетверо по точкам и по ядру)
+@export var half_res := false
+## Строгость совпадения цвета при увеличении мазков (больше — чётче края)
+@export_range(1.0, 200.0, 1.0) var upsample_guide := 40.0
 
 var _rd: RenderingDevice
 var _shaders := {}
 var _size := Vector2i.ZERO
+var _half_size := Vector2i.ZERO
 
 
 func _init() -> void:
@@ -51,7 +60,7 @@ func _init_compute() -> void:
 	_rd = RenderingServer.get_rendering_device()
 	if _rd == null:
 		return
-	for n in ["tensor", "blur", "kuwahara"]:
+	for n in ["tensor", "blur", "kuwahara", "down", "tensor_half", "kuwahara_half", "up"]:
 		var file := load("res://shaders/post/painterly_%s.glsl" % n) as RDShaderFile
 		if file == null:
 			push_warning("PainterlyPost: нет шейдера %s" % n)
@@ -67,7 +76,7 @@ func _init_compute() -> void:
 
 
 func _render_callback(_type: int, render_data: RenderData) -> void:
-	if _rd == null or _shaders.size() < 3:
+	if _rd == null:
 		return
 	var sb := render_data.get_render_scene_buffers() as RenderSceneBuffersRD
 	if sb == null:
@@ -75,6 +84,13 @@ func _render_callback(_type: int, render_data: RenderData) -> void:
 	var size := sb.get_internal_size()
 	if size.x == 0 or size.y == 0:
 		return
+	if half_res and _has(["down", "tensor_half", "blur", "kuwahara_half", "up"]):
+		_render_half(sb, size)
+		return
+	if not _has(["tensor", "blur", "kuwahara"]):
+		return
+	if sb.has_texture(CTX_HALF, &"src"):
+		sb.clear_context(CTX_HALF)
 	if size != _size or not sb.has_texture(CTX, &"src"):
 		_size = size
 		if sb.has_texture(CTX, &"src"):
@@ -113,7 +129,84 @@ func _render_callback(_type: int, render_data: RenderData) -> void:
 			size.x, size.y, radius_1080 * scale, hardness, sharpness_q, 2.0 / maxf(radius_1080, 1.0) * 0.5, 0.58, anisotropy_alpha,
 			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
 			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
-			canvas_grain, vignette, amount, shadow_range]))
+			_grain(sb), vignette, amount, shadow_range]))
+		_rd.compute_list_dispatch(cl, gx, gy, 1)
+		_rd.compute_list_end()
+
+
+## Фактура холста рисуется в точках кадра 3D; если кадр потом увеличивается (FSR), нити
+## становятся крупнее и заметнее — ослабляем по доле разрешения (при 100 % — как было)
+func _grain(sb: RenderSceneBuffersRD) -> float:
+	var target := sb.get_target_size()
+	var internal := sb.get_internal_size()
+	if target.y <= 0 or internal.y >= target.y:
+		return canvas_grain
+	var k := float(internal.y) / float(target.y)
+	return canvas_grain * k * k
+
+
+func _has(names: Array) -> bool:
+	for n in names:
+		if not _shaders.has(n):
+			return false
+	return true
+
+
+## Половина разрешения: уменьшение → тензор → размытие тензора → Кувахара → увеличение и тон
+func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
+	var hsize := Vector2i((size.x + 1) / 2, (size.y + 1) / 2)
+	if sb.has_texture(CTX, &"src"):
+		sb.clear_context(CTX)
+	if hsize != _half_size or not sb.has_texture(CTX_HALF, &"src"):
+		_half_size = hsize
+		if sb.has_texture(CTX_HALF, &"src"):
+			sb.clear_context(CTX_HALF)
+		var usage := RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
+		var fmt := RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
+		for name in [&"src", &"tensor", &"tmp", &"painted"]:
+			sb.create_texture(CTX_HALF, name, fmt, usage, RenderingDevice.TEXTURE_SAMPLES_1, hsize, 1, 1, true, false)
+	var gx := (size.x + 7) / 8
+	var gy := (size.y + 7) / 8
+	var hx := (hsize.x + 7) / 8
+	var hy := (hsize.y + 7) / 8
+	var scale := float(size.y) / 1080.0
+	# мазок того же размера на экране: в точках половинного кадра радиус вдвое меньше (не меньше 1)
+	var radius := maxf(radius_1080 * scale * 0.5, 1.0)
+	var sigma := maxf(scale, 1.0)
+	for view in sb.get_view_count():
+		var color := sb.get_color_layer(view)
+		var src := sb.get_texture_slice(CTX_HALF, &"src", view, 0, 1, 1)
+		var tensor := sb.get_texture_slice(CTX_HALF, &"tensor", view, 0, 1, 1)
+		var tmp := sb.get_texture_slice(CTX_HALF, &"tmp", view, 0, 1, 1)
+		var painted := sb.get_texture_slice(CTX_HALF, &"painted", view, 0, 1, 1)
+		var cl := _rd.compute_list_begin()
+		_bind(cl, "down", [color, src])
+		_push(cl, PackedFloat32Array([size.x, size.y, hsize.x, hsize.y]))
+		_rd.compute_list_dispatch(cl, hx, hy, 1)
+		_rd.compute_list_add_barrier(cl)
+		_bind(cl, "tensor_half", [src, tensor])
+		_push(cl, PackedFloat32Array([hsize.x, hsize.y, 0.0, 0.0]))
+		_rd.compute_list_dispatch(cl, hx, hy, 1)
+		_rd.compute_list_add_barrier(cl)
+		_bind(cl, "blur", [tensor, tmp])
+		_push(cl, PackedFloat32Array([hsize.x, hsize.y, 1.0, 0.0, sigma, 0.0, 0.0, 0.0]))
+		_rd.compute_list_dispatch(cl, hx, hy, 1)
+		_rd.compute_list_add_barrier(cl)
+		_bind(cl, "blur", [tmp, tensor])
+		_push(cl, PackedFloat32Array([hsize.x, hsize.y, 0.0, 1.0, sigma, 0.0, 0.0, 0.0]))
+		_rd.compute_list_dispatch(cl, hx, hy, 1)
+		_rd.compute_list_add_barrier(cl)
+		_bind(cl, "kuwahara_half", [src, tensor, painted])
+		_push(cl, PackedFloat32Array([hsize.x, hsize.y, radius if amount > 0.001 else 0.0, hardness, sharpness_q,
+			2.0 / maxf(radius_1080, 1.0) * 0.5, 0.58, anisotropy_alpha]))
+		_rd.compute_list_dispatch(cl, hx, hy, 1)
+		_rd.compute_list_add_barrier(cl)
+		_bind(cl, "up", [color, src, painted])
+		_push(cl, PackedFloat32Array([
+			size.x, size.y, hsize.x, hsize.y,
+			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
+			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
+			_grain(sb), vignette, amount, shadow_range, upsample_guide, 0.0, 0.0, 0.0]))
 		_rd.compute_list_dispatch(cl, gx, gy, 1)
 		_rd.compute_list_end()
 

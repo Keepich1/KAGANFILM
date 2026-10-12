@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b6rvmab1pihgd"
+path="res://.godot/imported/painterly_tensor_half.glsl-0ff3ff241b28ed5084720637342bd88c.res"
+
+[deps]
+
+source_file="res://shaders/post/painterly_tensor_half.glsl"
+dest_files=["res://.godot/imported/painterly_tensor_half.glsl-0ff3ff241b28ed5084720637342bd88c.res"]
+
+[params]
+

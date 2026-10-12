@@ -103,6 +103,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_speed_i = maxi(_speed_i - 1, 0)
 			scenario.time_scale = SPEEDS[_speed_i]
 		KEY_R:
+			# большой бой считается в фоне — сначала дождаться шага
+			var view := get_node_or_null("View") as BattleView
+			if view:
+				view.sync_sim()
 			scenario.restart()
 		KEY_C:
 			if not take_camera:
