@@ -71,6 +71,7 @@ func _init() -> void:
 	_check(counts.get("kip_kolbashchy", 0) == 1 and counts.get("kok_yuzboshi", 0) == 1, "полководец и юзбоши")
 	view.free()
 	sc.free()
+	_test_loop()
 	print("")
 	print("ИТОГ: ", "ВСЁ ПРОШЛО" if _fails == 0 else "ПРОВАЛОВ: %d" % _fails)
 	quit(1 if _fails > 0 else 0)
@@ -80,3 +81,26 @@ func _check(ok: bool, what: String) -> void:
 	print(("  ok   " if ok else "  FAIL ") + what)
 	if not ok:
 		_fails += 1
+
+
+## Бой по кругу: после конца сценарий начинается заново, вид пересобирает слои
+func _test_loop() -> void:
+	var sc := ScenarioClash.new()
+	sc.loop = true
+	sc.autostart = false
+	root.add_child(sc)
+	var starts := [0]
+	sc.started.connect(func(_s: int) -> void: starts[0] += 1)
+	sc.start(1)
+	var view := BattleView.new()
+	view.force_debug = true
+	view.scenario = sc
+	sc.started.connect(view._on_started)
+	view._on_started(1)
+	for i in int(46.0 / BattleSim.DT):
+		sc.step()
+	print("  (стартов: %d, время: %.2f, в дереве: %s)" % [starts[0], sc.time, sc.is_inside_tree()])
+	_check(starts[0] == 2 and sc.time < 3.0, "бой начинается заново после %.0f с" % ScenarioClash.END_TIME)
+	_check(view._sim == sc.sim and view._u_layer.size() == sc.sim.n, "вид пересобран под новый бой")
+	view.free()
+	sc.queue_free()

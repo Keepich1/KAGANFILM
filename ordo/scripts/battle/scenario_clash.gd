@@ -157,7 +157,7 @@ func step() -> void:
 	if not _ended and sim.time >= END_TIME:
 		_ended = true
 		finished.emit()
-		if loop and is_inside_tree():
+		if loop:
 			start(current_seed + 1 if vary_seed_on_loop else current_seed)
 
 
