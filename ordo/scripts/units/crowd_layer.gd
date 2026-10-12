@@ -150,12 +150,23 @@ func set_raw_buffer(data: PackedFloat32Array) -> void:
 func _enter_tree() -> void:
 	if not RenderingServer.frame_pre_draw.is_connected(_flush):
 		RenderingServer.frame_pre_draw.connect(_flush)
+	# качество можно переключить во время игры (ТЗ 11.7, F2 в срезе)
+	var ordo := get_tree().root.get_node_or_null("Ordo")
+	if ordo and ordo.has_signal("quality_changed") and not ordo.is_connected("quality_changed", _on_quality):
+		ordo.connect("quality_changed", _on_quality)
 	_apply_lod()
 
 
 func _exit_tree() -> void:
 	if RenderingServer.frame_pre_draw.is_connected(_flush):
 		RenderingServer.frame_pre_draw.disconnect(_flush)
+	var ordo := get_tree().root.get_node_or_null("Ordo")
+	if ordo and ordo.is_connected("quality_changed", _on_quality):
+		ordo.disconnect("quality_changed", _on_quality)
+
+
+func _on_quality(_level: String) -> void:
+	_apply_lod()
 
 
 ## Буфер уходит на видеокарту один раз перед отрисовкой кадра

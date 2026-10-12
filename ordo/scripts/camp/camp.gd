@@ -29,10 +29,18 @@ const SMOKE := preload("res://scenes/camp/smoke.tscn")
 const RIM_STRENGTH := 1.1
 
 
+var _lod_high := 140.0
+
+
 func _ready() -> void:
+	_lod_high = lod_distance
 	if is_low_quality(self):
 		# телефоны (ТЗ 11.7): облегчённые модели раньше, меньше дыма
 		lod_distance = minf(lod_distance, 80.0)
+	# качество можно переключить во время игры (ТЗ 11.7, F2 в срезе)
+	var o := get_node_or_null("/root/Ordo")
+	if o and o.has_signal("quality_changed"):
+		o.connect("quality_changed", _on_quality)
 	snap_to_terrain()
 	for group in ["Buildings", "Props"]:
 		for n in get_node(group).get_children():
@@ -130,6 +138,19 @@ func _setup_model(n: Node3D) -> void:
 		s.lifetime = 9.0
 		s.preprocess = 9.0
 		n.add_child(s)
+
+
+func _on_quality(_level: String) -> void:
+	lod_distance = minf(_lod_high, 80.0) if is_low_quality(self) else _lod_high
+	for group in ["Buildings", "Props"]:
+		for n in get_node(group).get_children():
+			var l1 := n.get_node_or_null("LOD1")
+			if l1 == null:
+				continue
+			for c in n.get_children():
+				if c != l1 and not (c is GPUParticles3D):   # дым тюндюка виден на любом расстоянии
+					_set_range(c, 0.0, lod_distance)
+			_set_range(l1, lod_distance, 0.0)
 
 
 func _hide_ground(root: Node) -> void:

@@ -114,7 +114,7 @@ GuardPost_*), толпу — из `scripts/units/crowd_layer.gd`. Свои не�
 | Юниты | `tools/gen_units*.py`, `assets/models/units/`, `assets/textures/units/`, `shaders/crowd.gdshader`, `shaders/include/crowd_*.gdshaderinc`, `scripts/units/` (кроме anim_spec.gd), `scenes/test/units_*` |
 | Мир | `tools/gen_world*.py`, `assets/world/`, `assets/textures/world/`, `assets/models/world/`, `shaders/{terrain,grass,sky,water}.gdshader`, `shaders/post/`, `scripts/world/`, `scenes/world/`, `scenes/test/world_*` |
 | Бой | `scripts/battle/`, `scripts/fx/`, `scripts/camera/`, `scripts/ui/`, `shaders/fx/`, `assets/textures/fx/`, `tools/gen_fx*.py`, `scenes/battle/`, `tests/`, `scenes/test/battle_*` |
-| Сборка | `scenes/slice.tscn`, `scripts/slice.gd` |
+| Сборка | `scenes/slice.tscn`, `scripts/slice.gd`, `scripts/stress_scenario.gd`, `export_presets.cfg`, `docs/shots/` |
 
 Кадры проверки — в `renders/<область>/` (в git не идут).
 
