@@ -228,8 +228,11 @@ func _recompute_bounds() -> void:
 func _apply_lod() -> void:
 	if _mmi.size() < 2:
 		return
-	var low := _is_low()
-	var d := lod_distance * (0.5 if low else 1.0)
+	# уровень качества (WorldQuality): «Высокое» — 90 м, «Среднее» — ×0,75, «Низкое» — ×0,5 и
+	# дальние юниты без теней
+	var p := WorldQuality.preset(_quality())
+	var d := lod_distance * float(p.get("crowd_lod", 1.0))
+	var far_shadow := bool(p.get("crowd_lod1_shadow", true))
 	# плавная смена LOD (дизеринг на полосе 4 м): без «щели», где не видно ни одного LOD
 	# (с запасом-гистерезисом слой на границе мог пропасть целиком в начале боя)
 	_mmi[0].visibility_range_end = d
@@ -238,14 +241,14 @@ func _apply_lod() -> void:
 	_mmi[1].visibility_range_begin = d
 	_mmi[1].visibility_range_begin_margin = 4.0
 	_mmi[1].visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-	_mmi[1].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if low else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_mmi[1].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if far_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-func _is_low() -> bool:
+func _quality() -> String:
 	if not is_inside_tree():
-		return false
+		return "high"
 	var ordo := get_tree().root.get_node_or_null("Ordo")
-	return ordo != null and ordo.has_method("is_low") and ordo.is_low()
+	return String(ordo.get("quality")) if ordo != null and ordo.get("quality") != null else "high"
 
 
 func _clear() -> void:
