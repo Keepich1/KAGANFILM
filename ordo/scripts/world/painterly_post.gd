@@ -129,9 +129,20 @@ func _render_callback(_type: int, render_data: RenderData) -> void:
 			size.x, size.y, radius_1080 * scale, hardness, sharpness_q, 2.0 / maxf(radius_1080, 1.0) * 0.5, 0.58, anisotropy_alpha,
 			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
 			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
-			canvas_grain, vignette, amount, shadow_range]))
+			_grain(sb), vignette, amount, shadow_range]))
 		_rd.compute_list_dispatch(cl, gx, gy, 1)
 		_rd.compute_list_end()
+
+
+## Фактура холста рисуется в точках кадра 3D; если кадр потом увеличивается (FSR), нити
+## становятся крупнее и заметнее — ослабляем по доле разрешения (при 100 % — как было)
+func _grain(sb: RenderSceneBuffersRD) -> float:
+	var target := sb.get_target_size()
+	var internal := sb.get_internal_size()
+	if target.y <= 0 or internal.y >= target.y:
+		return canvas_grain
+	var k := float(internal.y) / float(target.y)
+	return canvas_grain * k * k
 
 
 func _has(names: Array) -> bool:
@@ -195,7 +206,7 @@ func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
 			size.x, size.y, hsize.x, hsize.y,
 			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
 			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
-			canvas_grain, vignette, amount, shadow_range, upsample_guide, 0.0, 0.0, 0.0]))
+			_grain(sb), vignette, amount, shadow_range, upsample_guide, 0.0, 0.0, 0.0]))
 		_rd.compute_list_dispatch(cl, gx, gy, 1)
 		_rd.compute_list_end()
 

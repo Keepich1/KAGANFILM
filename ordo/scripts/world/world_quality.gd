@@ -6,7 +6,7 @@ extends Node
 ##   «Среднее» (ПК попроще): тот же вид дешевле — живописный фильтр в половине разрешения
 ##                   с бережным увеличением, сетка тумана реже, тени те же 4 каскада, но карта
 ##                   вдвое меньше и ближе (500 м), SSAO проще, травы меньше, кадр 3D 77 % (FSR 1).
-##   «Низкое» (слабые ПК, телефоны): кадр 3D ~2/3 экрана (FSR 1), тени проще и ближе,
+##   «Низкое» (слабые ПК, телефоны): кадр 3D ~2/3 экрана (FSR 1), тени 2 каскада и ближе,
 ##                   без объёмного тумана (обычная дымка гуще), без SSAO и MSAA (FXAA),
 ##                   живописный фильтр в половине разрешения, травы втрое меньше, LOD раньше.
 ## Узел ищет соседей по именам в сцене мира: Environment, Sun, Terrain, Grass, Scatter.
@@ -43,7 +43,7 @@ const PRESETS := {
 	LOW: {
 		"scale": 0.67, "upscale": "fsr1", "msaa": false,
 		"post": "half", "volfog": false, "fog_grid": 64, "ssao": false, "ssao_low": true,
-		"shadow_splits": 2, "shadow_dist": 320.0, "shadow_atlas": 4096, "shadow_soft": "very_low",
+		"shadow_splits": 2, "shadow_dist": 320.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.33, "grass_range": 0.6, "terrain_lod": 0.6, "scatter_lod": 0.6,
 		"crowd_lod": 0.5, "crowd_lod1_shadow": false, "fx": 0.5,
 	},
@@ -224,6 +224,8 @@ static func apply_viewport(vp: Viewport, level: String) -> void:
 		_:
 			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
+	# FSR 1: резкость мягче обычной (0 — самая резкая) — мазки фильтра не «звенят»
+	vp.fsr_sharpness = 0.4 if scale < 1.0 else ProjectSettings.get_setting("rendering/scaling_3d/fsr_sharpness", 0.2)
 	var msaa: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
 	if not bool(p.msaa) or up == "fsr2":
 		msaa = Viewport.MSAA_DISABLED   # FSR 2 сглаживает сам; «Низкое» — FXAA
