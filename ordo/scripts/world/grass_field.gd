@@ -18,7 +18,7 @@ const MAX_CLEARINGS := 48
 ## множитель роста и дальности видимости от камеры (м): [начало, конец]
 @export var rings: Array[Dictionary] = [
 	{"patch": 12.0, "count": 12, "instances": 420, "detail": 1, "scale": 1.0, "fade": Vector4(-1.0, 0.0, 60.0, 80.0)},
-	{"patch": 24.0, "count": 12, "instances": 520, "detail": 0, "scale": 1.45, "fade": Vector4(60.0, 80.0, 190.0, 250.0)},
+	{"patch": 24.0, "count": 12, "instances": 600, "detail": 0, "scale": 1.7, "fade": Vector4(60.0, 80.0, 190.0, 250.0)},
 ]
 ## Доля пучков (качество «Низкое» — меньше)
 @export_range(0.05, 1.0) var density_scale := 1.0:
@@ -63,6 +63,14 @@ func set_clearings(list: Array) -> void:
 	if material:
 		material.set_shader_parameter("clearings", _clearings)
 		material.set_shader_parameter("clearing_count", mini(list.size(), MAX_CLEARINGS))
+
+
+## Материалы колец (у каждого кольца свой — разные размеры участков).
+func ring_materials() -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = []
+	for r in _rings:
+		out.append(r.material)
+	return out
 
 
 func _update_density() -> void:
@@ -115,12 +123,34 @@ func _process(_delta: float) -> void:
 	if cam == null:
 		return
 	var focus := _focus(cam)
+	var cp := cam.global_position
 	for r in _rings:
 		var size: float = r.cfg.patch
 		var c := Vector2i(floori(focus.x / size), floori(focus.y / size))
 		if c != r.center:
 			r.center = c
 			_place_ring(r)
+		_cull_ring(r, cp)
+
+
+## Участки, целиком дальше конца кольца или ближе его начала, не рисуем вовсе
+## (иначе видеокарта зря считает вершины пучков, сжатых в точку).
+func _cull_ring(r: Dictionary, cp: Vector3) -> void:
+	var f: Vector4 = r.cfg.fade
+	var near := f.x * range_scale
+	var far := f.w * range_scale
+	for p: MultiMeshInstance3D in r.patches:
+		if not p.get_meta("in_map", false):
+			continue
+		var box := p.custom_aabb
+		var lo := p.position + box.position
+		var hi := lo + box.size
+		var q := cp.clamp(lo, hi)
+		var dmin := cp.distance_to(q)
+		var dmax := 0.0
+		for corner in [Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z), Vector3(lo.x, lo.y, hi.z), Vector3(hi.x, lo.y, hi.z)]:
+			dmax = maxf(dmax, cp.distance_to(corner))
+		p.visible = dmin < far and dmax > near
 
 
 ## Точка интереса: куда смотрит камера на земле (или чуть впереди камеры).
@@ -150,9 +180,12 @@ func _place_ring(r: Dictionary) -> void:
 			k += 1
 			var gx := float(c.x - n / 2 + i) * size
 			var gz := float(c.y - n / 2 + j) * size
+			# half = −512: участок целиком за краем карты
 			if gx + size < half or gz + size < half or gx > -half or gz > -half:
 				p.visible = false
+				p.set_meta("in_map", false)
 				continue
+			p.set_meta("in_map", true)
 			var lo := INF
 			var hi := -INF
 			for b in 3:

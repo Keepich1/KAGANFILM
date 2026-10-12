@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/splat.png-ae0cd871c0063fa976728ff115275584.ct
 
 [params]
 
-compress/mode=0
+compress/mode=3
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

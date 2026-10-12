@@ -24,7 +24,7 @@ uniform float water_level = -4.0;
 uniform float snow_line = 270.0;
 
 // Тон слоёв (множители к рисованным текстурам) — тут настраивается палитра земли
-uniform vec4 tint_grass : source_color = vec4(0.86, 1.0, 0.82, 1.0);
+uniform vec4 tint_grass : source_color = vec4(1.0, 1.16, 0.88, 1.0);
 uniform vec4 tint_dry : source_color = vec4(0.95, 0.9, 0.82, 1.0);
 uniform vec4 tint_earth : source_color = vec4(0.95, 0.9, 0.86, 1.0);
 uniform vec4 tint_rock : source_color = vec4(0.92, 0.92, 0.95, 1.0);
@@ -37,17 +37,17 @@ uniform vec4 macro_warm : source_color = vec4(1.08, 0.98, 0.80, 1.0);
 uniform float macro_amount = 0.55;
 uniform float macro_scale = 140.0;        // м
 // Общая яркость земли (земля темнее юнитов, ТЗ 11.2)
-uniform float ground_value = 0.8;
+uniform float ground_value = 0.95;
 // Вдали детали гаснут, цвет спокойнее
 uniform float far_calm_start = 120.0;
 uniform float far_calm_end = 700.0;
 uniform float far_calm = 0.55;
 // Скользящий свет низкого солнца: ровная земля темнее склонов, обращённых к солнцу
-uniform float grazing_dim = 0.8;
+uniform float grazing_dim = 0.62;
 uniform float backlit_dim = 0.55;
 uniform float rim_strength = 0.25;
 // Насыщенность земли (приглушённая палитра ТЗ 11.1)
-uniform float ground_saturation = 0.78;
+uniform float ground_saturation = 0.9;
 // Нарисованная холодная тень: добавка там, куда солнце не попадает (rgb, a — сила)
 uniform vec4 shadow_paint : source_color = vec4(0.26, 0.33, 0.47, 0.045);
 // Крупный мазок, ломающий границу света на земле (м⁻¹)
@@ -70,12 +70,12 @@ vec4 tile2(sampler2D t, vec2 p, float k) {
 	return mix(a, b, k);
 }
 
-vec4 triplanar(sampler2D t, vec3 p, vec3 n) {
+vec4 triplanar(sampler2D t, vec3 p, vec3 n, float scale) {
 	vec3 w = pow(abs(n), vec3(4.0));
 	w /= (w.x + w.y + w.z);
-	vec4 x = texture(t, p.zy / (tile_size * 1.6));
-	vec4 y = texture(t, p.xz / (tile_size * 1.6));
-	vec4 z = texture(t, p.xy / (tile_size * 1.6));
+	vec4 x = texture(t, p.zy / scale);
+	vec4 y = texture(t, p.xz / scale);
+	vec4 z = texture(t, p.xy / scale);
 	return x * w.x + y * w.y + z * w.z;
 }
 
@@ -114,7 +114,11 @@ void fragment() {
 	vec4 td = tile2(tex_dry, wp.xz + vec2(31.0, 17.0), detail_mix);
 	vec4 te = tile2(tex_earth, wp.xz + vec2(7.0, 53.0), detail_mix);
 	vec4 ts = tile2(tex_sand, wp.xz + vec2(91.0, 3.0), detail_mix);
-	vec4 tr = triplanar(tex_rock, wp, wn);
+	// камень: мелкие грани + крупные плоскости (видны с дальних планов как широкие мазки)
+	vec4 tr = triplanar(tex_rock, wp, wn, tile_size * 1.6);
+	vec4 tr_big = triplanar(tex_rock, wp + vec3(13.0, 0.0, 7.0), wn, tile_size * 11.0);
+	tr = mix(tr, tr_big, 0.3 + 0.4 * smoothstep(60.0, 500.0, v_cam_dist));
+	tr.rgb *= mix(0.75, 1.15, tr_big.a);
 
 	vec3 col = tg.rgb * tint_grass.rgb;
 	float hcur = tg.a;
@@ -139,7 +143,8 @@ void fragment() {
 	float macro = mix(m1, m2, 0.5);
 	vec3 tint = mix(macro_cool.rgb, macro_warm.rgb, smoothstep(0.3, 0.7, macro));
 	col *= mix(vec3(1.0), tint, macro_amount * (1.0 - snow));
-	col *= mix(0.88, 1.08, smoothstep(0.25, 0.75, m2));
+	// пятна света и тени, «написанные» по земле широкой кистью
+	col *= mix(0.84, 1.14, smoothstep(0.25, 0.75, m2));
 
 	// вдали спокойнее: детали гаснут к среднему тону
 	float calm = smoothstep(far_calm_start, far_calm_end, v_cam_dist) * far_calm;

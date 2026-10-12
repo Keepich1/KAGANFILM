@@ -73,6 +73,17 @@ func _debug_args() -> void:
 		env.volumetric_fog_enabled = false
 	if Ordo.has_arg("novolfog"):
 		env.volumetric_fog_enabled = false
+	var parts := {"grass": "Grass", "scatter": "Scatter", "water": "Water", "fogbanks": "FogBanks"}
+	for part in parts:
+		if Ordo.has_arg("no" + part):
+			var n := get_node_or_null(String(parts[part])) as Node3D
+			if n:
+				n.visible = false
+				n.process_mode = Node.PROCESS_MODE_DISABLED
+	if Ordo.has_arg("grassdebug") and has_node("Grass"):
+		for r in ($Grass as GrassField).ring_materials():
+			for k in ["base_color", "mid_color", "tip_color", "cool_tip", "dry_tip"]:
+				r.set_shader_parameter(k, Color(1, 0, 1))
 	if Ordo.has_arg("noglow"):
 		env.glow_enabled = false
 	if Ordo.has_arg("nomsaa"):

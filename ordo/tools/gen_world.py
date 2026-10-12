@@ -204,6 +204,10 @@ def heights(X, Z, far=False):
     # предгорья: длинные отроги, уходящие к долине
     spurs = ridged(X, Z, 320, 3, seed=SEED + 6)
     mount += 28.0 * smoothstep(0.42, 0.85, r) * spurs ** 2
+    if not far:
+        # эрозия: мелкие гребни и промоины на склонах гор (сетка 2 м их передаёт)
+        gully = ridged(X + 30.0 * fbm(X, Z, 90, 2, seed=SEED + 17), Z, 42, 3, seed=SEED + 16)
+        mount += 11.0 * (rise ** 1.2) * (gully - 0.45) * (0.6 + 0.6 * rid)
     if far:
         # за краем горы продолжаются и поднимаются, затем выходят на плато
         out = smoothstep(1.0, 2.6, r0)
