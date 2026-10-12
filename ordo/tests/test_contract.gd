@@ -6,6 +6,7 @@ extends SceneTree
 
 
 func _init() -> void:
+	_test_compile_all()
 	_test_classes()
 	_test_ids()
 	_test_cmd()
@@ -18,6 +19,33 @@ func _init() -> void:
 	_test_fonts()
 	_test_fake_city()
 	SimHarness.finish(self)
+
+
+## Скрипты симуляции и тестов разбираются и собираются (ворота M0: «пакеты собираются против заглушек»).
+## Узлы вида и интерфейса тут не проверяются: в режиме --script нет автозагрузки Ordo (CONTRACT §4).
+func _test_compile_all() -> void:
+	print("[скрипты симуляции]")
+	var paths := PackedStringArray(["res://scripts/battle/sim.gd", "res://scripts/battle/unit_stats.gd",
+		"res://scripts/battle/rng.gd", "res://scripts/world/terrain.gd", "res://scripts/world/scatter_data.gd",
+		"res://scripts/units/anim_spec.gd"])
+	for dir in ["res://scripts/contract", "res://scripts/data", "res://scripts/nav", "res://scripts/econ",
+			"res://scripts/game", "res://tests"]:
+		if DirAccess.dir_exists_absolute(dir):
+			_collect(dir, paths)
+	var bad := PackedStringArray()
+	for p in paths:
+		var s := ResourceLoader.load(p, "GDScript", ResourceLoader.CACHE_MODE_REUSE) as GDScript
+		if s == null or not s.can_instantiate():
+			bad.append(p)
+	SimHarness.check(bad.is_empty() and paths.size() > 30, "скриптов: %d, с ошибками: %s" % [paths.size(), str(bad) if not bad.is_empty() else "нет"])
+
+
+func _collect(dir: String, out: PackedStringArray) -> void:
+	for f in DirAccess.get_files_at(dir):
+		if f.ends_with(".gd"):
+			out.append(dir.path_join(f))
+	for d in DirAccess.get_directories_at(dir):
+		_collect(dir.path_join(d), out)
 
 
 ## Все классы создаются; заглушки перекрывают все методы договора (иначе push_error в работе)
