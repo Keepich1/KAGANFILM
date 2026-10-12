@@ -232,13 +232,15 @@ void musket_order(inout HPose p, vec3 butt, vec3 dir) {
 
 void hp_idle(inout HPose p, float ph, float var, float t) {
 	float br = sin(TAU * ph);
-	float sh = noise1(t * 0.16 + var * 37.0) * 2.0 - 1.0;
+	// контрапост: вес на одной ноге (у каждого своей), медленно переносится
+	float bias = hash11(var * 29.0) > 0.5 ? 1.0 : -1.0;
+	float sh = clamp(0.65 * bias + 0.6 * (noise1(t * 0.12 + var * 37.0) * 2.0 - 1.0), -1.0, 1.0);
 	float look = noise1(t * 0.11 + var * 91.0) - 0.5;
 	float fwd = (hash11(var * 13.0) - 0.5) * 0.14;
-	hp_stance(p, vec3(0.125, 0.0, 0.05 + fwd), vec3(-0.125, 0.0, -0.02 - fwd));
-	p.pel_off = vec3(0.035 * sh, -0.022 - 0.01 * abs(sh), 0.0);
-	p.pel_rot = vec3(0.02, 0.06 * sh, 0.05 * sh);
-	p.chest_rot = vec3(0.02 - 0.025 * br, -0.04 * sh, -0.05 * sh);
+	hp_stance(p, vec3(0.13, 0.0, 0.05 + fwd), vec3(-0.13, 0.0, -0.02 - fwd));
+	p.pel_off = vec3(0.045 * sh, -0.03 - 0.012 * abs(sh), 0.0);
+	p.pel_rot = vec3(0.02, 0.07 * sh, 0.075 * sh);
+	p.chest_rot = vec3(0.02 - 0.025 * br, -0.05 * sh, -0.11 * sh);
 	p.head_rot = vec3(-0.03 + 0.04 * (noise1(t * 0.07 + var * 5.0) - 0.5), 0.9 * look, 0.03 * sh);
 	p.skirt = 0.6;
 }
@@ -484,8 +486,8 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			p.hand_r = hp_wp(p, 0.0);
 			p.elbow_r = C.b * vec3(-1.0, -0.3, -0.5);
 			if (item_kind == IK_SHIELD) {
-				p.hand_l = xf_pt(C, mix(vec3(0.06, 1.2, 0.34), vec3(0.24, 1.1, 0.18), hitk * (1.0 - back)));
-				p.elbow_l = C.b * vec3(1.0, -0.2, -0.2);
+				p.hand_l = xf_pt(C, mix(vec3(-0.04, 1.2, 0.3), vec3(0.2, 1.12, 0.2), hitk * (1.0 - back)));
+				p.elbow_l = C.b * vec3(1.0, -0.2, -0.35);
 			} else {
 				p.hand_l = xf_pt(C, h_arm(HP_SHOULDER_L, HP_HAND_L, 0.4 - 0.6 * hitk, 0.4, 0.08));
 			}
@@ -574,8 +576,8 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			hp_weapon_t(p, C, vec3(-0.2, 1.42, 0.22), vec3(0.15, 0.3, 1.0), vec3(0.0, 1.0, 0.0));
 			p.hand_r = hp_wp(p, 0.0);
 			p.elbow_r = C.b * vec3(-1.0, 0.3, -0.4);
-			p.hand_l = xf_pt(C, vec3(0.02, 1.3, 0.35));
-			p.elbow_l = C.b * vec3(1.0, -0.2, -0.1);
+			p.hand_l = xf_pt(C, vec3(-0.05, 1.27, 0.3));
+			p.elbow_l = C.b * vec3(1.0, -0.2, -0.3);
 		}
 	} else {
 		// IDLE, WALK, RUN; SHOOT/RELOAD без ружья — как покой
@@ -622,9 +624,9 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			}
 		}
 		if (item_kind == IK_SHIELD) {
-			// щит у груди, рука поперёк тела
-			p.hand_l = xf_pt(C, vec3(0.08, 1.07 + 0.02 * run, 0.3));
-			p.elbow_l = C.b * vec3(1.0, -0.4, -0.2);
+			// щит у груди: предплечье поперёк тела (тогда щит смотрит вперёд)
+			p.hand_l = xf_pt(C, vec3(-0.03, 1.1 + 0.03 * run, 0.24));
+			p.elbow_l = C.b * vec3(1.0, -0.3, -0.35);
 		}
 	}
 	if (item_kind == IK_SHIELD && (st == HS_FLEE)) {

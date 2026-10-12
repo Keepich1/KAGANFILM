@@ -20,7 +20,8 @@ import os
 
 import numpy as np
 
-from meshkit import Mesh, loft, lathe, tube, ellipsoid, grid, ring
+from meshkit import Mesh, loft, tube, ellipsoid, grid, ring
+from meshkit import lathe as _lathe_raw
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -92,6 +93,16 @@ def ring_axis(center, axis, rc, rs, k=8, ref=(0.0, 1.0, 0.0), phase=0.0, squash=
     a = np.radians(phase) + np.linspace(0, 2 * np.pi, k, endpoint=False)
     f = np.ones(k) if squash is None else np.array([squash(t) for t in a])
     return v3(center)[None] + (rc * f * np.cos(a))[:, None] * ec[None] + (rs * f * np.sin(a))[:, None] * es[None]
+
+
+def lathe(profile, *args, **kw) -> Mesh:
+    """meshkit.lathe с наружными гранями при любом направлении профиля.
+    (У meshkit.lathe профиль сверху вниз даёт грани внутрь — их отсекает cull_back.)"""
+    m = _lathe_raw(profile, *args, **kw)
+    p = np.asarray(profile, dtype=np.float64)
+    if p[-1, 1] < p[0, 1]:
+        m.flip()
+    return m
 
 
 def limb(path, radii, sides=6, cap_end=False):

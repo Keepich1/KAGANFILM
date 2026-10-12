@@ -100,8 +100,7 @@ def _hat(A, part, c, d, kind, variant=True):
         out.append(tag(av, part, S(A, "metal", METAL_SUB["iron"]), metal=0.6))
         if kind == "helmet_plume":
             path = [(cx, cy + 0.40, cz), (cx, cy + 0.52, cz - 0.03), (cx, cy + 0.66, cz - 0.10), (cx, cy + 0.74, cz - 0.20)]
-            pl = limb(path if not lo else [path[0], path[2], path[3]],
-                      [0.018, 0.05, 0.05, 0.012] if not lo else [0.018, 0.05, 0.012], sides=3)
+            pl = limb([path[0], path[2], path[3]], [0.018, 0.055, 0.012], sides=3)
             out.append(tag(pl, part, A.rect("plume"), side=0.0, flip=False,
                            weight=lambda m: (m.P[:, 1] - (cy + 0.4)) / 0.34))
     return out
@@ -172,7 +171,7 @@ def human_upper(A, spec, d, P, ids):
     # меховой ворот и плащ (полководец)
     if spec.get("fur_collar"):
         pts = [(0.16 * math.sin(a), 1.47 + dy, 0.12 * math.cos(a) + dz - 0.01)
-               for a in np.linspace(0, 2 * math.pi, 5 if lo else 6)]
+               for a in np.linspace(0, 2 * math.pi, 5)]
         fc = limb(pts, 0.05, sides=3 if lo else 4)
         out.append(tag(fc, ids["CHEST"], A.rect("fur"), flip=False))
     if spec.get("cloak"):
@@ -430,9 +429,10 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
     out.append(tag(body, RP["BODY"], hs("body"), coat=coat_mask))
     # шея с гребнем гривы
     ax = v3((0, 1.84, 0.92)) - v3((0, 1.33, 0.56))
-    crest = lambda a: 1.0 + 0.28 * max(math.cos(a), 0.0) ** 5  # noqa: E731
-    ns = [((0, 1.25, 0.5), 0.3, 0.17), ((0, 1.46, 0.68), 0.25, 0.145), ((0, 1.65, 0.8), 0.19, 0.115),
-          ((0, 1.8, 0.9), 0.14, 0.095)]
+    # сечение шеи: гребень (a=0) чуть выше, горло (a=π) округлое, бока полнее — не «доска»
+    crest = lambda a: (1.0 + 0.16 * max(math.cos(a), 0.0) ** 4) * (1.0 + 0.1 * math.sin(a) ** 2)  # noqa: E731
+    ns = [((0, 1.27, 0.53), 0.255, 0.165), ((0, 1.47, 0.69), 0.215, 0.145), ((0, 1.65, 0.81), 0.17, 0.12),
+          ((0, 1.8, 0.9), 0.13, 0.1)]
     neck = loft([ring_axis(c, ax, rc, rs, 5 if lo else 8, squash=crest) for c, rc, rs in ([ns[0], ns[3]] if lo else ns)])
     # вес изгиба: 0 у основания (сидит в корпусе) → 1 у затылка; шея гнётся, а не поворачивается целиком
     axn = ax / np.linalg.norm(ax)
@@ -440,21 +440,23 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
                    weight=lambda m: (m.P - v3((0, 1.3, 0.56))) @ axn / 0.5))
     # голова: от затылка к морде
     hax = v3((0, 1.43, 1.36)) - v3((0, 1.86, 0.96))
-    hsec = [((0, 1.88, 0.955), 0.1, 0.072), ((0, 1.745, 1.03), 0.145, 0.095), ((0, 1.56, 1.225), 0.082, 0.068),
-            ((0, 1.445, 1.34), 0.078, 0.07)]
+    # голова: затылок, щёки (ганаши — шире, к челюсти), прямая переносица, морда с ноздрями
+    hsec = [((0, 1.885, 0.955), 0.095, 0.078), ((0, 1.735, 1.025), 0.14, 0.1), ((0, 1.585, 1.2), 0.085, 0.07),
+            ((0, 1.45, 1.335), 0.08, 0.072)]
     if d < 0.8:
         hsec = [hsec[0], hsec[1], hsec[3]]
     head = loft([ring_axis(c, hax, rc, rs, 5 if lo else 7) for c, rc, rs in hsec], cap_end=not lo)
     out.append(tag(head, RP["HEAD"], hs("head"), coat=coat_mask, flip=False))
     for s in (() if lo else (1, -1)):
-        ear = limb([(0.045 * s, 1.9, 0.935), (0.068 * s, 2.05, 0.965)], [0.034, 0.003], sides=3)
+        ear = limb([(0.045 * s, 1.9, 0.94), (0.06 * s, 1.99, 0.96), (0.07 * s, 2.06, 0.98)], [0.03, 0.026, 0.003],
+                   sides=3)
         out.append(tag(ear, RP["HEAD"], hs("hair"), coat=coat_mask, flip=False))
     # ноги
     sides = 5 if d > 0.8 else 4
     for s, sd in ((1, "L"), (-1, "R")):
         x = 0.15 * s
         fu = limb([(x, 1.06, 0.49), (x, 0.5, 0.55)] if lo else [(x, 1.06, 0.49), (x, 0.8, 0.52), (x, 0.5, 0.55)],
-                  [0.09, 0.048] if lo else [0.1, 0.075, 0.048], sides=sides)
+                  [0.11, 0.048] if lo else [0.125, 0.08, 0.048], sides=sides)
         out.append(tag(fu, RP["FU_" + sd], hs("legs_up"), coat=coat_mask, flip=False))
         if lo:
             fl = limb([(x, 0.53, 0.55), (x, 0.13, 0.566), (x, 0.075, 0.576)], [0.045, 0.04, 0.037], sides=sides)
@@ -467,7 +469,7 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
         x = 0.165 * s
         hu = limb([(x * 1.06, 1.1, -0.52), (x, 0.56, -0.7)] if lo else
                   [(x * 1.06, 1.1, -0.52), (x * 1.03, 0.84, -0.61), (x, 0.56, -0.7)],
-                  [0.11, 0.052] if lo else [0.125, 0.085, 0.052], sides=sides)
+                  [0.13, 0.052] if lo else [0.155, 0.095, 0.052], sides=sides)
         out.append(tag(hu, RP["HU_" + sd], hs("legs_up"), coat=coat_mask, flip=False))
         if lo:
             hl = limb([(x, 0.59, -0.705), (x, 0.13, -0.632), (x, 0.075, -0.622)], [0.05, 0.04, 0.037], sides=sides)

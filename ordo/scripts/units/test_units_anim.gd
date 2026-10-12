@@ -295,11 +295,13 @@ func _build_world() -> void:
 	sun.shadow_blur = 1.5
 	add_child(sun)
 	var ground := MeshInstance3D.new()
-	ground.mesh = _ground_mesh(700.0, 6.0)
+	ground.mesh = _ground_mesh(600.0, 7.0)
 	var gm := ShaderMaterial.new()
 	gm.shader = preload("res://shaders/painterly_surface.gdshader")
 	gm.set_shader_parameter("albedo_tex", preload("res://assets/textures/common/brush_noise.png"))
-	gm.set_shader_parameter("albedo_tint", Color(0.2, 0.2, 0.13))
+	gm.set_shader_parameter("albedo_tint", Color(1.0, 1.0, 1.0))
+	gm.set_shader_parameter("use_vertex_color", true)
+	gm.set_shader_parameter("rim_strength", 0.0)  # контровой у плоской земли против солнца пересвечивает
 	ground.material_override = gm
 	add_child(ground)
 	_cam("CamLineup", Vector3(-1.5, 15.5, 17.0), Vector3(-1.5, 0.6, -2.6), 50.0)
@@ -330,13 +332,36 @@ func _cam(cam_name: String, pos: Vector3, target: Vector3, fov: float) -> void:
 
 
 func _ground_mesh(size: float, uv_m: float) -> ArrayMesh:
+	# временная степь: пятна приглушённой оливы, серо-зелёного и охры (палитра GROUND), темнее юнитов
+	var cols := [Color("#45462a"), Color("#3c463b"), Color("#5d6a55"), Color("#646238"), Color("#8a7448"),
+		Color("#5e4a33")]
+	var noise := FastNoiseLite.new()
+	noise.seed = 11
+	noise.frequency = 0.035
+	noise.fractal_octaves = 3
+	var noise2 := FastNoiseLite.new()
+	noise2.seed = 5
+	noise2.frequency = 0.11
+	var n := 120
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var h := size * 0.5
-	var pts := [Vector3(-h, 0, -h), Vector3(h, 0, -h), Vector3(h, 0, h), Vector3(-h, 0, h)]
-	for idx in [0, 1, 2, 0, 2, 3]:
-		var p: Vector3 = pts[idx]
-		st.set_normal(Vector3.UP)
-		st.set_uv(Vector2(p.x, p.z) / uv_m)
-		st.add_vertex(p)
+	var step := size / n
+	for j in n + 1:
+		for i in n + 1:
+			var x := -h + i * step
+			var z := -h + j * step
+			var t := clampf(noise.get_noise_2d(x, z) * 0.5 + 0.5, 0.0, 0.999) * (cols.size() - 1)
+			var k := int(t)
+			var c: Color = (cols[k] as Color).lerp(cols[k + 1], smoothstep(0.0, 1.0, t - k))
+			c = c.darkened(0.12 * (noise2.get_noise_2d(x, z) * 0.5 + 0.5))
+			st.set_color(c.srgb_to_linear() * 0.62)
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(x, z) / uv_m)
+			st.add_vertex(Vector3(x, 0.0, z))
+	for j in n:
+		for i in n:
+			var a := j * (n + 1) + i
+			for idx in [a, a + 1, a + n + 2, a, a + n + 2, a + n + 1]:
+				st.add_index(idx)
 	return st.commit()
