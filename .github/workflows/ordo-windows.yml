@@ -1,0 +1,55 @@
+# Автосборка «Ордо» для Windows: установщик и переносной zip выкладываются
+# в «Releases» репозитория при каждом изменении папки ordo/ (ТЗ, этап 6: автосборка).
+name: Ордо — сборка для Windows
+
+on:
+  push:
+    branches: [claude/new-session-x8833z]
+    paths: ["ordo/**", ".github/workflows/ordo-windows.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    env:
+      GODOT_VERSION: "4.7.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Godot, шаблоны экспорта и NSIS
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip && sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          curl -sSL -o tpl.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p ~/.local/share/godot/export_templates
+          unzip -q tpl.tpz && mv templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          rm -f godot.zip tpl.tpz
+          sudo apt-get update -q && sudo apt-get install -y -q nsis
+
+      - name: Сборка
+        run: ordo/tools/build_windows.sh "0.1.${{ github.run_number }}"
+
+      - name: Выпуск
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ordo-v0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Ордо — срез стиля 0.1.${{ github.run_number }}
+          prerelease: true
+          body: |
+            Срез стиля «Ордо» (этап 0 ТЗ): лагерь кыпчаков на закате и столкновение двух отрядов.
+
+            **Скачать:** `Ordo-Setup-….exe` — установщик (ярлыки на рабочем столе и в «Пуске»),
+            или `Ordo-…-windows.zip` — без установки: распаковать и запустить `Ordo.exe`.
+
+            При первом запуске Windows покажет «Windows защитила ваш компьютер» —
+            «Подробнее» → «Выполнить в любом случае» (у файла пока нет цифровой подписи).
+
+            Управление: F1 — подсказка, F2 — качество, F9 — проверка скорости (+1000 / +3000 солдат).
+          files: |
+            build/windows/Ordo-Setup-*.exe
+            build/windows/Ordo-*-windows.zip
