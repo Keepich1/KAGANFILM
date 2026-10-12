@@ -102,7 +102,8 @@ func start(p_seed: int) -> void:
 	kok = sim.add_squad(0, "sarboz", KOK_COUNT, KOK_POS, -PI / 2, BattleSim.Formation.LINE, 50, "yuzboshi", true, 0.35)
 	# Кыпчаки: «Сайыскерлер», две шеренги по 30, жүз башы впереди, туугчу; собираются из толпы
 	kip = sim.add_squad(1, "sayisker", KIP_COUNT, KIP_POS, PI / 2, BattleSim.Formation.LINE, 30, "juz_bashy", true, 2.2)
-	gen = sim.add_general(1, "kolbashchy", KIP_POS + Vector2(-9.0, 1.0), PI / 2)
+	# полководец ждёт перед правым крылом и выезжает к центру строя
+	gen = sim.add_general(1, "kolbashchy", KIP_POS + Vector2(11.0, 16.0), PI)
 	_wire()
 	started.emit(p_seed)
 
@@ -231,9 +232,9 @@ func _ai_general(t: float) -> void:
 		return
 	match _gen_phase:
 		0:
-			# выезжает перед строем и поворачивается к своим
-			if t >= 0.6:
-				sim.order_move(gen, KIP_POS + Vector2(12.0, 1.0), BattleSim.Gait.TROT, -PI / 2)
+			# выезжает перед строем, лицом к врагу
+			if t >= 0.3:
+				sim.order_move(gen, KIP_POS + Vector2(12.0, 1.0), BattleSim.Gait.RUN, PI / 2)
 				_gen_phase = 1
 		1:
 			if t >= WAR_CRY_AT:
