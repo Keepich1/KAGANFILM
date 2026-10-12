@@ -25,7 +25,7 @@ sky = SubResource("Sky")
 ambient_light_source = 2
 ambient_light_color = Color(0.29, 0.47, 0.6, 1)
 ambient_light_sky_contribution = 0.0
-ambient_light_energy = 1.25
+ambient_light_energy = 0.75
 reflected_light_source = 2
 tonemap_mode = 4
 tonemap_exposure = 0.95
@@ -64,6 +64,9 @@ volumetric_fog_length = 320.0
 volumetric_fog_detail_spread = 2.5
 volumetric_fog_ambient_inject = 0.5
 volumetric_fog_sky_affect = 0.0
+adjustment_enabled = true
+adjustment_contrast = 1.12
+adjustment_saturation = 1.06
 
 [sub_resource type="CompositorEffect" id="Post"]
 script = ExtResource("6")

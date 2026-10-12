@@ -68,6 +68,7 @@ uniform float air_amount = 0.8;
 uniform float air_energy = 0.42;
 uniform float air_low = 0.45;             // низ хребтов в дымке сильнее
 global uniform vec3 ordo_sun_dir;
+global uniform vec4 ordo_wind;
 
 varying float v_cam_dist;
 varying float v_air;
@@ -139,7 +140,11 @@ void fragment() {
 	float hcur = tg.a;
 	layer(col, hcur, td, tint_dry.rgb, sp.r, brush, 0.22);
 	layer(col, hcur, ts, tint_sand.rgb, sp.a, brush, 0.18);
-	layer(col, hcur, te, tint_earth.rgb, sp.g, brush, 0.16);
+	// вытоптанная земля (лагерь, тропы): пыльная серо-охристая, не ржавая — не спорит с киноварью
+	// кыпчаков (ТЗ 11.2); пятно разбито мазками на вытоптанные места, а не ровный диск
+	vec3 te_c = mix(vec3(dot(te.rgb, vec3(0.3, 0.55, 0.15))), te.rgb, 0.5) * vec3(1.02, 1.0, 0.95);
+	float sg = sp.g * smoothstep(0.2, 0.6, b1 * 0.55 + b2 * 0.45 + sp.g * 0.25);
+	layer(col, hcur, vec4(te_c, te.a), tint_earth.rgb, sg, brush, 0.16);
 	layer(col, hcur, tr, tint_rock.rgb, sp.b, brush, 0.12);
 
 	// поле боя (CONTRACT §3: центр (90, 0) ±80 м): старые вытоптанные полосы с востока на запад
@@ -155,10 +160,17 @@ void fragment() {
 	// осыпи и кулуары на крутых склонах: мазки вдоль линии падения склона (горы не «глиняные»)
 	vec2 downhill = normalize(wn.xz + vec2(1e-4, 0.0));
 	float across = dot(wp.xz, vec2(-downhill.y, downhill.x));
-	float gully = texture(brush_tex, vec2(across * 0.018, wp.y * 0.0035 + b1 * 0.05)).r;
-	float gully2 = texture(brush_tex, vec2(across * 0.061 + 0.4, wp.y * 0.011)).r;
+	// крупно (видно за полкилометра): кулуары вдоль падения и пласты поперёк, край — мазком
+	float gully = paint_vnoise(vec2(across * 0.035, wp.y * 0.007 + b1 * 0.3));
+	float gully2 = paint_vnoise(vec2(across * 0.11 + 7.0, wp.y * 0.02));
+	float strata = paint_vnoise(vec2(across * 0.006 + 3.0, wp.y * 0.065 + b2 * 0.6));
+	float rockv = gully * 0.5 + gully2 * 0.25 + strata * 0.25 + (b3 - 0.5) * 0.15;
 	float steep_k = smoothstep(0.22, 0.55, slope) * (1.0 - sp.a);
-	col *= mix(1.0, mix(0.62, 1.14, gully * 0.65 + gully2 * 0.35), steep_k * 0.85);
+	// ступени тона: тёмные расщелины, средний камень, светлые грани — как кистью
+	float rock_tone = mix(0.55, 1.18, smoothstep(0.32, 0.4, rockv) * 0.55 + smoothstep(0.55, 0.62, rockv) * 0.45);
+	col *= mix(1.0, rock_tone, steep_k * 0.9);
+	// в расщелинах холоднее, на гранях теплее
+	col = mix(col, col * mix(vec3(0.86, 0.92, 1.08), vec3(1.06, 1.0, 0.92), smoothstep(0.35, 0.6, rockv)), steep_k * 0.7);
 
 	// мокрый берег и дно: темнее, холоднее
 	float under = smoothstep(water_level + 0.05, water_level - 0.6, wp.y);
@@ -177,7 +189,11 @@ void fragment() {
 	vec3 tint = mix(macro_cool.rgb, macro_warm.rgb, smoothstep(0.3, 0.7, macro));
 	col *= mix(vec3(1.0), tint, macro_amount * (1.0 - snow));
 	// пятна света и тени, «написанные» по земле широкой кистью
-	col *= mix(0.84, 1.14, smoothstep(0.25, 0.75, m2));
+	col *= mix(0.7, 1.18, smoothstep(0.25, 0.75, m2));
+	// по траве бегут волны ветра (та же волна, что у травы): степь живая и с камеры стратегии
+	vec2 wdir = normalize(ordo_wind.xy + vec2(1e-4));
+	float gust = sin(dot(wp.xz, wdir) * 0.085 - TIME * (1.1 + ordo_wind.w * 1.6)) * 0.5 + 0.5;
+	col *= 1.0 + gust * gust * 0.09 * ordo_wind.z * clamp(gm.r * 1.4, 0.0, 1.0) * (1.0 - sp.b);
 
 	// вдали спокойнее: детали гаснут к среднему тону
 	float calm = smoothstep(far_calm_start, far_calm_end, v_cam_dist) * far_calm;
@@ -209,13 +225,13 @@ void light() {
 	// против солнца земля в контражуре — темнее (видна теневая сторона травинок)
 	float backlit = clamp(-dot(VIEW, LIGHT), 0.0, 1.0);
 	graze *= mix(1.0, 1.0 - backlit_dim, backlit * backlit);
-	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR * graze, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
+	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR * graze, PAINT_ATTEN, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	// контровой свет только на склонах-гребнях (на ровной земле под скользящим взглядом он лишний)
 	float steep = smoothstep(0.88, 0.6, dot(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
-	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength * steep * (1.0 - v_air));
+	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, PAINT_ATTEN, rim_strength * steep * (1.0 - v_air));
 	if (LIGHT_IS_DIRECTIONAL) {
 		// цветная тень: холодный сине-бирюзовый мазок, сохраняет рисунок почвы
-		float sun_amt = smoothstep(-0.05, 0.25, ndl + (paint_brush_v - 0.5) * 0.2) * ATTENUATION;
+		float sun_amt = smoothstep(-0.05, 0.25, ndl + (paint_brush_v - 0.5) * 0.2) * PAINT_ATTEN;
 		float luma = dot(ALBEDO, vec3(0.3, 0.55, 0.15));
 		SPECULAR_LIGHT += shadow_paint.rgb * shadow_paint.a * (1.0 - sun_amt) * (0.35 + luma * 3.0) * length(LIGHT_COLOR);
 	}

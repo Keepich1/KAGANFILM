@@ -83,7 +83,8 @@ void vertex() {
 
 	float dist = distance(vec3(wxz.x, gy, wxz.y), CAMERA_POSITION_WORLD);
 	float vis = smoothstep(fade.x, fade.y, dist) * (1.0 - smoothstep(fade.z, fade.w, dist));
-	float keep = step(h3, gm.r * inside * 1.05);
+	// редкие одиночные пучки на вытоптанной земле читаются как «рассада» — там травы нет вовсе
+	float keep = step(h3, gm.r * inside * 1.05) * step(0.26, gm.r) * (1.0 - smoothstep(0.3, 0.55, sp.g));
 	for (int i = 0; i < clearing_count; i++) {
 		vec4 c = clearings[i];
 		if (distance(wxz, c.xy) < c.z) {
@@ -140,7 +141,8 @@ void vertex() {
 	pc = mix(mid_color.rgb, pc, smoothstep(0.15, 0.5, t));
 	// вдали ости ковыля сливаются с травой: светлые метёлки иначе читаются как «сор» по полю
 	float cam_d = length(vec3(wxz.x, gy, wxz.y) - CAMERA_POSITION_WORLD);
-	float plume_k = is_plume * (1.0 - 0.8 * smoothstep(18.0, 55.0, cam_d));
+	float look_down = clamp((CAMERA_POSITION_WORLD.y - gy) / max(cam_d, 0.1), 0.0, 1.0);
+	float plume_k = is_plume * (1.0 - 0.8 * smoothstep(18.0, 55.0, cam_d)) * (1.0 - 0.7 * smoothstep(0.35, 0.75, look_down));
 	v_color = mix(c, pc, plume_k);
 	v_plume = plume_k;
 	v_t = t;
@@ -158,12 +160,12 @@ void fragment() {
 }
 
 void light() {
-	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
+	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, PAINT_ATTEN, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	float back = clamp(dot(LIGHT, -VIEW), 0.0, 1.0);
 	// просвет листьев против солнца
-	DIFFUSE_LIGHT += LIGHT_COLOR * pow(back, 4.0) * translucency * v_t * ATTENUATION / PI;
+	DIFFUSE_LIGHT += LIGHT_COLOR * pow(back, 4.0) * translucency * v_t * PAINT_ATTEN / PI;
 	// ости ковыля — серебристо-золотое свечение в контражуре
 	SPECULAR_LIGHT += plume_glow.rgb * LIGHT_COLOR * pow(back, 3.0) * v_plume * smoothstep(0.2, 0.8, v_t)
-		* plume_glow_strength * ATTENUATION / PI;
-	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength) * v_t;
+		* plume_glow_strength * PAINT_ATTEN / PI;
+	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, PAINT_ATTEN, rim_strength) * v_t;
 }
