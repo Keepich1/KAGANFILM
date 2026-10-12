@@ -42,6 +42,8 @@ uniform float wind_bend = 0.4;
 uniform float translucency = 0.55;
 uniform float plume_glow_strength = 2.6;
 uniform float rim_strength = 0.35;
+// Насколько нормаль листа загнута вверх (1 — пучок как купол, 0 — как отдельные листья)
+uniform float normal_up = 0.4;
 
 varying vec3 v_color;
 varying float v_plume;
@@ -123,7 +125,7 @@ void vertex() {
 	v *= scale;
 	VERTEX = vec3(wxz.x, gy, wxz.y) + v - origin;
 	// нормаль почти вверх: пучок затеняется как объём, а не как отдельные листья
-	NORMAL = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.62));
+	NORMAL = normalize(mix(n, vec3(0.0, 1.0, 0.0), normal_up));
 	PAINT_VERTEX;
 
 	// цвет: тёмное основание → светлый кончик; сухие места — соломенные кончики

@@ -28,6 +28,9 @@ uniform float sun_energy = 22.0;
 uniform float glow_energy = 1.4;
 uniform float glow_tight = 90.0;
 uniform float glow_wide = 7.0;
+// нарисованные лучи от солнца (сквозь просветы облаков)
+uniform float ray_strength = 0.4;
+uniform float ray_reach = 0.4;           // рад
 group_uniforms;
 
 group_uniforms clouds;
@@ -234,6 +237,15 @@ void sky() {
 	col += sun_color.rgb * glow * glow_energy;
 	col = mix(col, sun_color.rgb * sun_energy, disc * (1.0 - cloud_a * 0.85));
 	col = mix(col, cloud_c, cloud_a);
+
+	// лучи: веер мазков от солнца, ярче в просветах облаков, гаснут с расстоянием
+	vec3 ru = normalize(cross(s, vec3(0.0, 1.0, 0.0)));
+	vec3 rv = cross(ru, s);
+	float rang = atan(dot(d, rv), dot(d, ru)) / 6.2831853 + 0.5;
+	float fan = pnoise1(rang * 23.0, 23.0, 7.0) * 0.65 + pnoise1(rang * 61.0, 61.0, 13.0) * 0.35;
+	fan = smoothstep(0.5, 0.9, fan) * (0.4 + 0.6 * pnoise1(rang * 9.0, 9.0, 29.0));
+	float reach = exp(-ang / ray_reach) * smoothstep(sun_radius * 2.0, sun_radius * 8.0, ang);
+	col += sun_color.rgb * fan * reach * ray_strength * (1.0 - cloud_a * 0.7) * smoothstep(-0.02, 0.03, e);
 
 	// --- дальние хребты: три слоя воздушной перспективы
 	float azd = degrees(az);

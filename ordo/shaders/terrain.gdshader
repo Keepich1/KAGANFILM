@@ -45,7 +45,7 @@ uniform float far_calm_start = 120.0;
 uniform float far_calm_end = 700.0;
 uniform float far_calm = 0.55;
 // Скользящий свет низкого солнца: ровная земля темнее склонов, обращённых к солнцу
-uniform float grazing_dim = 0.62;
+uniform float grazing_dim = 0.45;
 uniform float backlit_dim = 0.7;
 uniform float rim_strength = 0.25;
 // Насыщенность земли (приглушённая палитра ТЗ 11.1)
