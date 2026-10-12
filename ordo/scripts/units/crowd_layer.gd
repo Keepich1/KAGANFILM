@@ -136,6 +136,22 @@ func get_visible_count() -> int:
 	return _visible
 
 
+## Самый быстрый путь (бой на тысячи юнитов): сам буфер слоя, по 16 чисел на экземпляр —
+## 12 чисел трансформа (строки 3×4: базис и начало) и 4 числа INSTANCE_CUSTOM. Пишите в него
+## напрямую (это тот же массив, не копия), затем expand_bounds() по записанным точкам —
+## слой отметит буфер к отправке. Брать заново каждый кадр: setup() буфер пересоздаёт.
+func buffer() -> PackedFloat32Array:
+	return _buf
+
+
+## Границы записанных напрямую экземпляров (ступни) — расширяют границы слоя, буфер уйдёт
+## на видеокарту перед кадром. Точный пересчёт по всем видимым — как обычно, раз в 15 отправок.
+func expand_bounds(lo: Vector3, hi: Vector3) -> void:
+	_lo = _lo.min(lo)
+	_hi = _hi.max(hi)
+	_dirty = true
+
+
 ## Быстрый путь: весь буфер сразу (по 16 чисел на экземпляр, как в MultiMesh.buffer
 ## с TRANSFORM_3D и custom data). Длина — capacity * 16.
 func set_raw_buffer(data: PackedFloat32Array) -> void:
@@ -187,13 +203,26 @@ func _flush() -> void:
 
 
 func _recompute_bounds() -> void:
-	_lo = Vector3(INF, INF, INF)
-	_hi = Vector3(-INF, -INF, -INF)
+	var buf := _buf
+	var x0 := INF
+	var y0 := INF
+	var z0 := INF
+	var x1 := -INF
+	var y1 := -INF
+	var z1 := -INF
 	for i in _visible:
 		var o := i * STRIDE
-		var p := Vector3(_buf[o + 3], _buf[o + 7], _buf[o + 11])
-		_lo = _lo.min(p)
-		_hi = _hi.max(p)
+		var x := buf[o + 3]
+		var y := buf[o + 7]
+		var z := buf[o + 11]
+		x0 = minf(x0, x)
+		x1 = maxf(x1, x)
+		y0 = minf(y0, y)
+		y1 = maxf(y1, y)
+		z0 = minf(z0, z)
+		z1 = maxf(z1, z)
+	_lo = Vector3(x0, y0, z0)
+	_hi = Vector3(x1, y1, z1)
 
 
 func _apply_lod() -> void:
