@@ -131,12 +131,7 @@ func _step(u: Dictionary, dt: float) -> void:
 		x += dir * speed * dt
 		u["x"] = x
 		u["dist"] = u["dist"] + speed * dt
-		var stride: float
-		if unit.begins_with("kip_jooker"):
-			stride = AnimSpec.STRIDE_HUMAN[H.RUN]
-		else:
-			stride = AnimSpec.STRIDE_HORSE.get(state, 6.0)
-		phase = fposmod(u["dist"] / stride, 1.0)
+		phase = fposmod(u["dist"] / CrowdAnim.stride_for(unit, state), 1.0)
 	var basis := Basis(Vector3.UP, atan2(dir, 0.0))
 	var xf := Transform3D(basis, Vector3(x, Terrain.height_at(x, u["z"]), u["z"]))
 	(u["layer"] as CrowdLayer).set_instance(u["i"], xf, AnimSpec.custom(state, phase, aux, var_w))

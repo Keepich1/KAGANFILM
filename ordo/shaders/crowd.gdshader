@@ -21,6 +21,7 @@ uniform float variant_du = 0.25;   // шаг вариантов по атлас�
 uniform int variant_count = 4;
 uniform float jitter = 1.0;        // разброс оттенков одежды по w
 uniform float height_jitter = 0.04;
+uniform float unit_scale = 1.0;    // масштаб вида юнита (полководец крупнее), UnitRegistry «scale»
 uniform float unit_lift = 0.14;    // юниты светлее земли (ТЗ 11.2)
 uniform float unit_sat = 0.22;     // и насыщеннее
 uniform float rim_strength = 2.6;  // контровой свет сильнее, чем у зданий: юниты отделяются от земли
@@ -83,7 +84,7 @@ void vertex() {
 	NORMAL = dot(n, n) > 1e-10 ? normalize(n) : NORMAL;
 
 	// рост ±4% (по варианту)
-	VERTEX *= 1.0 + height_jitter * (hash11(var * 7.31) * 2.0 - 1.0);
+	VERTEX *= unit_scale * (1.0 + height_jitter * (hash11(var * 7.31) * 2.0 - 1.0));
 
 	// вариант по атласу: b = 1 — масть/шерсть, b = 0.5 — шапка (разные выборки)
 	if (COLOR.b > 0.25) {

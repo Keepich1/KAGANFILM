@@ -4,7 +4,7 @@ extends RefCounted
 ## Договор данных экземпляра — AnimSpec (x состояние, y фаза, z доп., w вариант).
 ##
 ##   # цикл шага: фаза растёт на пройденный путь / длину цикла — ноги не скользят
-##   u.phase = CrowdAnim.advance(u.phase, moved_m, CrowdAnim.stride("rider", state))
+##   u.phase = CrowdAnim.advance(u.phase, moved_m, CrowdAnim.stride_for(unit_id, state))
 ##   var st := CrowdAnim.gait("rider", speed_mps)          # WALK / TROT / GALLOP по скорости
 ##   # разовое состояние: фаза 0→1 за CrowdAnim.duration(...)
 ##   u.phase = minf(u.phase + delta / CrowdAnim.duration("human", AnimSpec.Human.SHOOT), 1.0)
@@ -83,6 +83,12 @@ static func stride(skeleton: String, state: int) -> float:
 			return AnimSpec.STRIDE_SHEEP.get(state, 1.0)
 		_:
 			return AnimSpec.STRIDE_HORSE.get(state, 1.0)
+
+
+## Длина цикла с учётом масштаба вида (UnitRegistry «scale»: крупный полководец шагает шире)
+static func stride_for(unit_id: String, state: int) -> float:
+	var u := UnitRegistry.info(unit_id)
+	return stride(u.get("skeleton", "human"), state) * float(u.get("scale", 1.0))
 
 
 ## Длительность разового состояния, с (AnimSpec.DURATION_*); для циклов покоя — IDLE_PERIOD

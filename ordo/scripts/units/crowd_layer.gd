@@ -245,6 +245,7 @@ static func _material(id: String, tex: Texture2D) -> ShaderMaterial:
 	m.set_shader_parameter("has_banner", u.get("banner", false))
 	if tex:
 		m.set_shader_parameter("atlas", tex)
+	m.set_shader_parameter("unit_scale", u.get("scale", 1.0))
 	if u.get("skeleton", "") in ["sheep", "horse"]:
 		m.set_shader_parameter("jitter", 0.4)
 	_material_cache[id] = m

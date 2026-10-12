@@ -95,12 +95,14 @@ def _hat(A, part, c, d, kind, variant=True):
         hp = [(0.106, 0.02), (0.113, 0.1), (0.084, 0.235), (0.03, 0.32), (0.0, 0.43)]
         hm = lathe([hp[0], hp[2], hp[4]] if lo else hp, n).translate(cx, cy, cz)
         out.append(tag(hm, part, S(A, "metal", METAL_SUB[sub]), metal=1.0))
-        # бармица (кольчужная сетка) вокруг шеи сзади и с боков
-        av = lathe([(0.114, 0.06), (0.14, -0.16)], 4 if lo else 7, sweep=250, start=55).translate(cx, cy, cz)
-        out.append(tag(av, part, S(A, "metal", METAL_SUB["iron"]), metal=0.6))
+        if kind == "helmet":
+            # кисть из крашеного конского волоса на шпиле — цвет стороны виден и сверху
+            ts = lathe([(0.0, 0.47), (0.03, 0.41), (0.06, 0.33)], 4 if lo else 5).translate(cx, cy, cz - 0.01)
+            out.append(tag(ts, part, A.rect("pennon"), side=1.0, flip=False,
+                           weight=lambda m: np.clip((cy + 0.47 - m.P[:, 1]) / 0.14, 0, 1)))
         if kind == "helmet_plume":
             path = [(cx, cy + 0.40, cz), (cx, cy + 0.52, cz - 0.03), (cx, cy + 0.66, cz - 0.10), (cx, cy + 0.74, cz - 0.20)]
-            pl = limb([path[0], path[2], path[3]], [0.018, 0.055, 0.012], sides=3)
+            pl = limb([path[0], path[2], path[3]], [0.018, 0.055, 0.012], sides=3 if lo else 4)
             out.append(tag(pl, part, A.rect("plume"), side=0.0, flip=False,
                            weight=lambda m: (m.P[:, 1] - (cy + 0.4)) / 0.34))
     return out
@@ -325,10 +327,10 @@ def banner_pole(A, part, cloth_part, W, d, kind):
                      (0.0, hi + 0.3)], 4 if d < 0.8 else 5, normals="crease").translate(W[0], W[1], W[2])
         out.append(tag(fin, part, S(A, "metal", METAL_SUB["gold"]), metal=1.0))
     else:  # туг: конский хвост под навершием-трезубцем
-        tug = lathe([(0.0, hi - 0.02), (0.1, hi - 0.16), (0.12, hi - 0.34), (0.06, hi - 0.46), (0.0, hi - 0.5)],
-                    seg(6, d)).translate(W[0], W[1], W[2])
+        tug = lathe([(0.0, hi - 0.02), (0.1, hi - 0.16), (0.12, hi - 0.34), (0.0, hi - 0.5)],
+                    5 if d > 0.8 else 4).translate(W[0], W[1], W[2])
         out.append(tag(tug, part, A.rect("tug"), weight=lambda m: (W[1] + hi - m.P[:, 1]) / 0.5 * 0.6))
-        for zx in (-0.07, 0.0, 0.07):
+        for zx in (0.0,):
             pr = limb([W + (0, hi, 0) + (0, 0, zx * 0.3), W + (0, hi + 0.22 - abs(zx) * 0.8, zx)], [0.012, 0.002], sides=3)
             out.append(tag(pr, part, S(A, "metal", METAL_SUB["steel"]), metal=1.0, flip=False))
     g = grid(cw, chh, 3 if d < 0.8 else 4, 1 if d < 0.8 else 2)
@@ -445,7 +447,7 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True):
             ((0, 1.45, 1.335), 0.08, 0.072)]
     if d < 0.8:
         hsec = [hsec[0], hsec[1], hsec[3]]
-    head = loft([ring_axis(c, hax, rc, rs, 5 if lo else 7) for c, rc, rs in hsec], cap_end=not lo)
+    head = loft([ring_axis(c, hax, rc, rs, 5 if lo else 9) for c, rc, rs in hsec], cap_end=not lo)
     out.append(tag(head, RP["HEAD"], hs("head"), coat=coat_mask, flip=False))
     for s in (() if lo else (1, -1)):
         ear = limb([(0.045 * s, 1.9, 0.94), (0.06 * s, 1.99, 0.96), (0.07 * s, 2.06, 0.98)], [0.03, 0.026, 0.003],

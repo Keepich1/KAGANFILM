@@ -15,28 +15,29 @@ extends RefCounted
 ##   side     — "kokand" | "kipchak" | "neutral"
 ##   item     — "none" | "shield" | "ramrod" | "sack" (вторая рука)
 ##   banner   — знаменосец: в правой руке древко (стрелять не может, машет знаменем)
+##   scale    — масштаб модели (необязательно, по умолчанию 1; полководец 1.1 — крупнее)
 ##   name     — подпись в интерфейсе
 
 const UNITS := {
-	"kok_sarboz": {"skeleton": "human", "weapon": "musket", "height": 2.08, "top": 2.08, "radius": 0.35,
+	"kok_sarboz": {"skeleton": "human", "weapon": "musket", "height": 2.14, "top": 2.14, "radius": 0.35,
 		"side": "kokand", "item": "ramrod", "banner": false, "name": "Сарбоз"},
-	"kok_sarboz_banner": {"skeleton": "human", "weapon": "musket", "height": 2.08, "top": 3.62, "radius": 0.4,
+	"kok_sarboz_banner": {"skeleton": "human", "weapon": "musket", "height": 2.14, "top": 3.62, "radius": 0.4,
 		"side": "kokand", "item": "none", "banner": true, "name": "Сарбоз-знаменосец"},
-	"kok_yuzboshi": {"skeleton": "rider", "weapon": "saber", "height": 2.72, "top": 2.72, "radius": 0.9,
+	"kok_yuzboshi": {"skeleton": "rider", "weapon": "saber", "height": 2.78, "top": 2.78, "radius": 0.9,
 		"side": "kokand", "item": "none", "banner": false, "name": "Юзбоши"},
-	"kip_sayisker": {"skeleton": "rider", "weapon": "lance", "height": 2.72, "top": 4.11, "radius": 0.9,
+	"kip_sayisker": {"skeleton": "rider", "weapon": "lance", "height": 2.75, "top": 4.11, "radius": 0.9,
 		"side": "kipchak", "item": "shield", "banner": false, "name": "Сайыскер"},
-	"kip_sayisker_banner": {"skeleton": "rider", "weapon": "lance", "height": 2.72, "top": 4.58, "radius": 0.9,
+	"kip_sayisker_banner": {"skeleton": "rider", "weapon": "lance", "height": 2.75, "top": 4.58, "radius": 0.9,
 		"side": "kipchak", "item": "shield", "banner": true, "name": "Сайыскер-туугчу"},
-	"kip_kolbashchy": {"skeleton": "rider", "weapon": "mace", "height": 3.0, "top": 3.0, "radius": 0.95,
-		"side": "kipchak", "item": "none", "banner": false, "name": "Колбашчы"},
+	"kip_kolbashchy": {"skeleton": "rider", "weapon": "mace", "height": 3.3, "top": 3.3, "radius": 1.05,
+		"side": "kipchak", "item": "none", "banner": false, "scale": 1.1, "name": "Колбашчы"},
 	"kip_jooker": {"skeleton": "human", "weapon": "sword", "height": 2.07, "top": 2.07, "radius": 0.38,
 		"side": "kipchak", "item": "shield", "banner": false, "name": "Жөө жоокер"},
 	"kip_malchy": {"skeleton": "human", "weapon": "staff", "height": 2.07, "top": 2.07, "radius": 0.35,
 		"side": "kipchak", "item": "sack", "banner": false, "name": "Малчы"},
 	"sheep": {"skeleton": "sheep", "weapon": "none", "height": 0.84, "top": 0.84, "radius": 0.45,
 		"side": "neutral", "item": "none", "banner": false, "name": "Кой"},
-	"horse": {"skeleton": "horse", "weapon": "none", "height": 2.02, "top": 2.02, "radius": 0.9,
+	"horse": {"skeleton": "horse", "weapon": "none", "height": 2.06, "top": 2.06, "radius": 0.9,
 		"side": "neutral", "item": "none", "banner": false, "name": "Жылкы"},
 }
 

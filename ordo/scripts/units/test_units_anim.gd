@@ -203,25 +203,13 @@ func _update(t: float) -> void:
 			var lane: Vector2 = e["lane"]
 			var dist: float = spd * t + e["off"] * 7.0
 			pos.x = lane.x + fposmod(dist, lane.y - lane.x)
-			phase = fposmod(dist / _stride(skel, st), 1.0)
+			phase = fposmod(dist / CrowdAnim.stride_for(e["unit"], st), 1.0)
 		elif e.has("sheet_phase"):
 			phase = e["sheet_phase"]
 		else:
 			phase = _phase(skel, st, t + e["off"] * 3.0)
 		var xf := Transform3D(Basis(Vector3.UP, e["yaw"]), pos)
 		layer.set_instance(e["i"], xf, AnimSpec.custom(st, phase, aux, e["var"]))
-
-
-func _stride(skel: String, st: int) -> float:
-	match skel:
-		"human":
-			if st == H.WORK:
-				return AnimSpec.STRIDE_HUMAN[H.WALK]
-			return AnimSpec.STRIDE_HUMAN.get(st, 1.5)
-		"sheep":
-			return AnimSpec.STRIDE_SHEEP.get(st, 0.7)
-		_:
-			return AnimSpec.STRIDE_HORSE.get(st, 1.9)
 
 
 func _phase(skel: String, st: int, t: float) -> float:
