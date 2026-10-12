@@ -120,6 +120,13 @@ func get_marker(name: String) -> Vector3:
 	return Terrain.marker(name)
 
 
+## Поляны без травы под постройками: [Vector3(x, z, радиус), ...] (до 48 штук).
+func set_grass_clearings(list: Array) -> void:
+	var g := get_node_or_null("Grass") as GrassField
+	if g:
+		g.set_clearings(list)
+
+
 func _place_markers() -> void:
 	var root := get_node_or_null("Markers")
 	if root == null:

@@ -62,10 +62,12 @@ func _build_camp() -> void:
 	for k in 9:
 		var a := TAU * k / 9.0 + 0.3
 		spots.append(Vector3(c.x + cos(a) * 38.0, 0, c.z + sin(a) * 38.0))
+	var clear: Array[Vector3] = []
 	for i in spots.size():
 		var p := spots[i]
 		var big := i == 0
 		var r := 7.0 if big else 3.5
+		clear.append(Vector3(p.x, p.z, r + 1.0))
 		var y := Terrain.height_at(p.x, p.z)
 		var wall := MeshInstance3D.new()
 		var cy := CylinderMesh.new()
@@ -87,6 +89,9 @@ func _build_camp() -> void:
 		roof.material_override = felt
 		roof.position = Vector3(p.x, y + r * 0.5 + r * 0.225, p.z)
 		root.add_child(roof)
+	var world := get_node_or_null("World") as World
+	if world:
+		world.set_grass_clearings(clear)
 	# древко с вымпелом у входа в ставку
 	var pole := MeshInstance3D.new()
 	var pm := CylinderMesh.new()

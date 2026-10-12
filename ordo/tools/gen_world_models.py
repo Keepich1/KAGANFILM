@@ -365,7 +365,7 @@ def boulder(seed, lod=0):
         off = rs.uniform(0.55, 0.75) * np.array([sx, sy, sz]).mean()
         dist = m.P @ pn - off
         m.P = m.P - np.maximum(dist, 0)[:, None] * pn[None] * 0.85
-    m.P[:, 1] -= m.P[:, 1].min() + 0.12 * sy           # чуть утоплен в землю
+    m.P[:, 1] -= m.P[:, 1].min()                        # основание на земле (утапливает расстановка)
     m = m.smooth()
     # нарисованный свет: верх тёплый и светлый, низ тёмный и холодный
     h = (m.P[:, 1] - m.P[:, 1].min()) / max(np.ptp(m.P[:, 1]), 1e-6)
@@ -394,7 +394,9 @@ def main():
     for name, fn in models.items():
         for lod in (0, 1):
             path = os.path.join(OUT_MODELS, f"{name}{'_lod1' if lod else ''}.glb")
-            write_glb(path, [(name, fn(lod), tree_mat)])
+            m = fn(lod)
+            m.P[:, 1] = np.maximum(m.P[:, 1], 0.0)      # кольцо наклонного ствола не уходит под землю
+            write_glb(path, [(name, m, tree_mat)])
             st = read_glb_stats(path)
             print(f"   {os.path.basename(path)}: {st['triangles']} треуг., размер {st['size']}")
     for k in range(4):

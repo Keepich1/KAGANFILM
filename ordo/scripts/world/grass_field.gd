@@ -60,9 +60,12 @@ func set_clearings(list: Array) -> void:
 			_clearings[i] = Vector4(c.x, c.y, c.z, 1.0)
 		else:
 			_clearings[i] = Vector4(0, 0, -1, 0)
+	var mats: Array[ShaderMaterial] = ring_materials()
 	if material:
-		material.set_shader_parameter("clearings", _clearings)
-		material.set_shader_parameter("clearing_count", mini(list.size(), MAX_CLEARINGS))
+		mats.append(material)
+	for m in mats:
+		m.set_shader_parameter("clearings", _clearings)
+		m.set_shader_parameter("clearing_count", mini(list.size(), MAX_CLEARINGS))
 
 
 ## Материалы колец (у каждого кольца свой — разные размеры участков).

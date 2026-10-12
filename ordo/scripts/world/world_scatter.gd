@@ -119,7 +119,8 @@ func _build_kind(kind: String, items: Array, mat: Material, is_rock: bool) -> vo
 			if is_rock:
 				# валуны слегка наклонены и утоплены
 				b = Basis(Vector3(1, 0, 0), rs.randf_range(-0.15, 0.15)) * b
-			var y := float(it[1]) - (0.25 * s if is_rock else 0.15)
+			# валуны утоплены в землю примерно на треть высоты, стволы — чуть-чуть
+			var y := float(it[1]) - (0.32 * s if is_rock else 0.15)
 			xforms.append(Transform3D(b, Vector3(float(it[0]), y, float(it[2]))))
 			customs.append(Color(rs.randf(), rs.randf(), rs.randf(), 1.0))
 		for lod in 2:
