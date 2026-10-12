@@ -167,6 +167,7 @@ var sq_alive := PackedInt32Array()
 var sq_cx := PackedFloat32Array()    # центр живых
 var sq_cz := PackedFloat32Array()
 var sq_speed := PackedFloat32Array() # средняя скорость бойцов
+var sq_lag := PackedFloat32Array()   # среднее отставание от мест в строю, м
 var sq_melee := PackedInt32Array()   # строй распался в свалку
 var sq_charge_ok := PackedInt32Array()
 var sq_couched := PackedInt32Array()
@@ -311,6 +312,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float) -> int:
 	sq_cx.append(pos.x)
 	sq_cz.append(pos.y)
 	sq_speed.append(0.0)
+	sq_lag.append(0.0)
 	sq_melee.append(0)
 	sq_charge_ok.append(0)
 	sq_couched.append(0)
@@ -776,14 +778,16 @@ func _squad_step(s: int) -> void:
 		return
 	# --- движение якоря строя
 	var spd := squad_speed(s)
-	var lag := 0.0
-	var cnt := 0
-	for u in sq_members[s]:
-		if u_life[u] == Life.ALIVE and u_role[u] == Role.TROOPER:
-			lag += slot_point(s, u).distance_to(Vector2(u_x[u], u_z[u]))
-			cnt += 1
-	if cnt > 0:
-		lag /= cnt
+	# отставание бойцов от мест в строю (раз в 3 шага — дорого)
+	if (steps + s) % 3 == 0:
+		var lag_sum := 0.0
+		var cnt := 0
+		for u in sq_members[s]:
+			if u_life[u] == Life.ALIVE and u_role[u] == Role.TROOPER:
+				lag_sum += slot_point(s, u).distance_to(Vector2(u_x[u], u_z[u]))
+				cnt += 1
+		sq_lag[s] = lag_sum / cnt if cnt > 0 else 0.0
+	var lag := sq_lag[s]
 	if lag > 2.5 and sq_couched[s] == 0:
 		spd *= clampf(1.0 - (lag - 2.5) * 0.15, 0.35, 1.0)
 	var tx := sq_tx[s]
