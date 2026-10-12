@@ -31,6 +31,9 @@ void fragment() {
 	float dust = 1.0 - smoothstep(0.75, 1.05, d);
 	col = mix(col, c_dust.rgb * (0.9 + 0.2 * mid), dust * 0.75);
 	col *= 0.86 + 0.24 * fine;
+	// вблизи — крупные мазки кисти по траве (не гладкая заливка)
+	float near_s = stroke(p * 0.32 + vec2(big * 0.2, 0.0));
+	col *= 0.9 + 0.2 * near_s;
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
 	paint_brush_v = paint_brush(v_world_pos, v_world_nrm);

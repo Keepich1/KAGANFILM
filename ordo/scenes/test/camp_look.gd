@@ -36,6 +36,8 @@ func _environment() -> void:
 	env.ambient_light_energy = 0.34
 	# без отражений неба: войлок и дерево матовые (иначе на куполе «пластиковый» блеск)
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	if Ordo.has_arg("sky_reflect"):  # проверка: как войлок выглядит с отражениями неба
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
@@ -148,4 +150,4 @@ func _camp_cameras() -> void:
 	# дальняя проверка LOD1 (дальше lod_distance)
 	_cam("CamFar", c + Vector3(150, 120, 170), c + Vector3(0, 0, 20), 30.0)
 	# низкая кинокамера против солнца: силуэты на закате, дым
-	_cam("CamCampLow", c + Vector3(29.5, 1.3, -6.8), c + Vector3(0, 6.2, 1.5), 50.0)
+	_cam("CamCampLow", c + Vector3(25.4, 1.3, -5.6), c + Vector3(0, 6.4, 1.5), 52.0)

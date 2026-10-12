@@ -16,7 +16,7 @@ const CLOTH := preload("res://shaders/cloth.gdshader")
 ## Настройки ткани по началу имени узла
 const CLOTH_PRESETS := {
 	"Pennant": {"flutter": 0.32, "cloth_length": 3.2, "wave_length": 1.7, "follow_wind": true,
-		"along_axis": Vector3(1, 0, 0), "droop": 0.5, "pin_power": 1.25, "translucency": 0.45},
+		"along_axis": Vector3(1, 0, 0), "droop": 0.5, "pin_power": 1.25, "translucency": 0.3},
 	"Banner": {"flutter": 0.22, "cloth_length": 1.6, "wave_length": 1.2, "follow_wind": false,
 		"along_axis": Vector3(1, 0, 0), "droop": 0.15, "pin_power": 1.3},
 	"Awning": {"flutter": 0.06, "cloth_length": 2.2, "wave_length": 2.4, "follow_wind": false,

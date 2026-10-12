@@ -87,7 +87,7 @@ void light() {
 	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	// контровой свет окрашен цветом ткани (идёт в DIFFUSE, умножается на ALBEDO):
 	// тонкое полотно против солнца горит своим цветом, а не белеет
-	DIFFUSE_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength) * 1.6;
+	DIFFUSE_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength) * 1.3;
 	// на просвет: солнце с изнанки проходит сквозь тонкую ткань
 	float through = clamp(-dot(NORMAL, LIGHT), 0.0, 1.0);
 	DIFFUSE_LIGHT += LIGHT_COLOR * ordo_key_tint.rgb * BACKLIGHT * through * ATTENUATION / PI;

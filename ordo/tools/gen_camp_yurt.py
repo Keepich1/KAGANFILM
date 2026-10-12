@@ -94,7 +94,7 @@ def warp_dome(s: YurtSpec):
 
     def fn(th, y, r):
         t = np.clip((y - s.wall_h) / (s.top_y - s.wall_h), 0, 1)
-        sag = 0.012 * (0.5 - 0.5 * np.cos(np.radians(th) * n_uuk)) * np.sin(np.pi * np.clip(t * 1.2, 0, 1))
+        sag = 0.017 * (0.5 - 0.5 * np.cos(np.radians(th) * n_uuk)) * np.sin(np.pi * np.clip(t * 1.2, 0, 1))
         hand = 0.008 * np.sin(np.radians(th) * 3 + 1.3) + 0.006 * np.sin(np.radians(th) * 5 + y * 1.7) \
             + 0.004 * np.sin(np.radians(th) * 11 + 0.4)
         return 1.0 - sag * (1.0 / k) ** 0.3 + hand * (1 - 0.6 * t)
@@ -106,8 +106,10 @@ def warp_wall(s: YurtSpec):
         a = np.radians(th)
         mid = np.sin(np.pi * np.clip(y / s.wall_h, 0, 1))
         hand = 0.007 * np.sin(a * 3 + 0.6) + 0.005 * np.sin(a * 7 + 2.1) + 0.004 * np.sin(a * 13 + y * 3)
-        lattice = 0.004 * np.abs(np.sin(a * (70 if s.name == "ordo" else 40))) * mid
-        return 1.0 + hand * mid + lattice
+        lattice = 0.006 * np.abs(np.sin(a * (70 if s.name == "ordo" else 40))) * mid
+        # войлок чуть выпирает между горизонтальными верёвками стены и провисает у них
+        belly = 0.006 * np.sin(np.pi * np.clip(y / s.wall_h, 0, 1) * 2.0) ** 2
+        return 1.0 + hand * mid + lattice + belly
     return fn
 
 
@@ -341,7 +343,7 @@ def awning(s: YurtSpec, front_z):
         parts.append(G.pole((x, 0, z), (x, y_front + 0.3, z), 0.06, 0.045, sides=6, region="pole"))
         knob = K.ellipsoid(0.08, 0.07, 0.08, 6, 3).translate(x, y_front + 0.33, z)
         parts.append(G.to_region(knob, "brass"))
-        peg = (x * 1.25, 0.05, z + 1.6)
+        peg = (x * 1.2, 0.05, z + 0.9)
         parts.append(G.path_tube([(x, y_front + 0.25, z), peg], 0.018, sides=4, region="rope", tile_len=3.0))
         parts.append(G.pole(peg, (peg[0], 0.32, peg[2] - 0.05), 0.03, 0.025, sides=4, region="wood"))
     return m, Mesh.merge(parts)

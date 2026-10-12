@@ -87,10 +87,10 @@ def felt(c: Canvas, tones, fibres, density=1.0, cell=None, seed=0, patches=True,
     c.underpaint(tones, cell=cell or max(24, min(c.w, c.h) // 2), octaves=2, seed=seed)
     mottle(c, max(20, min(c.w, c.h) // 5), 0.06, 3, seed=seed + 1)
     if patches:
-        light = [_shift(t, 1.05) for t in tones[:2]]
-        dark = [_shift(t, 0.93) for t in tones[:2]]
-        c.strokes(int(area / 2200 * density), light + dark, length=(36, 96), width=(12, 26), angle=direction,
-                  angle_jitter=dir_jitter, alpha=(0.16, 0.34), bristles=7, curve=0.18, value_jitter=0.02, taper=0.45)
+        light = [_shift(t, 1.06) for t in tones[:2]]
+        dark = [_shift(t, 0.91) for t in tones[:2]]
+        c.strokes(int(area / 2000 * density), light + dark, length=(36, 96), width=(12, 26), angle=direction,
+                  angle_jitter=dir_jitter, alpha=(0.22, 0.42), bristles=7, curve=0.18, value_jitter=0.02, taper=0.45)
         c.strokes(int(area / 1300 * density), list(tones) + list(fibres[:2]), length=(18, 44), width=(5, 11),
                   angle=direction, angle_jitter=dir_jitter * 1.4, alpha=(0.14, 0.32), bristles=4, curve=0.3,
                   value_jitter=0.03)
