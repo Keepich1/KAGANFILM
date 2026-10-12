@@ -7,8 +7,8 @@ render_mode cull_back;
 
 uniform vec4 c_grass_dark : source_color = vec4(0.14, 0.19, 0.11, 1.0);
 uniform vec4 c_grass : source_color = vec4(0.22, 0.28, 0.14, 1.0);
-uniform vec4 c_ochre : source_color = vec4(0.38, 0.34, 0.2, 1.0);
-uniform vec4 c_dust : source_color = vec4(0.4, 0.35, 0.26, 1.0);
+uniform vec4 c_ochre : source_color = vec4(0.34, 0.32, 0.22, 1.0);
+uniform vec4 c_dust : source_color = vec4(0.38, 0.35, 0.29, 1.0);
 uniform vec3 camp_center = vec3(-60.0, 0.0, 20.0);
 uniform float camp_radius = 58.0;
 

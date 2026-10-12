@@ -28,7 +28,7 @@ const RIM_STRENGTH := 1.7
 
 
 func _ready() -> void:
-	if Ordo.is_low():
+	if is_low_quality(self):
 		# телефоны (ТЗ 11.7): облегчённые модели раньше, меньше дыма
 		lod_distance = minf(lod_distance, 80.0)
 	for group in ["Buildings", "Props"]:
@@ -71,6 +71,13 @@ func buildings() -> Array[Node3D]:
 	return out
 
 
+## Режим «низкое качество» (ТЗ 11.7). Автозагрузку Ordo ищем по пути, а не по имени:
+## так сцена лагеря работает и в безголовых тестах (godot --script), где автозагрузок нет.
+static func is_low_quality(any: Node) -> bool:
+	var o := any.get_node_or_null("/root/Ordo")
+	return o != null and bool(o.call("is_low"))
+
+
 # ---------------------------------------------------------------- внутреннее
 
 func _snap(n: Node3D, footprint: float) -> void:
@@ -109,7 +116,7 @@ func _setup_model(n: Node3D) -> void:
 		var s := SMOKE.instantiate() as GPUParticles3D
 		s.name = "TundukSmoke"
 		s.position = Vector3(0, TUNDUK_HEIGHT[kind], 0)
-		s.amount = int((18.0 if kind == "boz" else 26.0) * (0.5 if Ordo.is_low() else 1.0))
+		s.amount = int((18.0 if kind == "boz" else 26.0) * (0.5 if is_low_quality(self) else 1.0))
 		s.lifetime = 9.0
 		s.preprocess = 9.0
 		n.add_child(s)

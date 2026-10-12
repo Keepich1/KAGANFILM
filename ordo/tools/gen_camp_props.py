@@ -224,7 +224,7 @@ def koroo(lod=0):
         if not p.has_color:
             G.white(p)
     ground = earth_patch(7.4, 7.0, lod)
-    return [("Koroo", Mesh.merge(parts), "opaque"), ("Ground", G.white(ground), "cutout")]
+    return [("Koroo", Mesh.merge(parts), "opaque"), ("Ground", ground, "cutout")]
 
 
 def earth_patch(rx, rz, lod=0, y=0.03):
@@ -244,7 +244,9 @@ def earth_patch(rx, rz, lod=0, y=0.03):
     if fn[1] < 0:
         m.F = m.F[:, ::-1].copy()
     del inner
-    return G.to_region(m.translate(0, y, 0), "earth")
+    m = G.to_region(m.translate(0, y, 0), "earth")
+    # плоское пятно при низком солнце освещено «полностью» — притемняем, чтобы не спорило с землёй
+    return G.shade(m, lambda P: np.full(len(P), 0.62))
 
 
 def trough(length, lod=0):
@@ -306,7 +308,7 @@ def jylky(lod=0):
         if not p.has_color:
             G.white(p)
     ground = earth_patch(8.2, 6.4, lod)
-    return [("Jylky", Mesh.merge(parts), "opaque"), ("Ground", G.white(ground), "cutout")]
+    return [("Jylky", Mesh.merge(parts), "opaque"), ("Ground", ground, "cutout")]
 
 
 def saddle(lod=0, seed=0):
@@ -466,6 +468,7 @@ def campfire(lod=0):
         st = G.lump(rs.uniform(0.16, 0.22), rs.uniform(0.1, 0.16), rs.uniform(0.13, 0.18), _q(lod, 6, 5), 3,
                     "stones", seed=i + 3, amount=0.2)
         st.rotate_y(math.degrees(a)).translate(0.62 * math.sin(a), 0, 0.62 * math.cos(a))
+        G.shade(st, lambda P: np.full(len(P), 0.72))  # закопчённые камни кострища
         parts.append(G.ground_ao(st, 0.18, 0.4))
     for k in range(_q(lod, 5, 4)):
         a = k / 5 * 2 * math.pi + 0.3

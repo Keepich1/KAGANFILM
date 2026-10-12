@@ -18,7 +18,7 @@ func _ready() -> void:
 		model.visible = show_model
 		KipchakModels.apply(model)
 	_light.omni_range = light_range
-	if Ordo.is_low():
+	if KipchakCamp.is_low_quality(self):
 		# телефоны (ТЗ 11.7): меньше частиц
 		($Sparks as GPUParticles3D).amount = 4
 		($Smoke as GPUParticles3D).amount = 7

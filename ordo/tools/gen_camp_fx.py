@@ -132,6 +132,16 @@ def trample_decal(size, seed=0):
     return Image.fromarray(np.dstack([img, alpha * 255 * 0.8]).astype(np.uint8), "RGBA")
 
 
+def spark(size=32):
+    """Искра: мягкая светящаяся точка, вытянутая вверх (для аддитивного смешивания)."""
+    yy, xx = np.mgrid[0:size, 0:size] + 0.5
+    d = np.hypot((xx - size / 2) / (size * 0.22), (yy - size / 2) / (size * 0.4))
+    a = np.clip(1 - d, 0, 1) ** 1.5
+    core = np.clip(1 - d * 1.8, 0, 1)
+    rgb = np.stack([255 * a, (170 + 85 * core) * a, (80 + 150 * core) * a], -1)
+    return Image.fromarray(np.dstack([rgb, a * 255]).astype(np.uint8), "RGBA")
+
+
 def build_all(out_dir):
     from gen_camp import texture_import
     os.makedirs(out_dir, exist_ok=True)
@@ -140,6 +150,7 @@ def build_all(out_dir):
         "flame.png": sheet(flame_frame, 128, [5, 6, 7, 8]),
         "path_decal.png": path_decal(256, 1024, seed=3),
         "trample_decal.png": trample_decal(512, seed=4),
+        "spark.png": spark(32),
     }
     for name, img in items.items():
         p = os.path.join(out_dir, name)

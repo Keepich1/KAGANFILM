@@ -33,8 +33,9 @@ void sky() {
 	col += LIGHT0_COLOR * (pow(sd, 6.0) * 0.3 + pow(sd, 90.0) * 0.5);
 	// облака: вытянутые мазки, подбой светлее к солнцу
 	float band = smoothstep(0.04, 0.1, y) * (1.0 - smoothstep(0.16, 0.3, y));
-	vec2 cp = vec2(az * 1.3, y * 2.4 + 0.2);
-	float c1 = textureLod(ordo_brush, cp, 5.0).r * 0.6 + textureLod(ordo_brush, cp * 2.1 + 0.37, 3.5).r * 0.4;
+	// множители азимута целые — иначе на севере шов (az переходит 1 → 0)
+	vec2 cp = vec2(az * 1.0, y * 2.4 + 0.2);
+	float c1 = textureLod(ordo_brush, cp, 5.0).r * 0.6 + textureLod(ordo_brush, cp * 2.0 + 0.37, 3.5).r * 0.4;
 	float c2 = textureLod(ordo_brush, vec2(az * 4.0 + 0.3, y * 6.0), 2.0).r;
 	float cloud = smoothstep(0.52, 0.58, c1 + (c2 - 0.5) * 0.08) * band;
 	vec3 cc = mix(c_cloud_dark, c_cloud_lit, clamp(toward * 0.9 + (c2 - 0.5) * 0.4, 0.0, 1.0));
