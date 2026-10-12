@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/world_look.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/world.tscn" id="2"]
+
+[node name="WorldLook" type="Node3D"]
+script = ExtResource("1")
+
+[node name="World" parent="." instance=ExtResource("2")]
+
+[node name="CamMeadow" type="Camera3D" parent="."]
+current = true
+
+[node name="CamSunward" type="Camera3D" parent="."]
+
+[node name="CamFord" type="Camera3D" parent="."]
+
+[node name="CamPanorama" type="Camera3D" parent="."]

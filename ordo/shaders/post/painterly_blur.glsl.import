@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://1txc2uwo6vhq"
+path="res://.godot/imported/painterly_blur.glsl-7ee4689afa51f9301ddd659edf419b65.res"
+
+[deps]
+
+source_file="res://shaders/post/painterly_blur.glsl"
+dest_files=["res://.godot/imported/painterly_blur.glsl-7ee4689afa51f9301ddd659edf419b65.res"]
+
+[params]
+
