@@ -14,6 +14,9 @@ extends Node3D
 ##   layer.set_visible_count(n)                       # видны экземпляры 0..n-1
 ##
 ## Модель смотрит в +Z, начало координат — ступни на земле.
+## Слой должен быть в дереве сцены: буфер уходит на видеокарту перед отрисовкой кадра
+## (RenderingServer.frame_pre_draw). Фазы и события анимаций — CrowdAnim, данные — AnimSpec.
+## Невидимые хвосты (i ≥ видимого числа) не рисуются; границы для отсечения и LOD считаются сами.
 
 const SHADER := preload("res://shaders/crowd.gdshader")
 const STRIDE := 16  # 12 чисел трансформа + 4 числа INSTANCE_CUSTOM

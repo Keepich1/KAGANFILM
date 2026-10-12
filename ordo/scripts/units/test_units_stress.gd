@@ -22,11 +22,11 @@ func _ready() -> void:
 	_rng.seed = 7
 	_world()
 	_spawn("kok_sarboz", 500, Vector2(-34.0, 0.0), 25, 1.15, 1.25, 1.0)
-	_spawn("kip_jooker", 250, Vector2(30.0, -8.0), 25, 1.2, 1.3, -1.0)
-	_spawn("kip_sayisker", 250, Vector2(48.0, 6.0), 25, 2.2, 3.0, -1.0)
+	_spawn("kip_jooker", 250, Vector2(-19.0, -2.0), 25, 1.2, 1.3, -1.0)
+	_spawn("kip_sayisker", 250, Vector2(14.0, 34.0), 25, 2.2, 3.0, -1.0)
 	_spawn("kok_sarboz_banner", 4, Vector2(-36.5, 0.0), 4, 6.0, 1.0, 1.0)
-	_spawn("kip_sayisker_banner", 3, Vector2(52.0, 6.0), 3, 8.0, 1.0, -1.0)
-	_spawn("kip_kolbashchy", 1, Vector2(60.0, 0.0), 1, 1.0, 1.0, -1.0)
+	_spawn("kip_sayisker_banner", 3, Vector2(18.0, 34.0), 3, 8.0, 1.0, -1.0)
+	_spawn("kip_kolbashchy", 1, Vector2(26.0, 34.0), 1, 1.0, 1.0, -1.0)
 	_spawn("kok_yuzboshi", 2, Vector2(-44.0, 0.0), 2, 12.0, 1.0, 1.0)
 	for id in _layers:
 		var n := 0
@@ -99,7 +99,7 @@ func _step(u: Dictionary, dt: float) -> void:
 			phase = minf(k, 1.0)
 			aux = float(u["i"] % 2)
 	elif unit == "kip_jooker":
-		speed = 3.4 if x > -20.0 else 0.0
+		speed = 3.4 if x > -31.5 else 0.0
 		if speed > 0.0:
 			state = H.RUN
 		else:
@@ -111,7 +111,7 @@ func _step(u: Dictionary, dt: float) -> void:
 	else:
 		# всадники: шаг → галоп → атака → рукопашная у строя
 		speed = 1.8 if _t < 2.0 else (8.0 if _t < 4.0 else 9.5)
-		if x < -24.0:
+		if x < -46.0:
 			speed = 0.0
 		if speed == 0.0:
 			state = R.MELEE
@@ -122,7 +122,7 @@ func _step(u: Dictionary, dt: float) -> void:
 			state = R.GALLOP
 		else:
 			state = R.CHARGE if not unit.ends_with("banner") else R.GALLOP
-		if u["die"] < 0.1 and x < -18.0:
+		if u["die"] < 0.1 and x < -40.0:
 			state = R.DEAD
 			phase = 1.0
 			aux = float(u["i"] % 2)
@@ -153,7 +153,7 @@ func _world() -> void:
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.42, 0.42, 0.5)
-	env.fog_density = 0.004
+	env.fog_density = 0.0025
 	env.fog_aerial_perspective = 0.4
 	var we := WorldEnvironment.new()
 	we.environment = env
@@ -166,12 +166,12 @@ func _world() -> void:
 	sun.directional_shadow_max_distance = 200.0
 	add_child(sun)
 	var ground := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(800, 800)
-	ground.mesh = pm
+	ground.mesh = _ground_mesh(600.0, 7.0)
 	var gm := ShaderMaterial.new()
 	gm.shader = preload("res://shaders/painterly_surface.gdshader")
-	gm.set_shader_parameter("albedo_tint", Color(0.17, 0.18, 0.12))
+	gm.set_shader_parameter("albedo_tex", preload("res://assets/textures/common/brush_noise.png"))
+	gm.set_shader_parameter("use_vertex_color", true)
+	gm.set_shader_parameter("rim_strength", 0.0)
 	ground.material_override = gm
 	add_child(ground)
 	var cam := Camera3D.new()
@@ -179,7 +179,7 @@ func _world() -> void:
 	cam.far = 800.0
 	cam.fov = 45.0
 	add_child(cam)
-	cam.look_at_from_position(Vector3(0.0, 62.0, 62.0), Vector3(0.0, 0.0, 0.0))
+	cam.look_at_from_position(Vector3(-18.0, 44.0, 62.0), Vector3(-18.0, 0.0, 10.0))
 	cam.make_current()
 	var cam2 := Camera3D.new()
 	cam2.name = "CamLow"
@@ -192,3 +192,35 @@ func _world() -> void:
 	cam3.fov = 50.0
 	add_child(cam3)
 	cam3.look_at_from_position(Vector3(-36.0, 4.0, 22.0), Vector3(-44.0, 1.0, 10.0))
+
+
+# временная степь (как в test_units_anim.gd): пятна палитры земли, темнее юнитов
+func _ground_mesh(size: float, uv_m: float) -> ArrayMesh:
+	var cols := [Color("#45462a"), Color("#3c463b"), Color("#5d6a55"), Color("#646238"), Color("#8a7448"),
+		Color("#5e4a33")]
+	var noise := FastNoiseLite.new()
+	noise.seed = 11
+	noise.frequency = 0.035
+	noise.fractal_octaves = 3
+	var n := 120
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var h := size * 0.5
+	var step := size / n
+	for j in n + 1:
+		for i in n + 1:
+			var x := -h + i * step
+			var z := -h + j * step
+			var t := clampf(noise.get_noise_2d(x, z) * 0.5 + 0.5, 0.0, 0.999) * (cols.size() - 1)
+			var k := int(t)
+			var c: Color = (cols[k] as Color).lerp(cols[k + 1], smoothstep(0.0, 1.0, t - k))
+			st.set_color(c.srgb_to_linear() * 0.62)
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(x, z) / uv_m)
+			st.add_vertex(Vector3(x, 0.0, z))
+	for j in n:
+		for i in n:
+			var a := j * (n + 1) + i
+			for idx in [a, a + 1, a + n + 2, a, a + n + 2, a + n + 1]:
+				st.add_index(idx)
+	return st.commit()

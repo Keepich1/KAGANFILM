@@ -75,22 +75,22 @@ SPose sheep_pose(int st, float ph, float aux, float var, float t) {
 		p.foot_fr = mix(fr, fr + tuck + vec3(0.0, 0.0, -0.08), buck);
 		p.foot_hl = mix(hl, hl + tuck + vec3(0.0, 0.0, 0.08), buck);
 		p.foot_hr = mix(hr, hr + tuck + vec3(0.0, 0.0, 0.08), buck);
-		// на боку ноги вытянуты
+		// на боку ноги полусогнуты, вдоль тела
 		vec3 o = vec3(0.0, -0.2 * buck, 0.0);
-		p.foot_fl = mix(p.foot_fl, vec3(fl.x, -0.05, fl.z + 0.12) + o, roll);
-		p.foot_fr = mix(p.foot_fr, vec3(fr.x, -0.05, fr.z + 0.06) + o, roll);
-		p.foot_hl = mix(p.foot_hl, vec3(hl.x, -0.05, hl.z - 0.12) + o, roll);
-		p.foot_hr = mix(p.foot_hr, vec3(hr.x, -0.05, hr.z - 0.06) + o, roll);
-		p.root_piv = vec3(0.2 * sd, 0.0, 0.0);
-		p.root_rot = vec3(0.0, 0.0, -sd * 1.5 * roll);
-		p.root_off = vec3(0.0, -0.02 * roll, 0.0);
+		p.foot_fl = mix(p.foot_fl, vec3(fl.x, 0.02, fl.z + 0.16) + o, roll);
+		p.foot_fr = mix(p.foot_fr, vec3(fr.x, 0.06, fr.z + 0.1) + o, roll);
+		p.foot_hl = mix(p.foot_hl, vec3(hl.x, 0.02, hl.z - 0.16) + o, roll);
+		p.foot_hr = mix(p.foot_hr, vec3(hr.x, 0.06, hr.z - 0.1) + o, roll);
+		p.root_piv = vec3(0.22 * sd, 0.0, 0.0);
+		p.root_rot = vec3(0.0, 0.0, -sd * 1.32 * roll);
+		p.root_off = vec3(0.0, -0.04 * roll, 0.0);
 	} else {
 		// пасётся: голова к траве, жуёт, изредка шаг, хвост дёргается
 		float g = fract(t / 13.0 + var);
 		float up = win(g, 0.55, 0.75, 0.05);  // поднимает голову, оглядывается
 		float chew = sin(t * 9.0 + var * 20.0);
-		p.head_rot = mix(vec3(1.0 + 0.04 * chew, 0.1 * sin(t * 0.3 + var), 0.0), vec3(-0.1, 0.5 * sin(t * 0.7 + var * 5.0), 0.0), up);
-		p.head_off = mix(vec3(0.0, -0.16, 0.05), vec3(0.0), up);
+		p.head_rot = mix(vec3(0.72 + 0.04 * chew, 0.15 * sin(t * 0.3 + var), 0.0), vec3(-0.1, 0.5 * sin(t * 0.7 + var * 5.0), 0.0), up);
+		p.head_off = mix(vec3(0.0, -0.13, 0.09), vec3(0.0), up);
 		p.body_rot = vec3(0.08 * (1.0 - up), 0.0, 0.0);
 		float s = fract(t / 3.1 + var * 7.0);
 		float stp = win(s, 0.0, 0.18, 0.05) * (1.0 - up);
