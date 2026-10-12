@@ -5,7 +5,8 @@ extends Node3D
 ## Под каждым бойцом выделенных отрядов — кольцо цвета стороны (раненые краснеют).
 ## Полоски здоровья и морали рисует SquadBars по списку selected.
 ##
-## Для кадра без мыши: аргумент --select=kok или --select=kip (отряд сценария).
+## Для кадра без мыши: аргумент --select=kok | kip | all, можно с моментом: --select=all@19
+## (выделить на 19-й секунде боя).
 
 signal selection_changed(squads: PackedInt32Array)
 
@@ -22,6 +23,8 @@ var selected := PackedInt32Array()
 var _mm: MultiMesh
 var _mmi: MultiMeshInstance3D
 var _last_click := -1.0
+var _auto_which := ""
+var _auto_at := 0.0
 
 
 func _ready() -> void:
@@ -48,7 +51,9 @@ func _ready() -> void:
 		scenario.started.connect(func(_s: int) -> void: _select(PackedInt32Array()))
 		var ordo := get_node_or_null("/root/Ordo")
 		if ordo and ordo.has_arg("select"):
-			_auto_select.call_deferred(String(ordo.arg("select")))
+			var kv := String(ordo.arg("select")).split("@")
+			_auto_which = kv[0]
+			_auto_at = float(kv[1]) if kv.size() > 1 else 0.0
 
 
 func _auto_select(which: String) -> void:
@@ -132,6 +137,9 @@ func _process(_delta: float) -> void:
 	if scenario == null or scenario.sim == null:
 		_mm.visible_instance_count = 0
 		return
+	if _auto_which != "" and scenario.time >= _auto_at:
+		_auto_select(_auto_which)
+		_auto_which = ""
 	var sim := scenario.sim
 	var a := scenario.alpha
 	var i := 0
