@@ -9,7 +9,7 @@ extends RefCounted
 ##   defs.building(&"uy"), defs.res(&"wood"), defs.b_cost[b * defs.R + r]
 ##
 ## Правки (overrides): {раздел: {id: {ключ: значение}}} — словари сливаются вглубь, прочее заменяется;
-## разделы: resources, units, buildings, nodes, herds, recipes, factions, modifiers, seasons,
+## разделы: resources, units, buildings, nodes, herds, recipes, factions, modifiers, seasons, zones,
 ## rules ({"GOROD": {...}}), ai ({"RAID": {...}}), maps ({"valley": {...}}).
 ##
 ## Единицы скомпилированных таблиц: ресурсы — милли (1 = 1000), HP — санти (× 100), время — такты
@@ -22,7 +22,7 @@ enum BKind { BUILDING, FIELD, WALL, GATE, TOWER, LINK, DAM }
 enum Render { SCENE, MULTIMESH }
 const BF_HQ := 1; const BF_DROP := 2; const BF_HOUSE := 4; const BF_PACKABLE := 8; const BF_PEN := 16
 const BF_TERRITORY := 32; const BF_BLOCKS := 64; const BF_ROUND := 128; const BF_NETWORK := 256
-const BF_MARKET := 512; const BF_WALKABLE := 1024
+const BF_MARKET := 512; const BF_WALKABLE := 1024; const BF_UNBREAKABLE := 2048
 
 const TICKS_PER_S := 30
 const CELL := 4.0                               # = NavApi.CELL (клетка навигации, м)
@@ -31,28 +31,33 @@ const KIND_NAMES := {"building": BKind.BUILDING, "field": BKind.FIELD, "wall": B
 	"tower": BKind.TOWER, "link": BKind.LINK, "dam": BKind.DAM}
 const FLAG_NAMES := {"hq": BF_HQ, "drop": BF_DROP, "house": BF_HOUSE, "packable": BF_PACKABLE, "pen": BF_PEN,
 	"territory": BF_TERRITORY, "blocks": BF_BLOCKS, "round": BF_ROUND, "network": BF_NETWORK,
-	"market": BF_MARKET, "walkable": BF_WALKABLE}
+	"market": BF_MARKET, "walkable": BF_WALKABLE, "unbreakable": BF_UNBREAKABLE}
 const STAT_NAMES := ["atk", "speed", "stam_regen", "morale_regen", "range", "gather", "build", "upkeep"]
 const DEFAULT_PLACE := {"max_slope": 1.2, "water": false, "territory": true}
 
 ## Допустимые ключи (замороженная схема; лишний ключ — ошибка validate)
 const _KEYS := {
 	"resources": ["name", "faction", "icon", "backing", "enabled"],
-	"units": ["cost", "time", "pop", "upkeep", "carry", "gather", "build_rate", "trained_at", "squad_max", "enabled"],
+	"units": ["cost", "time", "pop", "upkeep", "carry", "gather", "build_rate", "trained_at", "squad_max", "requires",
+		"unique", "respawn_s", "enabled"],
 	"buildings": ["name", "faction", "tab", "kind", "size", "hp", "cost", "build_time", "flags", "accepts", "place",
-		"territory_r", "work", "yield", "link", "garrison", "herd", "aura", "network", "recipes", "passive",
-		"unpack_s", "model", "render", "raid_value", "pop_cap", "enabled"],
+		"requires", "max_per_player", "territory_r", "work", "yield", "water_place", "link", "garrison", "herd", "aura",
+		"network", "rebuild", "recipes", "passive", "tax_min", "shelter", "ability", "otlar", "unpack_s", "arbas",
+		"model", "render", "raid_value", "pop_cap", "enabled"],
 	"nodes": ["name", "res", "amount", "workers_max", "work_aux", "blocks_cells", "scatter", "model", "enabled"],
-	"herds": ["name", "yield", "growth", "graze", "graze_r", "backing", "capturable", "flock_max", "model", "enabled"],
+	"herds": ["name", "yield", "growth_steps", "growth_period_s", "min_grass", "graze", "graze_r", "backing",
+		"capturable", "head_value", "flock_max", "model", "enabled"],
 	"recipes": ["name", "in", "out", "time", "workers", "enabled"],
 	"factions": ["name", "hq", "worker", "officer", "start_res", "start_units", "traits", "ui_res", "tabs",
-		"bounty", "color"],
+		"bounty", "alarm", "color"],
 	"modifiers": ["stat", "mul", "add", "when", "enabled"],
-	"seasons": ["name", "duration_s", "mods"],
+	"seasons": ["name", "duration_s", "first_s", "mods", "effects", "enabled"],
+	"zones": ["name", "r", "summer", "winter", "enabled"],
 }
-const _RULE_KEYS := ["econ", "pop_max", "upkeep", "famine", "loot", "trade", "tax", "herd_theft", "pack_r",
-	"worker_resume_r", "corpse_s", "path_per_tick", "path_cells_per_tick", "breach_ratio", "input_delay",
-	"ai_free_waves", "raids", "victory"]
+const _RULE_KEYS := ["econ", "pop_max", "upkeep", "upkeep_every_s", "build_exp", "repair_cost", "famine", "loot",
+	"trade", "tax", "water", "pasture", "herds", "herd_theft", "taloo", "trample", "loot_carry", "alarm", "pack_r",
+	"pack_s", "worker_resume_r", "seasons", "corpse_s", "path_per_tick", "path_cells_per_tick", "breach_ratio",
+	"input_delay", "ai_free_waves", "raids", "victory"]
 
 static var _shared: Defs
 
@@ -77,6 +82,9 @@ var u_build_rate := PackedInt32Array()         # милли (1000 — один �
 var u_flags := PackedInt32Array()              # UnitStats.* (WORKER, RAIDER, MOUNTED…)
 var u_squad_max := PackedInt32Array()
 var u_trained_at: Array[PackedInt32Array] = []   # здания (b_*)
+var u_requires: Array[PackedInt32Array] = []     # здания, нужные для найма
+var u_unique := PackedInt32Array()             # 1 — один на игрока
+var u_respawn_ticks := PackedInt32Array()      # после гибели снова через, такты (0 — сразу)
 var u_name := PackedStringArray()
 var u_faction := PackedStringArray()
 var u_enabled := PackedInt32Array()
@@ -108,7 +116,18 @@ var b_absorb := PackedFloat32Array()
 var b_stone_range := PackedFloat32Array()
 var b_territory_r := PackedFloat32Array()
 var b_unpack_ticks := PackedInt32Array()
+var b_arbas := PackedInt32Array()              # во сколько арб сворачивается
+var b_shelter := PackedInt32Array()            # укрывает работников по тревоге
+var b_tax_milli_min := PackedInt32Array()      # подать золотом в минуту (при Бозоре), милли
+var b_water_place := PackedInt32Array()        # занимает мест воды тўғона
+var b_max_per_player := PackedInt32Array()     # 0 — без предела
+var b_herd_breed := PackedInt32Array()         # 1 — стадо растёт (0 — коновязь)
+var b_rebuild_cost := PackedInt32Array()       # [b * R + r] восстановление на руинах, милли
+var b_rebuild_ticks := PackedInt32Array()
 var b_enabled := PackedInt32Array()
+var b_requires: Array[PackedInt32Array] = []   # постройки, нужные чтобы строить
+var b_ability: Array[Dictionary] = []          # {id, duration_ticks, cooldown_ticks, …} или {}
+var b_otlar: Array[Dictionary] = []            # {cap, discount_gold, overflow_gold} или {}
 var b_trains: Array[PackedInt32Array] = []     # юниты (из UnitEcon.trained_at)
 var b_recipes: Array[PackedInt32Array] = []
 var b_place: Array[Dictionary] = []            # DEFAULT_PLACE + place; near.nodes → PackedInt32Array
@@ -138,8 +157,11 @@ var n_enabled := PackedInt32Array()
 var h_ids := PackedStringArray()
 var h_name := PackedStringArray()
 var h_yield := PackedInt32Array()              # [h * R + r] милли за голову в минуту
-var h_growth_milli := PackedInt32Array()       # прирост: милли-голов на голову в минуту
-var h_graze := PackedInt32Array()              # травы (0..1000) на голову в минуту
+var h_growth_steps: Array[PackedInt32Array] = []  # пары [от голов, милли-голов в минуту], по возрастанию
+var h_growth_ticks := PackedInt32Array()       # период начисления приплода
+var h_min_grass := PackedInt32Array()          # ниже этой травы (0..1000) не растёт
+var h_graze := PackedInt32Array()              # травы (0..1000) вытаптывает стадо в минуту
+var h_head_value := PackedInt32Array()         # [h * R + r] цена головы, милли
 var h_graze_r := PackedFloat32Array()
 var h_backing := PackedInt32Array()            # ресурс, −1
 var h_capturable := PackedInt32Array()
@@ -171,6 +193,7 @@ var f_bounty_kill := PackedInt32Array()        # [f * R + r] milli
 var f_bounty_worker := PackedInt32Array()
 var f_bounty_hq := PackedInt32Array()
 var f_bounty_share_pm := PackedInt32Array()    # доля цены разорённого здания, промилле
+var f_alarm := PackedStringArray()             # имя тревоги (Ноғора / Чакырык)
 var f_color := PackedColorArray()
 
 # ---------------------------------------------------------------- множители и сезоны
@@ -183,11 +206,19 @@ var m_enabled := PackedInt32Array()
 var s_ids := PackedStringArray()
 var s_name := PackedStringArray()
 var s_ticks := PackedInt32Array()
+var s_first_ticks := PackedInt32Array()        # первый раз (лето до первой зимы); = s_ticks, если не задано
 var s_mods: Array[PackedInt32Array] = []
+var s_effects: Array[Dictionary] = []
+var s_enabled := PackedInt32Array()
+var z_ids := PackedStringArray()               # зоны пастбищ (ModifierDefs.ZONES)
+var z_name := PackedStringArray()
+var z_r := PackedFloat32Array()
+var z_effects: Array[Dictionary] = []          # {"summer": {...}, "winter": {...}}
+var z_enabled := PackedInt32Array()
 
 # ---------------------------------------------------------------- правила, ИИ, карты
 var rules := {}                                # {"GOROD": {...}, "BATTLE": {...}} (+ *_ticks)
-var ai := {}                                   # {"RAID": {...}, "GARRISON": {...}} (+ *_ticks)
+var ai := {}                                   # {"RAID": {...}, "BASE": {...}, "GARRISON": {...}} (+ *_ticks)
 var maps := {}                                 # {"valley": MapValley.MAP}
 
 var _src := {}
@@ -221,6 +252,7 @@ func recipe(id: StringName) -> int: return _find("recipes", id)
 func faction(id: StringName) -> int: return _find("factions", id)
 func modifier(id: StringName) -> int: return _find("modifiers", id)
 func season(id: StringName) -> int: return _find("seasons", id)
+func zone(id: StringName) -> int: return _find("zones", id)
 
 
 ## {ресурс: число} → милли по индексам ресурсов, длина R
@@ -293,7 +325,7 @@ func validate() -> PackedStringArray:
 			e.append("units.%s: нужны cost и time" % id)
 		_check_res_dict(e, "units.%s.cost" % id, d.get("cost", {}), true)
 		_check_res_dict(e, "units.%s.gather" % id, d.get("gather", {}), true)
-		for b: String in d.get("trained_at", []):
+		for b: String in d.get("trained_at", []) + d.get("requires", []):
 			if building(b) < 0:
 				e.append("units.%s: нет постройки %s" % [id, b])
 		if float(d.get("time", 0)) < 0.0:
@@ -343,6 +375,14 @@ func validate() -> PackedStringArray:
 					e.append("%s: work.carry_to — нет постройки %s" % [w, c])
 		if d.has("herd") and herd(d["herd"].get("htype", "")) < 0:
 			e.append("%s: herd.htype — нет стада" % w)
+		for b: String in d.get("requires", []):
+			if building(b) < 0:
+				e.append("%s: requires — нет постройки %s" % [w, b])
+		_check_res_dict(e, w + ".rebuild.cost", d.get("rebuild", {}).get("cost", {}), true)
+		if int(d.get("water_place", 0)) < 0 or int(d.get("max_per_player", 0)) < 0 or int(d.get("arbas", 1)) < 1:
+			e.append("%s: water_place, max_per_player ≥ 0, arbas ≥ 1" % w)
+		if d.has("ability") and String(d["ability"].get("id", "")) == "":
+			e.append("%s: ability без id" % w)
 		var near: Dictionary = d.get("place", {}).get("near", {})
 		for n: String in near.get("nodes", []):
 			if node(n) < 0:
@@ -374,6 +414,13 @@ func validate() -> PackedStringArray:
 		_check_res_dict(e, "herds.%s.yield" % id, d.get("yield", {}), true)
 		if d.has("backing") and res(d["backing"]) < 0:
 			e.append("herds.%s: backing — нет ресурса" % id)
+		_check_res_dict(e, "herds.%s.head_value" % id, d.get("head_value", {}), true)
+		var prev := -1
+		for st: Array in d.get("growth_steps", []):
+			if st.size() != 2 or int(st[0]) <= prev or float(st[1]) < 0.0:
+				e.append("herds.%s: growth_steps — пары [от голов, в минуту] по возрастанию" % id)
+				break
+			prev = int(st[0])
 	var rc_t: Dictionary = _src["recipes"]
 	for id: String in rc_t:
 		var d: Dictionary = rc_t[id]
@@ -443,7 +490,7 @@ func validate() -> PackedStringArray:
 		for site: Dictionary in md.get("sites", []):
 			if faction(site.get("faction", "")) < 0:
 				e.append("maps.%s: место для неизвестной стороны" % mid)
-			for it: Array in site.get("buildings", []):
+			for it: Array in site.get("buildings", []) + site.get("layout", []) + site.get("links", []):
 				if building(it[0]) < 0:
 					e.append("maps.%s: нет постройки %s" % [mid, it[0]])
 		for it: Array in md.get("deposits", []):
@@ -473,8 +520,9 @@ static func _source(overrides: Dictionary) -> Dictionary:
 		"factions": FactionDefs.FACTIONS.duplicate(true),
 		"modifiers": ModifierDefs.MODIFIERS.duplicate(true),
 		"seasons": ModifierDefs.SEASONS.duplicate(true),
+		"zones": ModifierDefs.ZONES.duplicate(true),
 		"rules": {"GOROD": GameRules.GOROD.duplicate(true), "BATTLE": GameRules.BATTLE.duplicate(true)},
-		"ai": {"RAID": AiDefs.RAID.duplicate(true), "GARRISON": AiDefs.GARRISON.duplicate(true)},
+		"ai": {"RAID": AiDefs.RAID.duplicate(true), "BASE": AiDefs.BASE.duplicate(true), "GARRISON": AiDefs.GARRISON.duplicate(true)},
 		"maps": {"valley": MapValley.MAP.duplicate(true)},
 	}
 	_merge(s, overrides)
@@ -543,6 +591,7 @@ func _compile(s: Dictionary) -> void:
 	f_ids = _ids_of("factions", s["factions"])
 	m_ids = _ids_of("modifiers", s["modifiers"])
 	s_ids = _ids_of("seasons", s["seasons"])
+	z_ids = _ids_of("zones", s["zones"])
 	R = res_ids.size()
 	# ресурсы
 	for id in res_ids:
@@ -566,6 +615,9 @@ func _compile(s: Dictionary) -> void:
 		u_flags.append(int(st.get("flags", 0)))
 		u_squad_max.append(int(d.get("squad_max", 0)))
 		u_trained_at.append(_indices(d.get("trained_at", []), "buildings"))
+		u_requires.append(_indices(d.get("requires", []), "buildings"))
+		u_unique.append(1 if bool(d.get("unique", false)) else 0)
+		u_respawn_ticks.append(_ticks(float(d.get("respawn_s", 0))))
 		u_name.append(String(st.get("name", id)))
 		u_faction.append(String(st.get("faction", "")))
 		u_enabled.append(_on(d))
@@ -604,7 +656,21 @@ func _compile(s: Dictionary) -> void:
 		b_stone_range.append(float(gar.get("stone_range", 0.0)))
 		b_territory_r.append(float(d.get("territory_r", 0.0)))
 		b_unpack_ticks.append(_ticks(float(d.get("unpack_s", 0))))
+		b_arbas.append(int(d.get("arbas", 1)))
+		b_shelter.append(int(d.get("shelter", 0)))
+		b_tax_milli_min.append(roundi(float(d.get("tax_min", 0)) * 1000.0))
+		b_water_place.append(int(d.get("water_place", 0)))
+		b_max_per_player.append(int(d.get("max_per_player", 0)))
+		b_herd_breed.append(1 if bool(hd.get("breed", true)) else 0)
+		var rb: Dictionary = d.get("rebuild", {})
+		_milli_row(b_rebuild_cost, rb.get("cost", {}))
+		b_rebuild_ticks.append(_ticks(float(rb.get("time", 0))))
 		b_enabled.append(_on(d))
+		b_requires.append(_indices(d.get("requires", []), "buildings"))
+		var ab: Dictionary = d.get("ability", {}).duplicate(true)
+		_add_ticks(ab)
+		b_ability.append(ab)
+		b_otlar.append(d.get("otlar", {}).duplicate(true))
 		b_trains.append(PackedInt32Array())
 		b_recipes.append(_indices(d.get("recipes", []), "recipes"))
 		var place := DEFAULT_PLACE.duplicate(true)
@@ -665,8 +731,15 @@ func _compile(s: Dictionary) -> void:
 		var d: Dictionary = s["herds"][id]
 		h_name.append(String(d.get("name", id)))
 		_milli_row(h_yield, d.get("yield", {}))
-		h_growth_milli.append(roundi(float(d.get("growth", 0.0)) * 1000.0))
+		var steps := PackedInt32Array()
+		for st: Array in d.get("growth_steps", []):
+			steps.append(int(st[0]))
+			steps.append(roundi(float(st[1]) * 1000.0))
+		h_growth_steps.append(steps)
+		h_growth_ticks.append(_ticks(float(d.get("growth_period_s", 60))))
+		h_min_grass.append(int(d.get("min_grass", 0)))
 		h_graze.append(roundi(float(d.get("graze", 0.0))))
+		_milli_row(h_head_value, d.get("head_value", {}))
 		h_graze_r.append(float(d.get("graze_r", 20.0)))
 		h_backing.append(res(d.get("backing", "")))
 		h_capturable.append(1 if bool(d.get("capturable", false)) else 0)
@@ -713,6 +786,7 @@ func _compile(s: Dictionary) -> void:
 		_milli_row(f_bounty_worker, bounty.get("worker", {}))
 		_milli_row(f_bounty_hq, bounty.get("hq", {}))
 		f_bounty_share_pm.append(roundi(float(bounty.get("building_share", 0.0)) * 1000.0))
+		f_alarm.append(String(d.get("alarm", "")))
 		f_color.append(d.get("color", Color.WHITE))
 	# множители и сезоны
 	for id in m_ids:
@@ -726,7 +800,16 @@ func _compile(s: Dictionary) -> void:
 		var d: Dictionary = s["seasons"][id]
 		s_name.append(String(d.get("name", id)))
 		s_ticks.append(_ticks(float(d.get("duration_s", 0))))
+		s_first_ticks.append(_ticks(float(d.get("first_s", d.get("duration_s", 0)))))
 		s_mods.append(_indices(d.get("mods", []), "modifiers"))
+		s_effects.append(d.get("effects", {}).duplicate(true))
+		s_enabled.append(_on(d))
+	for id in z_ids:
+		var d: Dictionary = s["zones"][id]
+		z_name.append(String(d.get("name", id)))
+		z_r.append(float(d.get("r", 0.0)))
+		z_effects.append({"summer": d.get("summer", {}).duplicate(true), "winter": d.get("winter", {}).duplicate(true)})
+		z_enabled.append(_on(d))
 	# правила, ИИ, карты: секунды → такты
 	rules = {}
 	for rid: Variant in s["rules"]:
@@ -761,17 +844,20 @@ static func _add_ticks(d: Dictionary) -> void:
 func _compute_hash() -> int:
 	var data := [R, r_backing, r_enabled,
 		u_cost, u_gather, u_train_ticks, u_pop, u_upkeep_milli_min, u_carry_milli, u_build_rate, u_flags,
-		u_squad_max, u_trained_at, u_enabled,
+		u_squad_max, u_trained_at, u_requires, u_unique, u_respawn_ticks, u_enabled,
 		b_kind, b_flags, b_hp_c, b_build_ticks, b_pop_cap, b_accepts, b_cells_w, b_cells_h, b_work_slots,
 		b_gar_cap, b_raid_value, b_herd, b_herd_start, b_herd_cap, b_size, b_cost, b_link_len,
 		b_link_overlap, b_platform_h, b_range_mult, b_absorb, b_stone_range, b_territory_r, b_unpack_ticks,
-		b_enabled, b_trains, b_recipes, b_place, b_work, b_yield, b_aura, b_passive, b_network,
+		b_arbas, b_shelter, b_tax_milli_min, b_water_place, b_max_per_player, b_herd_breed, b_rebuild_cost,
+		b_rebuild_ticks, b_requires, b_ability, b_otlar, b_enabled, b_trains, b_recipes, b_place, b_work, b_yield, b_aura, b_passive, b_network,
 		n_res, n_amount_milli, n_workers_max, n_work_aux, n_blocks_cells, n_scatter_kind, n_enabled,
-		h_yield, h_growth_milli, h_graze, h_graze_r, h_backing, h_capturable, h_enabled,
+		h_yield, h_growth_steps, h_growth_ticks, h_min_grass, h_graze, h_graze_r, h_backing, h_capturable,
+		h_head_value, h_enabled,
 		rc_in, rc_out, rc_ticks, rc_workers, rc_enabled,
 		f_hq, f_worker, f_officer, f_start_res, f_start_units, f_traits, f_bounty_kill, f_bounty_worker,
 		f_bounty_hq, f_bounty_share_pm,
-		m_stat, m_mul, m_add, m_when, m_enabled, s_ticks, s_mods,
+		m_stat, m_mul, m_add, m_when, m_enabled, s_ticks, s_first_ticks, s_mods, s_effects, s_enabled,
+		z_r, z_effects, z_enabled,
 		rules, ai, maps]
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
