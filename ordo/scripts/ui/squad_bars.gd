@@ -54,19 +54,21 @@ func _draw() -> void:
 
 
 func _plate(p: Vector2, sim: BattleSim, s: int) -> void:
-	var w := plate_width
-	var h := 34.0
+	var title: String = UnitStats.get_stats(sim.type_ids[sim.sq_type[s]]).get("name", "")
+	# ширина по названию: оно не обрезается
+	var fs := 14
+	var w := maxf(plate_width, _font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 48.0)
+	var h := 38.0
 	var r := Rect2(p - Vector2(w * 0.5, h), Vector2(w, h))
 	draw_rect(r, WALNUT)
 	draw_rect(r, BRASS, false, 1.5)
 	# заклёпки по углам
 	for c in [r.position, r.position + Vector2(w, 0), r.position + Vector2(0, h), r.end]:
 		draw_circle(c, 2.2, BRASS)
-	# название отряда
-	var title: String = UnitStats.get_stats(sim.type_ids[sim.sq_type[s]]).get("name", "")
+	# название отряда и число живых
 	var col := FLEE_COL if sim.is_fleeing(s) else Color(0.95, 0.9, 0.8)
-	draw_string(_font, r.position + Vector2(6, 12), title, HORIZONTAL_ALIGNMENT_LEFT, w - 30, 11, col)
-	draw_string(_font, r.position + Vector2(w - 26, 12), str(sim.sq_alive[s]), HORIZONTAL_ALIGNMENT_RIGHT, 20, 11, Color(0.95, 0.9, 0.8))
+	draw_string(_font, r.position + Vector2(6, 14), title, HORIZONTAL_ALIGNMENT_LEFT, w - 40, fs, col)
+	draw_string(_font, r.position + Vector2(w - 34, 14), str(sim.sq_alive[s]), HORIZONTAL_ALIGNMENT_RIGHT, 28, fs, Color(0.95, 0.9, 0.8))
 	# здоровье: сумма живых к начальной
 	var hp := 0.0
 	var hp_max := 0.0
@@ -74,9 +76,9 @@ func _plate(p: Vector2, sim: BattleSim, s: int) -> void:
 		hp_max += sim.t_hp[sim.u_type[u]]
 		if sim.u_life[u] == BattleSim.Life.ALIVE:
 			hp += sim.u_hp[u]
-	_bar(Rect2(r.position + Vector2(6, 16), Vector2(w - 12, 6)), hp / maxf(hp_max, 1.0), HP_COL)
-	_bar(Rect2(r.position + Vector2(6, 24), Vector2(w - 12, 4)), sim.sq_morale[s] / 100.0, MORALE_COL)
-	_bar(Rect2(r.position + Vector2(6, 30), Vector2(w - 12, 2)), sim.sq_stam[s] / 100.0, STAMINA_COL)
+	_bar(Rect2(r.position + Vector2(6, 20), Vector2(w - 12, 6)), hp / maxf(hp_max, 1.0), HP_COL)
+	_bar(Rect2(r.position + Vector2(6, 28), Vector2(w - 12, 4)), sim.sq_morale[s] / 100.0, MORALE_COL)
+	_bar(Rect2(r.position + Vector2(6, 34), Vector2(w - 12, 2)), sim.sq_stam[s] / 100.0, STAMINA_COL)
 	# хвостик-указатель к знамени
 	draw_line(Vector2(p.x, r.end.y), p + Vector2(0, 6), BRASS, 1.5)
 

@@ -11,7 +11,7 @@ extends Node3D
 signal selection_changed(squads: PackedInt32Array)
 
 const RING_SHADER := preload("res://shaders/fx/ui_ring.gdshader")
-const SIDE_LIGHT := [Color("#7fe8c8"), Color("#ffa597")]   # ТЗ 2.1, 2.2: светлые цвета сторон
+const SIDE_LIGHT := [Color("#2fe0c0"), Color("#ff5a3c")]   # ТЗ 2.1, 2.2: насыщенные бирюза и киноварь
 const WOUNDED := Color(1.0, 0.25, 0.18)
 
 @export var scenario_path: NodePath = ^"../Scenario"

@@ -75,6 +75,10 @@ func _ready() -> void:
 			_hero_out = _ordo.arg("hero_out", ProjectSettings.globalize_path("user://"))
 			_hero_prefix = _ordo.arg("hero_prefix", "")
 	_update_fast()
+	# нагрузка сразу при запуске: --stress=1 (+1000) или --stress=2 (+3000)
+	if _ordo and _ordo.has_arg("stress"):
+		for i in clampi(int(_ordo.arg("stress")), 0, STRESS_LEVELS.size() - 1):
+			_cycle_stress()
 	# для ролика: бой начинается не с нуля (--battle_skip=секунды), шаги без отрисовки
 	if _ordo and _ordo.has_arg("battle_skip") and battle.scenario:
 		for i in int(float(_ordo.arg("battle_skip")) / ScenarioClash.DT):

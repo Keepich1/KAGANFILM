@@ -18,7 +18,7 @@ void fragment() {
 	float inner = 1.0 - width * 2.0;
 	float ring = smoothstep(inner - 0.03, inner, r) * (1.0 - smoothstep(1.0 - 0.04, 1.0, r));
 	float dark = smoothstep(inner - outline - 0.03, inner - outline, r) * (1.0 - smoothstep(1.0 - 0.01, 1.0 + 0.0, r));
-	vec3 c = mix(vec3(0.03, 0.03, 0.04), v_col.rgb * 1.4, ring);
+	vec3 c = mix(vec3(0.03, 0.03, 0.04), v_col.rgb, ring);
 	ALBEDO = c;
 	ALPHA = max(ring, dark * 0.55) * v_col.a;
 }
