@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cubut5jvq6rfi"
+path="res://.godot/imported/painterly_down.glsl-9a4684161e1a4dd032efefab8645d42b.res"
+
+[deps]
+
+source_file="res://shaders/post/painterly_down.glsl"
+dest_files=["res://.godot/imported/painterly_down.glsl-9a4684161e1a4dd032efefab8645d42b.res"]
+
+[params]
+
