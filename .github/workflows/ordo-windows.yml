@@ -5,7 +5,8 @@ name: Ордо — сборка для Windows
 on:
   push:
     branches: [claude/new-session-x8833z]
-    paths: ["ordo/**", ".github/workflows/ordo-windows.yml"]
+    # тексты и кадры (README, ТЗ, docs/) сборку не запускают
+    paths: ["ordo/**", "!ordo/**/*.md", "!ordo/docs/**", ".github/workflows/ordo-windows.yml"]
   workflow_dispatch:
 
 permissions:
