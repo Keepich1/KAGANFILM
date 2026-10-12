@@ -8,6 +8,8 @@ extends Node3D
 ## (KipchakModels.apply), добавляет облегчённые модели LOD1 и дым из тюндюков.
 ## Раскладку пересобирает tools/gen_camp.py scene.
 ##
+## Если земля мира появилась позже лагеря — snap_to_terrain().
+##
 ## Метки для других областей (узел Markers):
 ##   SheepPen, HorsePen (CampArea: центр + size), BannerPos, CampCenter, OrdoDoor,
 ##   Fire_1..N, GuardPost_1..N, WorkSpot_1..N.
@@ -31,14 +33,22 @@ func _ready() -> void:
 	if is_low_quality(self):
 		# телефоны (ТЗ 11.7): облегчённые модели раньше, меньше дыма
 		lod_distance = minf(lod_distance, 80.0)
+	snap_to_terrain()
+	for group in ["Buildings", "Props"]:
+		for n in get_node(group).get_children():
+			_setup_model(n as Node3D)
+	_wind_smoke()
+
+
+## Ставит постройки, предметы, костры, декали и метки на землю (Terrain.height_at).
+## Вызывается в _ready; если земля мира загрузилась позже — вызовите ещё раз.
+func snap_to_terrain() -> void:
 	for group in ["Buildings", "Props"]:
 		for n in get_node(group).get_children():
 			_snap(n as Node3D, float(n.get_meta("footprint", 0.0)))
-			_setup_model(n as Node3D)
 	for group in ["Fires", "Ground", "Markers"]:
 		for n in get_node(group).get_children():
 			_snap(n as Node3D, 0.0)
-	_wind_smoke()
 
 
 ## Метка по имени: marker("BannerPos"), marker("Fire_1").
