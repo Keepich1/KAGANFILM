@@ -110,10 +110,10 @@ void fragment() {
 
 void light() {
 	// пена освещается как живописная поверхность
-	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
+	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, PAINT_ATTEN, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	// солнечная дорожка: блики, разбитые мазком
 	vec3 H = normalize(LIGHT + VIEW);
 	float sp = pow(max(dot(NORMAL, H), 0.0), glint_power);
 	float br = smoothstep(0.45, 0.75, paint_brush_v);
-	SPECULAR_LIGHT += LIGHT_COLOR * sp * glint * (0.35 + br) * ATTENUATION;
+	SPECULAR_LIGHT += LIGHT_COLOR * sp * glint * (0.35 + br) * PAINT_ATTEN;
 }

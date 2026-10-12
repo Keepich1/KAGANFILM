@@ -84,3 +84,7 @@ ordo_sun_dir={
 "type": "vec3",
 "value": Vector3(-0.91, 0.17, 0.38)
 }
+ordo_clouds={
+"type": "vec4",
+"value": Vector4(0.6, 0.011, 1.4, 0.6)
+}

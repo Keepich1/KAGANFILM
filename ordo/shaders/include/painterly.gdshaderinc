@@ -25,12 +25,46 @@ global uniform float ordo_band_soft;    // мягкость границы св�
 global uniform float ordo_brush_amount; // насколько мазок ломает границу света
 global uniform float ordo_brush_scale;  // плотность мазков в мире, 1/м
 global uniform sampler2D ordo_brush : hint_default_white, filter_linear_mipmap, repeat_enable;
+global uniform vec4 ordo_clouds;        // тени облаков на земле: x — сила, y — масштаб (1/м), zw — снос (м/с)
 
 varying float paint_brush_v;
 varying vec3 v_world_pos;
 varying vec3 v_world_nrm;
 
 #define PAINT_VERTEX v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; v_world_nrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz)
+
+// Тени облаков (ТЗ 11.1: крупные массы света и тени, видны и с камеры стратегии): медленные пятна
+// по миру, гасят только солнце. Одна функция для всех материалов — тени ложатся одинаково
+// на землю, траву, юрты и юнитов.
+float paint_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+float paint_vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(paint_hash(i), paint_hash(i + vec2(1.0, 0.0)), u.x),
+		mix(paint_hash(i + vec2(0.0, 1.0)), paint_hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float paint_cloud(vec3 wp, float t) {
+	if (ordo_clouds.x <= 0.0) {
+		return 1.0;
+	}
+	// сдвиг рисунка подобран так, что поле боя среза (60–125 м по x) остаётся на солнце всё
+	// столкновение, а тени облаков ходят вокруг (лагерь освещён в начале)
+	vec2 p = (wp.xz + vec2(2970.0, 1009.2) - ordo_clouds.zw * t) * ordo_clouds.y;
+	float n = paint_vnoise(p) * 0.62 + paint_vnoise(p * 2.13 + vec2(5.2, 1.3)) * 0.38;
+	// край тени — мазком кисти, а не ровной размытой линией
+	n += (texture(ordo_brush, wp.xz * 0.05).r - 0.5) * 0.06;
+	return 1.0 - ordo_clouds.x * smoothstep(0.55, 0.6, n);
+}
+
+// Солнце с тенями облаков (в light(): вместо ATTENUATION)
+#define PAINT_ATTEN (ATTENUATION * (LIGHT_IS_DIRECTIONAL ? paint_cloud(v_world_pos, TIME) : 1.0))
 
 // Мазок 0..1 в мировых координатах (трипланарно, без растяжений на склонах).
 float paint_brush(vec3 wp, vec3 wn) {
@@ -79,4 +113,4 @@ vec3 paint_rim(vec3 n, vec3 l, vec3 v, vec3 light_color, float atten, float stre
 		* clamp(atten * 1.5, 0.0, 1.0) * strength / PI;
 }
 
-#define PAINT_LIGHT(rim_strength) DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL); SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength)
+#define PAINT_LIGHT(rim_strength) DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, PAINT_ATTEN, paint_brush_v, LIGHT_IS_DIRECTIONAL); SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, PAINT_ATTEN, rim_strength)

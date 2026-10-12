@@ -61,10 +61,10 @@ void fragment() {
 }
 
 void light() {
-	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
+	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR, PAINT_ATTEN, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	float back = clamp(dot(LIGHT, -VIEW), 0.0, 1.0);
 	// просвет сильнее по краю кроны, где листва тоньше
 	float edge = 1.0 - abs(dot(NORMAL, VIEW));
-	DIFFUSE_LIGHT += LIGHT_COLOR * trans_color.rgb * pow(back, 3.0) * translucency * (0.25 + 0.75 * edge) * ATTENUATION / PI;
-	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength);
+	DIFFUSE_LIGHT += LIGHT_COLOR * trans_color.rgb * pow(back, 3.0) * translucency * (0.25 + 0.75 * edge) * PAINT_ATTEN / PI;
+	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, PAINT_ATTEN, rim_strength);
 }

@@ -32,6 +32,8 @@ const PAINT_GLOBALS := {
 	"ordo_brush_amount": 0.38,
 	"ordo_brush_scale": 0.9,
 	"ordo_wind": Vector4(0.82, 0.35, 1.0, 0.55),
+	# тени облаков: сила, масштаб (1/м — пятна ~60–90 м), снос по ветру (м/с)
+	"ordo_clouds": Vector4(0.6, 0.011, 1.4, 0.6),
 }
 
 static var instance: World

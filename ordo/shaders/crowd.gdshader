@@ -123,6 +123,6 @@ void light() {
 	if (v_metal_f > 0.01) {
 		// узкий тёплый блик на золоте и стали
 		vec3 h = normalize(LIGHT + VIEW);
-		SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION * pow(max(dot(NORMAL, h), 0.0), 18.0) * v_metal_f * 0.45;
+		SPECULAR_LIGHT += LIGHT_COLOR * PAINT_ATTEN * pow(max(dot(NORMAL, h), 0.0), 18.0) * v_metal_f * 0.45;
 	}
 }
