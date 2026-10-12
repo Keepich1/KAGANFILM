@@ -248,7 +248,7 @@ static func _build_human(b: _Builder, side: String, weapon: String) -> void:
 			b.cyl(Vector3(0.27, 0.2, 0.1), Vector3(0.27, 1.9, 0.1), 0.025, 0.022, Color("#7a5a3a"), C_OWN, 3, piv)
 
 
-static func _build_horse(b: _Builder, side: String, saddled: bool) -> void:
+static func _build_horse(b: _Builder, _side: String, saddled: bool) -> void:
 	var dark := Color(0.35, 0.3, 0.28)
 	var coat := Color(1, 1, 1)
 	# туловище

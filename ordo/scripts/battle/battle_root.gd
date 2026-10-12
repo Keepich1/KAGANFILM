@@ -16,6 +16,8 @@ const SPEEDS := [0.25, 0.5, 1.0, 2.0, 4.0]
 @export var rts_camera_path: NodePath = ^"Cameras/CamBattleRTS"
 ## Начинать с кинокамеры (иначе — со стратегической)
 @export var start_cinematic := true
+## Делать свою камеру текущей при запуске (выключить, если камерой управляет сборка)
+@export var take_camera := true
 
 var scenario: ScenarioClash
 var cine: Camera3D
@@ -36,10 +38,11 @@ func _ready() -> void:
 	_shot_mode = ordo != null and ordo.has_arg("shot")
 	if rts:
 		rts.moved_by_player.connect(_use_rts)
-	if start_cinematic and cine:
-		cine.make_current()
-	elif rts:
-		rts.make_current()
+	if take_camera:
+		if start_cinematic and cine:
+			cine.make_current()
+		elif rts:
+			rts.make_current()
 	if ordo and ordo.has_arg("series"):
 		for item in String(ordo.arg("series")).split(",", false):
 			var kv := item.split("@")
