@@ -50,8 +50,8 @@ func _environment() -> WorldEnvironment:
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var psm := ProceduralSkyMaterial.new()
-	psm.sky_top_color = Color(0.09, 0.15, 0.27)
-	psm.sky_horizon_color = Color(0.93, 0.58, 0.36)
+	psm.sky_top_color = Color(0.07, 0.13, 0.24)
+	psm.sky_horizon_color = Color(0.86, 0.56, 0.4)
 	psm.sky_curve = 0.12
 	psm.ground_bottom_color = Color(0.12, 0.11, 0.12)
 	psm.ground_horizon_color = Color(0.6, 0.42, 0.32)
@@ -65,10 +65,10 @@ func _environment() -> WorldEnvironment:
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.46, 0.5, 0.6)
+	env.fog_light_color = Color(0.4, 0.46, 0.58)
 	env.fog_light_energy = 1.0
-	env.fog_sun_scatter = 0.45
-	env.fog_density = 0.0028
+	env.fog_sun_scatter = 0.3
+	env.fog_density = 0.0032
 	env.fog_aerial_perspective = 0.35
 	env.fog_sky_affect = 0.3
 	env.glow_enabled = true

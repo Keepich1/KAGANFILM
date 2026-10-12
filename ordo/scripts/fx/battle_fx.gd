@@ -23,6 +23,7 @@ const SH_SPARK := preload("res://shaders/fx/fx_spark.gdshader")
 const SH_SPARK_MOVE := preload("res://shaders/fx/fx_spark_move.gdshader")
 const SH_MOTE := preload("res://shaders/fx/fx_mote.gdshader")
 const SH_MOTE_MOVE := preload("res://shaders/fx/fx_mote_move.gdshader")
+const SH_RAY := preload("res://shaders/fx/fx_ray.gdshader")
 
 const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELOCITY \
 	| GPUParticles3D.EMIT_FLAG_COLOR | GPUParticles3D.EMIT_FLAG_CUSTOM
@@ -43,6 +44,7 @@ var flash: GPUParticles3D
 var sparks: GPUParticles3D
 var fluff: GPUParticles3D
 var ash: GPUParticles3D
+var rays: GPUParticles3D
 
 var _sun: DirectionalLight3D
 var _rng: BattleRng
@@ -55,6 +57,7 @@ var _spark_budget := 0
 var _low := false
 var _puff_mats: Array[ShaderMaterial] = []
 var _mote_mats: Array[ShaderMaterial] = []
+var _ray_mat: ShaderMaterial
 
 
 func _ready() -> void:
@@ -64,19 +67,23 @@ func _ready() -> void:
 	var k := 0.5 if _low else 1.0
 	smoke = _make_puffs("Smoke", int(1100 * k), 11.0, ATLAS_SMOKE, Vector2(4, 4), {
 		"drag": 2.1, "buoyancy": 0.2, "wind_scale": 0.55, "grow": 3.4, "spin": 0.1},
-		{"col_lit": Color(0.9, 0.82, 0.7), "col_mid": Color(0.52, 0.5, 0.54), "col_shade": Color(0.24, 0.32, 0.42),
-		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.8, "opacity": 0.95, "stretch": 1.12})
-	dust = _make_puffs("Dust", int(1400 * k), 4.0, ATLAS_DUST, Vector2(4, 2), {
-		"drag": 2.2, "buoyancy": 0.35, "wind_scale": 0.7, "grow": 2.4, "spin": 0.05},
-		{"col_lit": Color(0.8, 0.66, 0.48), "col_mid": Color(0.6, 0.5, 0.42), "col_shade": Color(0.42, 0.38, 0.42),
-		"col_glow": Color(1.0, 0.62, 0.32), "erode_start": 0.16, "erode_end": 0.85, "opacity": 0.6,
-		"stretch": 1.35, "lit_edge": 0.3, "shade_edge": -0.15, "edge": 0.07, "soft_dist": 1.5, "age_thin": 0.7})
+		{"col_lit": Color(0.8, 0.73, 0.63), "col_mid": Color(0.47, 0.45, 0.5), "col_shade": Color(0.22, 0.3, 0.4),
+		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.7, "opacity": 0.97, "stretch": 1.45,
+		"age_thin": 0.35, "glow_strength": 0.85})
+	dust = _make_puffs("Dust", int(1600 * k), 4.5, ATLAS_DUST, Vector2(4, 2), {
+		"drag": 2.0, "buoyancy": 0.3, "wind_scale": 0.7, "grow": 3.2, "spin": 0.05, "grow_curve": 3.0},
+		{"col_lit": Color(0.84, 0.7, 0.5), "col_mid": Color(0.6, 0.5, 0.38), "col_shade": Color(0.36, 0.32, 0.3),
+		"col_glow": Color(1.0, 0.8, 0.5), "glow_strength": 0.6, "erode_start": 0.1, "erode_end": 0.5,
+		"opacity": 0.62, "stretch": 1.5, "lit_edge": 0.3, "shade_edge": -0.2, "edge": 0.05, "soft_dist": 1.6,
+		"age_thin": 0.85, "col_haze": Color(0.56, 0.5, 0.42), "near_fade": 9.0})
 	flash = _make_system("Flash", 160, 0.11, SH_STILL, {}, _material(SH_FLASH, {"atlas": ATLAS_FLASH}))
+	_ray_mat = _material(SH_RAY, {})
+	rays = _make_system("Rays", 64, 9.0, SH_STILL, {}, _ray_mat)
 	sparks = _make_system("Sparks", 320, 0.5, SH_SPARK_MOVE, {}, _material(SH_SPARK, {}))
 	if ambient_motes:
 		var fm := _material(SH_MOTE, {"atlas": ATLAS_FLUFF, "glow": 2.4})
-		fluff = _make_system("Fluff", int(260 * k), 14.0, SH_MOTE_MOVE, {
-			"box": Vector3(70, 10, 70), "size_min": 0.05, "size_max": 0.11, "wind_scale": 1.8}, fm, true)
+		fluff = _make_system("Fluff", int(320 * k), 14.0, SH_MOTE_MOVE, {
+			"box": Vector3(44, 7, 44), "size_min": 0.07, "size_max": 0.15, "wind_scale": 1.8}, fm, true)
 		_mote_mats.append(fm)
 		var am := _material(SH_MOTE, {"atlas": ATLAS_ASH, "glow": 0.5,
 			"tint_lit": Color(0.9, 0.8, 0.7), "tint_shade": Color(0.5, 0.5, 0.55)})
@@ -98,6 +105,7 @@ func _ready() -> void:
 	if scenario:
 		scenario.started.connect(_on_started)
 		scenario.shot.connect(_on_shot)
+		scenario.volley.connect(_on_volley)
 		scenario.impact.connect(_on_impact)
 		scenario.charge_hit.connect(_on_charge_hit)
 		scenario.melee_hit.connect(_on_melee_hit)
@@ -159,16 +167,17 @@ func _make_puffs(nm: String, amount: int, lifetime: float, atlas: Texture2D, gri
 	return _make_system(nm, amount, lifetime, SH_DRIFT, pparams, m)
 
 
-## Клуб дыма/пыли: позиция, скорость, размер при рождении, доля жизни (0..1), оттенок
+## Клуб дыма/пыли: позиция, скорость, размер при рождении, доля жизни (0..1), оттенок.
+## Поворот спрайта небольшой: клубы ложатся полосой по горизонту, как мазки
 func puff(sys: GPUParticles3D, pos: Vector3, vel: Vector3, size: float, life: float, tint := Color(1, 1, 1, 1)) -> void:
 	sys.emit_particle(Transform3D(Basis.from_scale(Vector3.ONE * size), pos), vel, tint,
-		Color(_rng.range_f(-PI, PI), 0.0, size, clampf(life, 0.05, 1.0)), FLAGS)
+		Color(_rng.range_f(-0.4, 0.4), 0.0, size, clampf(life, 0.05, 1.0)), FLAGS)
 
 
 # ================================================================= события боя
 
 func _on_started(_s: int) -> void:
-	for p in [smoke, dust, flash, sparks]:
+	for p in [smoke, dust, flash, sparks, rays]:
 		p.restart()
 		p.emitting = false
 	_dust_acc.resize(0)
@@ -189,7 +198,26 @@ func _on_shot(_u: int, muzzle: Vector3, dir: Vector3, _hit: bool) -> void:
 	if _rng.chance(0.3):
 		puff(smoke, muzzle + Vector3(0, 0.3, 0) - d * 0.2, d * 1.0 + Vector3(0, 0.6, 0), _rng.range_f(0.6, 0.85),
 			_rng.range_f(0.7, 1.0), Color(0.92, 0.92, 0.95, 0.9))
+	# тлеющий пыж и угольки
+	for i in _rng.range_i(3):
+		var v := d * _rng.range_f(4.0, 9.0) + Vector3(_rng.range_f(-1, 1), _rng.range_f(0.5, 2.5), _rng.range_f(-1, 1))
+		sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, _rng.range_f(0.5, 1.0)), FLAGS)
 	_pop_light(muzzle + d * 0.4)
+
+
+## Лучи сквозь дым залпа: ленты по солнечному лучу вдоль дымовой стены перед шеренгой
+func _on_volley(s: int, _rank: int, center: Vector3, count: int) -> void:
+	var sim := scenario.sim
+	var f := sim.squad_forward(s)
+	var fw := Vector3(f.x, 0.0, f.y)
+	var side := Vector3(-f.y, 0.0, f.x)
+	var half := sim.sq_files[s] * 0.5
+	for i in clampi(count / 5, 3, 12):
+		var p := center + fw * _rng.range_f(5.0, 14.0) + side * _rng.range_f(-half, half)
+		p.y += _rng.range_f(1.5, 3.5)
+		var b := Basis.from_scale(Vector3(_rng.range_f(26.0, 40.0), _rng.range_f(2.0, 4.5), 1.0))
+		rays.emit_particle(Transform3D(b, p), Vector3.ZERO, Color.WHITE,
+			Color(_rng.range_f(0.0, 10.0), 0.0, 1.0, _rng.range_f(0.6, 1.0)), FLAGS)
 
 
 func _pop_light(pos: Vector3) -> void:
@@ -213,7 +241,7 @@ func _on_impact(_s: int, pos: Vector3, _strength: float) -> void:
 		var r := _rng.range_f(0.5, 5.0)
 		var p := pos + Vector3(cos(a) * r, 0.5, sin(a) * r * 1.6)
 		var v := Vector3(cos(a), 0.0, sin(a)) * _rng.range_f(2.0, 6.0) + Vector3(0, _rng.range_f(0.6, 2.0), 0)
-		puff(dust, p, v, _rng.range_f(1.0, 1.8), _rng.range_f(0.8, 1.0))
+		puff(dust, p, v, _rng.range_f(1.0, 1.8), _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0))
 
 
 func _on_charge_hit(_u: int, _t: int, pos: Vector3) -> void:
@@ -249,10 +277,10 @@ func _on_death(u: int, pos: Vector3) -> void:
 
 func _on_war_cry(_u: int, pos: Vector3) -> void:
 	# конь полководца встаёт на дыбы — пыль из-под копыт
-	for i in 8:
-		var a := float(i) / 8.0 * TAU
-		puff(dust, pos + Vector3(cos(a) * 1.2, 0.3, sin(a) * 1.2), Vector3(cos(a), 0.4, sin(a)) * 1.8,
-			_rng.range_f(0.7, 1.0), _rng.range_f(0.5, 0.8))
+	for i in 5:
+		var a := float(i) / 5.0 * TAU + _rng.range_f(-0.3, 0.3)
+		puff(dust, pos + Vector3(cos(a) * 1.0, 0.2, sin(a) * 1.0), Vector3(cos(a), 0.25, sin(a)) * 1.4,
+			_rng.range_f(0.45, 0.65), _rng.range_f(0.4, 0.6), Color(1, 1, 1, 0.75))
 
 
 # ================================================================= каждый кадр
@@ -262,7 +290,7 @@ func _process(delta: float) -> void:
 	var scale := 1.0
 	if scenario:
 		scale = 0.0 if scenario.paused else scenario.time_scale
-	for p in [smoke, dust, flash, sparks, fluff, ash]:
+	for p in [smoke, dust, flash, sparks, fluff, ash, rays]:
 		if p:
 			p.speed_scale = scale
 	_update_sun()
@@ -287,6 +315,8 @@ func _update_sun() -> void:
 	for m in _mote_mats:
 		m.set_shader_parameter("sun_dir", d)
 		m.set_shader_parameter("sun_color", c)
+	_ray_mat.set_shader_parameter("sun_dir", d)
+	_ray_mat.set_shader_parameter("sun_color", c)
 
 
 func _update_lights(dt: float) -> void:
@@ -310,7 +340,7 @@ func _follow_camera() -> void:
 	var p := cam.global_position
 	var f := -cam.global_basis.z
 	# коробка пылинок — немного впереди камеры, у земли
-	var c := p + Vector3(f.x, 0.0, f.z).normalized() * 22.0
+	var c := p + Vector3(f.x, 0.0, f.z).normalized() * 16.0
 	c.y = Terrain.height_at(c.x, c.z)
 	if fluff:
 		fluff.global_position = c
@@ -341,4 +371,4 @@ func _gallop_dust(dt: float) -> void:
 			var p := Vector3(x, 0.0, z) - f * _rng.range_f(0.6, 1.4) + side * _rng.range_f(-0.45, 0.45)
 			p.y = Terrain.height_at(p.x, p.z) + 0.35
 			var v := -f * _rng.range_f(0.8, 2.2) + side * _rng.range_f(-0.8, 0.8) + Vector3(0, _rng.range_f(0.3, 0.9), 0)
-			puff(dust, p, v, _rng.range_f(0.7, 1.15), _rng.range_f(0.55, 0.9))
+			puff(dust, p, v, _rng.range_f(0.9, 1.4), _rng.range_f(0.55, 0.9))

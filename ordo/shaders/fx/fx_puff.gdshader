@@ -30,7 +30,9 @@ uniform float opacity = 0.95;
 uniform float stretch = 1.0;         // ширина/высота (пыль — шире)
 uniform float soft_dist = 0.8;       // мягкое касание земли, м
 uniform float fade_in = 0.02;
-uniform float age_thin = 0.45;       // насколько старый клуб прозрачнее
+uniform float age_thin = 0.75;       // насколько старый клуб прозрачнее
+uniform float near_fade = 5.0;       // у самой камеры клуб исчезает (м)
+uniform vec4 col_haze : source_color = vec4(0.46, 0.46, 0.52, 1.0); // старый дым уходит в дымку
 
 varying float v_age;
 varying float v_rot;
@@ -44,7 +46,9 @@ void vertex() {
 	v_col = COLOR;
 	v_cell = float(INSTANCE_ID % int(grid.x * grid.y));
 	float c = cos(v_rot), sn = sin(v_rot);
-	vec2 q = VERTEX.xy * vec2(stretch, 1.0);
+	// у каждого клуба своя вытянутость (ветер растягивает дым в полосу)
+	float sv = fract(float(INSTANCE_ID) * 0.61803);
+	vec2 q = VERTEX.xy * vec2(stretch * mix(0.8, 1.25, sv), 1.0);
 	q = vec2(q.x * c - q.y * sn, q.x * sn + q.y * c);
 	vec3 right = normalize(INV_VIEW_MATRIX[0].xyz);
 	vec3 up = normalize(INV_VIEW_MATRIX[1].xyz);
@@ -87,9 +91,14 @@ void fragment() {
 	// против солнца дым светится (рассеяние вперёд): весь клуб чуть, тонкие края — сильно
 	vec3 cam_fwd = -normalize(INV_VIEW_MATRIX[2].xyz);
 	float back = pow(clamp(dot(cam_fwd, L) * 1.15, 0.0, 1.0), 2.0);
-	float thin = 1.0 - smoothstep(thr, thr + 0.32, t.a);
-	float scatter = back * clamp(0.1 + 0.9 * thin, 0.0, 1.0) * glow_strength;
+	float thin = 1.0 - smoothstep(thr, thr + 0.22, t.a);
+	// кромка светится у молодого плотного дыма; старый, полупрозрачный — светится ровнее,
+	// без ободков (иначе сквозь него видны кольца задних клубов)
+	float rim = mix(thin, 0.35, smoothstep(0.2, 0.8, v_age));
+	float scatter = back * clamp(0.1 + 0.9 * rim, 0.0, 1.0) * glow_strength * (1.0 - 0.45 * v_age);
 	col = mix(col * mix(1.0, 0.8, back), col_glow.rgb * sun_color * sun_energy * 1.25, clamp(scatter, 0.0, 0.95));
+	// старый дым теряет контраст и уходит в цвет дымки
+	col = mix(col, col_haze.rgb * mix(vec3(1.0), sun_color, 0.3), smoothstep(0.25, 1.0, v_age) * 0.6);
 	col *= v_col.rgb;
 	// мягкое касание земли и предметов
 	float depth = texture(depth_tex, SCREEN_UV).r;
@@ -98,6 +107,7 @@ void fragment() {
 	float soft = clamp((scene_z + VERTEX.z) / soft_dist, 0.0, 1.0);
 	ALBEDO = col;
 	// старый дым редеет
-	float thin_age = 1.0 - age_thin * v_age;
-	ALPHA = cov * opacity * v_col.a * soft * thin_age * smoothstep(0.0, fade_in, v_age);
+	float thin_age = 1.0 - age_thin * smoothstep(0.0, 1.0, v_age);
+	float near = smoothstep(near_fade * 0.45, near_fade, -VERTEX.z);
+	ALPHA = cov * opacity * v_col.a * soft * thin_age * near * smoothstep(0.0, fade_in, v_age);
 }

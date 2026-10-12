@@ -72,6 +72,7 @@ var _acc := 0.0
 var _kok_phase := 0
 var _kip_phase := 0
 var _gen_phase := 0
+var _kok_ready_t := 0.0
 var _rout_t := -1.0
 var _over_t := -1.0
 var _ended := false
@@ -102,8 +103,8 @@ func start(p_seed: int) -> void:
 	kok = sim.add_squad(0, "sarboz", KOK_COUNT, KOK_POS, -PI / 2, BattleSim.Formation.LINE, 50, "yuzboshi", true, 0.35)
 	# Кыпчаки: «Сайыскерлер», две шеренги по 30, жүз башы впереди, туугчу; собираются из толпы
 	kip = sim.add_squad(1, "sayisker", KIP_COUNT, KIP_POS, PI / 2, BattleSim.Formation.LINE, 30, "juz_bashy", true, 2.2)
-	# полководец ждёт перед правым крылом и выезжает к центру строя
-	gen = sim.add_general(1, "kolbashchy", KIP_POS + Vector2(11.0, 16.0), PI)
+	# полководец перед строем, лицом к врагу
+	gen = sim.add_general(1, "kolbashchy", KIP_POS + Vector2(8.5, 1.0), PI / 2)
 	_wire()
 	started.emit(p_seed)
 
@@ -194,8 +195,6 @@ func _ai_kokand(t: float) -> void:
 				_kok_phase = 3
 
 
-var _kok_ready_t := 0.0
-
 
 func _ai_kipchak(t: float) -> void:
 	if sim.is_fleeing(kip):
@@ -232,9 +231,9 @@ func _ai_general(t: float) -> void:
 		return
 	match _gen_phase:
 		0:
-			# выезжает перед строем, лицом к врагу
-			if t >= 0.3:
-				sim.order_move(gen, KIP_POS + Vector2(12.0, 1.0), BattleSim.Gait.RUN, PI / 2)
+			# выезжает шагом на несколько шагов вперёд
+			if t >= 0.4:
+				sim.order_move(gen, KIP_POS + Vector2(12.5, 1.0), BattleSim.Gait.WALK, PI / 2)
 				_gen_phase = 1
 		1:
 			if t >= WAR_CRY_AT:

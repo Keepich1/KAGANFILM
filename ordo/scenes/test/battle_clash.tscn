@@ -9,3 +9,18 @@
 script = ExtResource("1")
 
 [node name="Battle" parent="." instance=ExtResource("2")]
+
+[node name="CamTestSheep" type="Camera3D" parent="."]
+transform = Transform3D(0.80874, -0.14658, 0.56962, 0.00000, 0.96845, 0.24921, -0.58817, -0.20154, 0.78322, -100.00000, 7.00000, 88.00000)
+fov = 50.0
+far = 3000.0
+
+[node name="CamTestCamp" type="Camera3D" parent="."]
+transform = Transform3D(0.64018, -0.23420, 0.73165, 0.00000, 0.95240, 0.30486, -0.76822, -0.19516, 0.60971, -8.00000, 10.00000, 62.00000)
+fov = 50.0
+far = 3000.0
+
+[node name="CamTestHorses" type="Camera3D" parent="."]
+transform = Transform3D(0.63571, -0.20291, 0.74478, 0.00000, 0.96483, 0.26286, -0.77193, -0.16711, 0.61335, -8.00000, 6.00000, 104.00000)
+fov = 50.0
+far = 3000.0

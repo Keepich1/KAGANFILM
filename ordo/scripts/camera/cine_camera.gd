@@ -150,26 +150,28 @@ func _plan(name: String, t: float, st: float) -> Array:
 	var of := sim.squad_forward(kok)
 	match name:
 		"establish":
-			# высоко с юга, видно обе армии; медленный наезд
-			var p := Vector3(58.0 + st * 1.2, 24.0 - st * 0.9, 96.0 - st * 2.0)
-			return [p, Vector3(64.0 + st * 0.8, 0.0, 6.0), 48.0]
+			# с северо-востока против солнца: орда кыпчаков на закате, длинные тени к камере;
+			# медленный наезд
+			var p := Vector3(56.0 - st * 1.0, 7.0 - st * 0.4, -24.0 + st * 1.2)
+			return [p, Vector3(24.0, 2.0, 12.0), 48.0]
 		"war_cry":
 			var g := sim.general[1]
 			var gp := Vector3(sim.u_x[g], 0.0, sim.u_z[g])
-			var gf := Vector3(sin(sim.u_h[g]), 0.0, cos(sim.u_h[g]))
+			# полководец смотрит на врага: камера перед ним, чуть сбоку
+			var gf := Vector3(oc.x - gp.x, 0.0, oc.y - gp.z).normalized()
 			var gr := Vector3(gf.z, 0.0, -gf.x)
 			# спереди-сбоку (с юго-востока), чуть снизу; наезд — сужение угла
 			var p := gp + gf * 9.0 - gr * 4.5 + Vector3(0.0, 1.6, 0.0)
 			var fv := lerpf(40.0, 22.0, smoothstep(0.0, 2.8, st))
 			return [p, gp + Vector3(0.0, 2.35, 0.0), fv]
 		"charge":
-			# низко сбоку (юг), чуть впереди первой шеренги
+			# низко у правого (южного) края первой шеренги, взгляд наискось вдоль строя
 			var side := Vector3(-kf.y, 0.0, kf.x)
+			var fwd := Vector3(kf.x, 0.0, kf.y)
 			var half := sim.sq_files[kip] * 2.1 * 0.5
 			var front := Vector3(ka.x, 0.0, ka.y)
-			var center := Vector3(kc.x, 0.0, kc.y)
-			var p := center + Vector3(kf.x, 0.0, kf.y) * 12.0 + side * (half + 9.0) + Vector3(0.0, 1.8, 0.0)
-			return [p, front + Vector3(kf.x, 0.0, kf.y) * 4.0 + Vector3(0.0, 1.9, 0.0), 48.0]
+			var p := front + fwd * 9.0 + side * (half + 7.0) + Vector3(0.0, 1.7, 0.0)
+			return [p, front + side * (half * 0.25) - fwd * 2.0 + Vector3(0.0, 2.0, 0.0), 46.0]
 		"volley":
 			# из-за спин стрелков, над плечами, против солнца
 			var back := Vector3(-of.x, 0.0, -of.y)
@@ -178,12 +180,17 @@ func _plan(name: String, t: float, st: float) -> Array:
 			var p := a + back * 6.5 + right * 9.0 + Vector3(0.0, 2.6, 0.0)
 			return [p, a + Vector3(of.x, 0.0, of.y) * 45.0 + right * 2.0 + Vector3(0.0, 1.4, 0.0), 50.0]
 		"lances":
-			# спереди-сбоку, низко: всадники несутся на камеру
+			# у южного края строя, впереди: всадники проносятся мимо с копьями наперевес;
+			# камера не заходит в дым у кокандской линии
 			var fwd := Vector3(kf.x, 0.0, kf.y)
-			var side := Vector3(kf.y, 0.0, -kf.x)
+			var side := Vector3(-kf.y, 0.0, kf.x)
+			var half := sim.sq_files[kip] * 2.1 * 0.5
 			var front := Vector3(ka.x, 0.0, ka.y)
-			var p := front + fwd * 16.0 + side * -14.0 + Vector3(0.0, 1.3, 0.0)
-			return [p, front + Vector3(0.0, 1.6, 0.0) - side * 4.0, 44.0]
+			var p := front + fwd * 7.0 + side * (half + 5.0) + Vector3(0.0, 1.4, 0.0)
+			var lim := oa.x - 24.0
+			if p.x > lim:
+				p.x = lim
+			return [p, front + side * (half * 0.35) + Vector3(0.0, 1.8, 0.0), 42.0]
 		"impact":
 			# у южного фланга кокандской линии, вдоль строя
 			var a := Vector3(oa.x, 0.0, oa.y)
@@ -191,15 +198,16 @@ func _plan(name: String, t: float, st: float) -> Array:
 			return [p, a + Vector3(-1.0, 1.2, -2.0), 46.0]
 		"melee":
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
-			var p := mid + Vector3(10.0, 7.0 + st * 0.6, 34.0)
-			return [p, mid + Vector3(0.0, 1.0, 0.0), 44.0]
+			var p := mid + Vector3(8.0 + st * 0.3, 3.2 + st * 0.25, 24.0)
+			return [p, mid + Vector3(0.0, 1.4, 0.0), 46.0]
 		"rout":
 			var c := Vector3(oc.x, 0.0, oc.y)
-			var p := c + Vector3(-18.0, 9.0, 34.0)
-			return [p, c + Vector3(-6.0, 1.0, 0.0), 46.0]
+			var p := c + Vector3(-16.0, 5.0, 26.0)
+			return [p, c + Vector3(-4.0, 1.2, 0.0), 46.0]
 		"aftermath":
-			# медленный подъём над полем: тела, дым, конница с полководцем
+			# с востока против солнца: тела на переднем плане, остатки дыма светятся,
+			# конница собирается вокруг полководца; медленный подъём
 			var k := smoothstep(0.0, 14.0, st)
-			var p := Vector3(112.0, 5.0, 34.0).lerp(Vector3(118.0, 16.0, 46.0), k)
-			return [p, Vector3(92.0, 1.5, 4.0), 44.0]
+			var p := Vector3(124.0, 2.6, 16.0).lerp(Vector3(128.0, 7.0, 22.0), k)
+			return [p, Vector3(88.0, 2.0, 4.0), 46.0]
 	return [Vector3(60.0, 30.0, 80.0), Vector3(70.0, 0.0, 0.0), 45.0]
