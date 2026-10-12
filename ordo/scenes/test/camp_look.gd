@@ -2,7 +2,7 @@ extends Node3D
 ## Проверка вида лагеря кыпчаков: временный свет заката (мир потом даст свой),
 ## рисованная земля и камеры для кадров.
 ##   tools/shot.sh res://scenes/test/camp_look.tscn out.png --cam=CamYurtClose --at=3
-## Камеры: CamYurtClose, CamKhan, CamCampWide, CamCampLow (режим "camp"),
+## Камеры: CamYurtClose, CamKhan, CamCampWide, CamCampLow, CamFar — проверка LOD1 (режим "camp"),
 ##         CamLineup, CamBoz, CamOrdo, CamProps (режим "models").
 
 ## "camp" — весь лагерь (scenes/camp/camp.tscn); "models" — модели в ряд
@@ -138,12 +138,14 @@ func _camp_cameras() -> void:
 	# крупно одна боз үй: дверь, орнамент, сетка верёвок; камера с юго-запада от двери
 	var boz := camp.get_node("Buildings/Boz_2") as Node3D
 	var d := Vector3(sin(boz.rotation.y), 0, cos(boz.rotation.y))
-	var eye := boz.position + d.rotated(Vector3.UP, deg_to_rad(-50.0)) * 9.0 + Vector3(0, 1.7, 0)
-	_cam("CamYurtClose", eye, boz.position + d * 1.2 + Vector3(0, 2.5, 0), 44.0)
+	var eye := boz.position + d.rotated(Vector3.UP, deg_to_rad(-30.0)) * 13.0 + Vector3(0, 1.5, 0)
+	_cam("CamYurtClose", eye, boz.position + d * 2.2 + Vector3(0, 2.1, 0), 44.0)
 	# ханская юрта со щитами и туг с вымпелом
 	var ordo := camp.get_node("Buildings/Ordo") as Node3D
 	var od := Vector3(sin(ordo.rotation.y), 0, cos(ordo.rotation.y))
 	var oe := ordo.position + od.rotated(Vector3.UP, deg_to_rad(-12.0)) * 26.0 + Vector3(0, 4.5, 0)
 	_cam("CamKhan", oe, ordo.position + od * 4.0 + Vector3(0, 4.0, 0), 42.0)
+	# дальняя проверка LOD1 (дальше lod_distance)
+	_cam("CamFar", c + Vector3(150, 120, 170), c + Vector3(0, 0, 20), 30.0)
 	# низкая кинокамера против солнца: силуэты на закате, дым
-	_cam("CamCampLow", c + Vector3(55, 2.2, 12), c + Vector3(-10, 4.5, 2), 50.0)
+	_cam("CamCampLow", c + Vector3(29.5, 1.3, -6.8), c + Vector3(0, 6.2, 1.5), 50.0)

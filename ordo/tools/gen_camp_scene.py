@@ -41,7 +41,12 @@ def build(out_path):
             res[path] = (f"{len(res) + 1}", typ)
         return res[path][0]
 
+    used = set()
+
     def node(name, parent, typ=None, inst=None, xf=None, props=None):
+        key = (parent, name)
+        assert key not in used, f"повтор имени узла {key}"
+        used.add(key)
         head = f'[node name="{name}"'
         if typ:
             head += f' type="{typ}"'
@@ -99,10 +104,6 @@ def build(out_path):
     j_yaw = math.degrees(math.atan2(C[0] - jylky[0], C[2] - jylky[2]))
     node("Jylky", "Buildings", inst=M + "jylky.glb", xf=xform(jylky, j_yaw), props={"metadata/footprint": "8.5"})
 
-    # ---- арбы: одна гружёная у западного края (готова к көчу), вторая у конного двора
-    node("Arba_1", "Props", inst=M + "arba.glb", xf=xform(bearing(250, 52), 160))
-    node("Arba_2", "Props", inst=M + "arba.glb", xf=xform(jylky + np.array([-12.0, 0, -4.0]), 75))
-
     # ---- костры: у ставки (общий) и у трёх юрт
     def front_of(i, dist, lateral=0.0):
         p, yaw, sc = yurts[i]
@@ -110,7 +111,7 @@ def build(out_path):
         s = np.array([d[2], 0, -d[0]])
         return p + d * (3.5 * sc + dist) + s * lateral
 
-    fires = [C + door * 15.0 - side * 2.5, front_of(1, 5.0, -1.5), front_of(4, 5.5, 1.0), front_of(7, 5.0, 2.0),
+    fires = [C + door * 15.0 - side * 2.5, front_of(1, 3.4, 1.0), front_of(4, 5.5, 1.0), front_of(7, 5.0, 2.0),
              front_of(6, 6.0, -1.0)]
     for i, f in enumerate(fires):
         node(f"Fire_{i + 1}", "Fires", inst="res://scenes/camp/campfire.tscn", xf=xform(f, rs.uniform(0, 360)),
@@ -118,28 +119,51 @@ def build(out_path):
     # казан над вторым костром, без своего кострища (огонь уже есть)
     node("Kazan", "Props", inst=M + "kazan.glb", xf=xform(fires[1], 15))
 
-    # ---- поленницы, кошмы, сено, сёдла
-    def beside(i, lateral, back=0.0):
+    # ---- хозяйство у каждой юрты: поленница, кошмы, сёдла, сено, арба
+    def beside(i, side_sign, lateral=0.0, back=0.0):
         p, yaw, sc = yurts[i]
         d = np.array([math.sin(math.radians(yaw)), 0, math.cos(math.radians(yaw))])
-        s = np.array([d[2], 0, -d[0]])
-        return p + s * (4.6 * sc + lateral) - d * back, yaw
+        sd = np.array([d[2], 0, -d[0]]) * side_sign
+        return p + sd * (4.7 * sc + lateral) - d * back, yaw
 
-    wp = []
-    for k, (i, lat) in enumerate(((1, 0.5), (4, -0.4), (6, 0.8))):
-        pos, yaw = beside(i, lat * (1 if k != 1 else -1) + (0 if k != 1 else -9.6), 0.5)
-        node(f"Woodpile_{k + 1}", "Props", inst=M + "woodpile.glb", xf=xform(pos, yaw + 90 + rs.uniform(-15, 15)))
-        wp.append(pos)
-    fr = []
-    for k, i in enumerate((2, 5)):
-        pos, yaw = beside(i, -10.0 + 1.0, -0.5)
-        node(f"FeltRolls_{k + 1}", "Props", inst=M + "felt_rolls.glb", xf=xform(pos, yaw + rs.uniform(-20, 20)))
-        fr.append(pos)
-    node("Hay_1", "Props", inst=M + "hay.glb", xf=xform(koroo + np.array([10.5, 0, -4.0]), 30))
-    node("Hay_2", "Props", inst=M + "hay.glb", xf=xform(jylky + np.array([10.0, 0, 3.0]), 80))
-    node("SaddleRack_1", "Props", inst=M + "saddle_rack.glb", xf=xform(jylky + np.array([-4.0, 0, -9.5]), j_yaw + 5))
-    node("SaddleRack_2", "Props", inst=M + "saddle_rack.glb",
-         xf=xform(C + door * 8.5 - side * 6.0, 45 + 70))
+    household = {
+        0: [("woodpile", 1, 0.3, 0.5)],
+        1: [("woodpile", -1, 0.3, 0.8)],
+        2: [("felt_rolls", -1, 0.6, 1.0), ("hay", 0, 0.0, 5.6)],
+        3: [("saddle_rack", -1, 0.4, -0.8), ("woodpile", 1, 0.3, 0.6)],
+        4: [("felt_rolls", 1, 0.6, 0.8)],
+        5: [("arba", 1, 2.2, 1.5), ("felt_rolls", -1, 0.6, 0.9)],
+        6: [("woodpile", 1, 0.3, 0.5)],
+        7: [("hay", 0, 0.0, 5.6)],
+        8: [("saddle_rack", 1, 0.4, -0.6), ("felt_rolls", -1, 0.6, 1.0)],
+        9: [("woodpile", -1, 0.3, 0.6)],
+    }
+    names = {"woodpile": "Woodpile", "felt_rolls": "FeltRolls", "saddle_rack": "SaddleRack", "hay": "Hay",
+             "arba": "Arba"}
+    count = {"arba": 0}
+    spots = {k: [] for k in names}
+    for i, items in household.items():
+        for kind, sgn, lat, back in items:
+            if sgn == 0:  # за юртой
+                p, yaw, sc = yurts[i]
+                d = np.array([math.sin(math.radians(yaw)), 0, math.cos(math.radians(yaw))])
+                pos = p - d * (3.5 * sc + back * 0.5)
+            else:
+                pos, yaw = beside(i, sgn, lat, back)
+            count[kind] = count.get(kind, 0) + 1
+            yaw_k = {"woodpile": 90, "felt_rolls": 0, "saddle_rack": 90, "hay": 0, "arba": 180}[kind]
+            sc_k = 0.55 if kind == "hay" else 1.0
+            node(f"{names[kind]}_{count[kind]}", "Props", inst=M + kind + ".glb",
+                 xf=xform(pos, yaw + yaw_k + rs.uniform(-15, 15), scale=sc_k))
+            spots[kind].append(pos)
+    wp, fr = spots["woodpile"], spots["felt_rolls"]
+    # арбы: одна гружёная у западного края (готова к көчу), вторая у конного двора
+    node("Arba_Koch", "Props", inst=M + "arba.glb", xf=xform(bearing(250, 53), 160))
+    node("Arba_Jylky", "Props", inst=M + "arba.glb", xf=xform(jylky + np.array([-12.0, 0, -4.0]), 75))
+    node("Hay_Koroo", "Props", inst=M + "hay.glb", xf=xform(koroo + np.array([10.5, 0, -4.0]), 30))
+    node("Hay_Jylky", "Props", inst=M + "hay.glb", xf=xform(jylky + np.array([10.0, 0, 3.0]), 80))
+    node("SaddleRack_Jylky", "Props", inst=M + "saddle_rack.glb", xf=xform(jylky + np.array([-4.0, 0, -9.5]), j_yaw + 5))
+    node("SaddleRack_Ordo", "Props", inst=M + "saddle_rack.glb", xf=xform(C + door * 8.5 - side * 6.0, 45 + 70))
 
     # ---- тропы и вытоптанная земля (Decal: проекция сверху, не красит стены)
     def decal(name, a, b, width, tex="path"):

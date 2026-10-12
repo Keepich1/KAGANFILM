@@ -212,8 +212,12 @@ def paint_dome(w, h):
         for j in range(m):
             u, t = net_curve(j, fam, 14, t_end=1.0)
             pts = np.column_stack([u * w, (1 - t) * h])
-            wdt = np.interp(pts[:, 1], [0, h], [3.5, 7.5])
-            _rope_var(c, pts, wdt, seed=100 + j * 3 + fam)
+            # верёвка одним мазком: к тюндюку тоньше (сжатие развёртки) — рисуем двумя кусками
+            half = len(pts) // 2
+            B.rope_line(c, pts[half:], 7.0, ROPE, ROPE_LIGHT, ROPE_SHADOW, seed=100 + j * 3 + fam,
+                        shadow_off=(0, 4.0))
+            B.rope_line(c, pts[:half + 1], 4.5, ROPE, ROPE_LIGHT, ROPE_SHADOW, seed=200 + j * 3 + fam,
+                        shadow_off=(0, 3.0))
     return c.image()
 
 

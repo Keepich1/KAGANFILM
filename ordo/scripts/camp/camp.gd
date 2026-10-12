@@ -28,6 +28,9 @@ const RIM_STRENGTH := 1.7
 
 
 func _ready() -> void:
+	if Ordo.is_low():
+		# телефоны (ТЗ 11.7): облегчённые модели раньше, меньше дыма
+		lod_distance = minf(lod_distance, 80.0)
 	for group in ["Buildings", "Props"]:
 		for n in get_node(group).get_children():
 			_snap(n as Node3D, float(n.get_meta("footprint", 0.0)))
@@ -106,7 +109,7 @@ func _setup_model(n: Node3D) -> void:
 		var s := SMOKE.instantiate() as GPUParticles3D
 		s.name = "TundukSmoke"
 		s.position = Vector3(0, TUNDUK_HEIGHT[kind], 0)
-		s.amount = 18 if kind == "boz" else 26
+		s.amount = int((18.0 if kind == "boz" else 26.0) * (0.5 if Ordo.is_low() else 1.0))
 		s.lifetime = 9.0
 		s.preprocess = 9.0
 		n.add_child(s)

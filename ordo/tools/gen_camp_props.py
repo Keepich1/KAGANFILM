@@ -55,11 +55,17 @@ def tug(lod=0):
     cross = G.pole((-0.2, H + 0.13, 0), (0.2, H + 0.13, 0), 0.025, sides=4, region="brass")
     parts.append(cross)
     # конский хвост (туг): пучок волоса вокруг древка под яблоком
-    hair = K.lathe([(0.05, -1.25), (0.2, -1.0), (0.22, -0.55), (0.15, -0.15), (0.07, 0.0)], _q(lod, 10, 6), 1.0,
+    hair = K.lathe([(0.12, -1.55), (0.2, -1.3), (0.19, -0.8), (0.12, -0.25), (0.06, 0.0)], _q(lod, 12, 7), 1.0,
                    normals="smooth")
     hair.UV[:, 1] = 1 - hair.UV[:, 1]
-    G.to_region(hair, "hair")
-    G.radial_warp(hair, lambda th, y, r: 1 + 0.12 * np.sin(np.radians(th) * 5 + y * 4) * np.clip(-y, 0, 1))
+    hair.UV[:, 1] = 0.25 + 0.75 * hair.UV[:, 1]   # только тёмный волос кисти, без обмотки
+    G.to_region(hair, "tassel")
+    G.radial_warp(hair, lambda th, y, r: 1 + 0.16 * np.sin(np.radians(th) * 5 + y * 4) * np.clip(-y, 0, 1.4))
+    # рваные концы прядей: нижнее кольцо разной длины
+    th = np.arctan2(hair.P[:, 0], hair.P[:, 2])
+    tip = np.clip((-hair.P[:, 1] - 1.2) / 0.35, 0, 1)
+    hair.P[:, 1] -= tip * (0.12 + 0.16 * np.abs(np.sin(th * 3.5 + 0.7)))
+    hair.smooth()
     hair.translate(0, H - 0.06, 0)
     parts.append(hair)
     wrap = K.lathe([(0.06, 0.0), (0.075, 0.06), (0.06, 0.14)], _q(lod, 8, 6), 1.0).translate(0, H - 0.08, 0)

@@ -18,6 +18,10 @@ func _ready() -> void:
 		model.visible = show_model
 		KipchakModels.apply(model)
 	_light.omni_range = light_range
+	if Ordo.is_low():
+		# телефоны (ТЗ 11.7): меньше частиц
+		($Sparks as GPUParticles3D).amount = 4
+		($Smoke as GPUParticles3D).amount = 7
 	_phase = fposmod(global_position.x * 0.731 + global_position.z * 0.417, TAU)
 
 
