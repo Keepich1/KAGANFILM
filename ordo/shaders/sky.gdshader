@@ -277,7 +277,8 @@ void sky() {
 			vec3 mc = mix(rockc, snowc, sn);
 			// дымка: дальние слои почти тонут в воздухе, у подножия — туман
 			float haze = (k == 0) ? mount_haze : ((k == 1) ? mount_haze * 0.7 : mount_haze * 0.55);
-			haze = mix(haze, 0.92, exp(-(da * da) / 1.2) * 0.6);
+			// у солнца хребты в дымке, но снег и тень склонов остаются читаемыми (не «бумага»)
+			haze = mix(haze, 0.88, exp(-(da * da) / 1.2) * 0.38);
 			haze = mix(haze, 1.0, exp(-max(el_deg, 0.0) / ((k == 2) ? 0.5 : 0.9)) * 0.8);
 			mc = mix(mc, hz * 0.95, haze);
 			float edge = smoothstep(h + 0.08, h - 0.08, el_deg);

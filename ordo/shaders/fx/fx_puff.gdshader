@@ -28,6 +28,9 @@ uniform float erode_curve = 1.3;
 uniform float edge = 0.025;          // чёткость края
 uniform float opacity = 0.95;
 uniform float core_soft = 0.6;       // доля мягкого (по плотности) края против чёткого
+uniform float far_start = 28.0;      // с какого расстояния клубы укрупняются и смягчаются, м
+uniform float far_end = 95.0;
+uniform float far_grow = 1.7;
 uniform float stretch = 1.0;         // ширина/высота (пыль — шире)
 uniform float soft_dist = 0.8;       // мягкое касание земли, м
 uniform float fade_in = 0.02;
@@ -39,9 +42,15 @@ varying float v_age;
 varying float v_rot;
 varying vec4 v_col;
 varying float v_cell;
+varying float v_far;
 
 void vertex() {
 	float s = length(MODEL_MATRIX[0].xyz);
+	// издали (камера стратегии) клубы крупнее и мягче: сливаются в одну рисованную полосу,
+	// а не лежат отдельными «камешками»
+	float cam_d = length(MODEL_MATRIX[3].xyz - INV_VIEW_MATRIX[3].xyz);
+	v_far = smoothstep(far_start, far_end, cam_d);
+	s *= mix(1.0, far_grow, v_far);
 	v_rot = INSTANCE_CUSTOM.x;
 	v_age = clamp(INSTANCE_CUSTOM.y, 0.0, 1.0);
 	v_col = COLOR;
@@ -79,7 +88,7 @@ void fragment() {
 	// там тон выравнивается к среднему и светлому, остаётся рисунок мазка
 	vec3 look = -normalize(INV_VIEW_MATRIX[2].xyz);
 	float from_above = smoothstep(0.25, 0.65, -look.y);
-	ndl = mix(ndl, lit_edge * 1.15 + b * 0.6, from_above * 0.8);
+	ndl = mix(ndl, lit_edge * 1.15 + b * 0.6, max(from_above * 0.85, v_far * 0.5));
 	// ступени тона с нарисованной границей
 	// «найденные и потерянные» границы: где мазок светлее — граница тона мягче
 	float bw = band * mix(0.6, 3.0, t.b);
@@ -90,14 +99,14 @@ void fragment() {
 	// мазки кисти видны и внутри заливки тона
 	col *= 0.9 + 0.2 * t.b;
 	// низ клуба темнее (небо светит сверху), верх светлее
-	col *= mix(mix(0.72, 1.06, smoothstep(-0.6, 0.6, nw.y)), 1.0, from_above);
+	col *= mix(mix(0.72, 1.06, smoothstep(-0.6, 0.6, nw.y)), 1.0, max(from_above, v_far));
 	// порог плотности: клуб тает с края
 	float thr = mix(erode_start, erode_end, pow(v_age, erode_curve));
 	// край: где-то чёткий, где-то растушёван (по мазку и возрасту)
 	float ew = edge * mix(0.7, 3.5, t.b * t.b) * (1.0 + v_age * 1.5);
 	// плотность → прозрачность: ядро плотнее, край полупрозрачный, но с рваной кистевой кромкой
-	float cov = mix(smoothstep(thr - ew, thr + ew, t.a), smoothstep(thr - ew, thr + 0.38, t.a),
-		mix(core_soft, 1.0, from_above));
+	float soft_k = max(mix(core_soft, 1.0, from_above), v_far);
+	float cov = mix(smoothstep(thr - ew, thr + ew, t.a), smoothstep(thr - ew, thr + 0.5, t.a), soft_k);
 	// против солнца дым светится (рассеяние вперёд): весь клуб чуть, тонкие края — сильно
 	vec3 cam_fwd = -normalize(INV_VIEW_MATRIX[2].xyz);
 	float back = pow(clamp(dot(cam_fwd, L) * 1.15, 0.0, 1.0), 2.0);
@@ -124,5 +133,5 @@ void fragment() {
 	// старый дым редеет
 	float thin_age = 1.0 - age_thin * smoothstep(0.0, 1.0, v_age);
 	float near = smoothstep(near_fade * 0.45, near_fade, -VERTEX.z);
-	ALPHA = cov * opacity * mix(1.0, 0.8, from_above) * v_col.a * soft * thin_age * near * smoothstep(0.0, fade_in, v_age);
+	ALPHA = cov * opacity * mix(1.0, 0.8, from_above) * mix(1.0, 0.7, v_far) * v_col.a * soft * thin_age * near * smoothstep(0.0, fade_in, v_age);
 }

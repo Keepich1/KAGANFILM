@@ -22,13 +22,13 @@ uniform int variant_count = 4;
 uniform float jitter = 1.0;        // разброс оттенков одежды по w
 uniform float height_jitter = 0.04;
 uniform float unit_scale = 1.0;    // масштаб вида юнита (полководец крупнее), UnitRegistry «scale»
-uniform float unit_lift = 0.14;    // юниты светлее земли (ТЗ 11.2)
+uniform float unit_lift = 0.2;     // юниты светлее земли (ТЗ 11.2)
 uniform float unit_sat = 0.22;     // и насыщеннее
 uniform float rim_strength = 2.6;  // контровой свет сильнее, чем у зданий: юниты отделяются от земли
 uniform float brush_scale = 2.6;   // мазки на теле юнита (в осях модели — не «плывут»)
 uniform float band_soft_mul = 2.2; // граница света мягче, чем у зданий (мелкие круглые формы)
 uniform float side_glow_near = 0.03;  // цвет стороны чуть светится: узнаётся и в тени…
-uniform float side_glow_far = 0.15;   // …и сильнее издали, с камеры RTS (ТЗ 11.2)
+uniform float side_glow_far = 0.24;   // …и сильнее издали, с камеры RTS (ТЗ 11.2)
 uniform vec2 glow_range = vec2(14.0, 70.0);
 
 global uniform vec4 ordo_wind;     // xy — направление ветра (x, z), z — сила, w — порывистость

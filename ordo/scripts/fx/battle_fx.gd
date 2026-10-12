@@ -77,7 +77,7 @@ func _ready() -> void:
 		"col_glow": Color(1.0, 0.8, 0.5), "glow_strength": 0.6, "erode_start": 0.1, "erode_end": 0.5,
 		"opacity": 0.55, "stretch": 1.9, "lit_edge": 0.3, "shade_edge": -0.2, "edge": 0.05, "soft_dist": 1.6,
 		"core_soft": 0.8,
-		"age_thin": 0.85, "col_haze": Color(0.56, 0.5, 0.42), "near_fade": 9.0})
+		"age_thin": 0.85, "col_haze": Color(0.56, 0.5, 0.42), "near_fade": 14.0})
 	flash = _make_system("Flash", 160, 0.11, SH_STILL, {}, _material(SH_FLASH, {"atlas": ATLAS_FLASH}))
 	_ray_mat = _material(SH_RAY, {})
 	rays = _make_system("Rays", 64, 9.0, SH_STILL, {}, _ray_mat)

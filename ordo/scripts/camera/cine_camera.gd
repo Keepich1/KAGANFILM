@@ -138,9 +138,9 @@ func _clear_of_units(p: Vector3, radius: float) -> Vector3:
 func _direct(t: float) -> String:
 	var sim := scenario.sim
 	if _rout_t >= 0.0:
-		if t - _rout_t < 1.5:
+		if t - _rout_t < 1.2:
 			return "melee"
-		if t - _rout_t < 9.0:
+		if t - _rout_t < 6.5:
 			return "rout"
 		return "aftermath"
 	if _impact_t >= 0.0:
@@ -170,10 +170,10 @@ func _plan(name: String, t: float, st: float) -> Array:
 	var of := sim.squad_forward(kok)
 	match name:
 		"establish":
-			# с северо-востока против солнца: орда кыпчаков на закате, длинные тени к камере;
-			# медленный наезд
-			var p := Vector3(56.0 - st * 1.0, 7.0 - st * 0.4, -24.0 + st * 1.2)
-			return [p, Vector3(24.0, 2.0, 12.0), 48.0]
+			# с юга, высоко: обе армии в кадре — орда кыпчаков слева, кокандская линия справа,
+			# луг между ними; солнце слева сбоку, медленный наезд с опусканием
+			var p := Vector3(70.0 + st * 0.6, 17.0 - st * 1.2, 74.0 - st * 2.4)
+			return [p, Vector3(68.0, 1.0, 6.0), 50.0]
 		"war_cry":
 			var g := sim.general[1]
 			var gp := Vector3(sim.u_x[g], 0.0, sim.u_z[g])
@@ -215,19 +215,18 @@ func _plan(name: String, t: float, st: float) -> Array:
 		"impact":
 			# у южного фланга кокандской линии, вдоль строя
 			var a := Vector3(oa.x, 0.0, oa.y)
-			var p := a + Vector3(-5.0, 1.7, 33.0) + Vector3(st * 0.4, st * 0.25, 0.0)
-			return [p, a + Vector3(-1.0, 1.2, -2.0), 46.0]
+			var p := a + Vector3(-7.0, 2.6, 35.0) + Vector3(st * 0.4, st * 0.25, 0.0)
+			return [p, a + Vector3(-3.0, 1.3, -2.0), 44.0]
 		"general":
-			# полководец и свалка в одном кадре: камера с юга, между ними; солнце слева сбоку,
-			# полководец на первом-среднем плане слева, удар и знамёна справа
+			# из-за плеча полководца: он на первом плане слева, за ним длинным объективом — удар
+			# конницы о кокандскую линию во всю ширину кадра; солнце за спиной камеры
 			var g := sim.general[1]
 			var gp := Vector3(sim.u_x[g], 0.0, sim.u_z[g])
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
-			var v := Vector3(mid.x - gp.x, 0.0, mid.z - gp.z)
-			var ln := maxf(v.length(), 12.0)
-			var perp := Vector3(0.0, 0.0, 1.0)        # с юга: солнце слева сбоку
-			var p := gp + v * 0.25 + perp * ln * 1.1 + Vector3(st * 0.3, 3.4, 0.0)
-			return [p, gp + v * 0.55 + Vector3(0.0, 1.6, 0.0), 44.0]
+			var d := Vector3(mid.x - gp.x, 0.0, mid.z - gp.z).normalized()
+			var sd := Vector3(-d.z, 0.0, d.x)
+			var p := gp - d * (7.5 + st * 0.2) + sd * 2.2 + Vector3(0.0, 2.1, 0.0)
+			return [p, mid + Vector3(0.0, 1.2, 0.0), 30.0]
 		"melee":
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
 			var p := mid + Vector3(8.0 + st * 0.3, 3.2 + st * 0.25, 24.0)

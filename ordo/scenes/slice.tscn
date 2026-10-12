@@ -46,11 +46,11 @@ scenario_path = NodePath("../../Battle/Scenario")
 shot = "charge"
 
 [node name="CamImpact" type="Camera3D" parent="Cameras"]
-fov = 42.0
+fov = 44.0
 far = 6000.0
 script = ExtResource("5")
 scenario_path = NodePath("../../Battle/Scenario")
-shot = "general"
+shot = "impact"
 
 [node name="CamAftermath" type="Camera3D" parent="Cameras"]
 fov = 46.0
