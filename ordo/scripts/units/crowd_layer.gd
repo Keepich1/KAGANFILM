@@ -32,6 +32,13 @@ var _mmi: Array[MultiMeshInstance3D] = []
 var _buf := PackedFloat32Array()
 var _visible := 0
 var _dirty := false
+var _lo := Vector3(INF, INF, INF)   # границы видимых экземпляров (для отсечения и выбора LOD)
+var _hi := Vector3(-INF, -INF, -INF)
+var _flushes := 0
+
+## Запас границ: копья, знамёна, лежащие тела выходят за ступни
+const AABB_PAD_LO := Vector3(3.0, 1.0, 3.0)
+const AABB_PAD_HI := Vector3(3.0, 5.0, 3.0)
 
 static var _mesh_cache := {}
 static var _material_cache := {}
@@ -64,8 +71,6 @@ func setup(p_unit_id: String, p_capacity: int) -> void:
 		mmi.name = "LOD%d" % lod
 		mmi.multimesh = mm
 		mmi.material_override = _material(unit_id, data["texture"])
-		# лежащие тела, копья и знамёна выходят за AABB меша покоя
-		mmi.extra_cull_margin = 2.5
 		mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		add_child(mmi)
 		_mm.append(mm)
@@ -93,6 +98,9 @@ func set_instance(i: int, xform: Transform3D, custom: Color) -> void:
 	_buf[o + 9] = b.y.z
 	_buf[o + 10] = b.z.z
 	_buf[o + 11] = xform.origin.z
+	if i < _visible:
+		_lo = _lo.min(xform.origin)
+		_hi = _hi.max(xform.origin)
 	_buf[o + 12] = custom.r
 	_buf[o + 13] = custom.g
 	_buf[o + 14] = custom.b
@@ -117,6 +125,8 @@ func set_visible_count(n: int) -> void:
 	_visible = clampi(n, 0, capacity)
 	for mm in _mm:
 		mm.visible_instance_count = _visible
+	_flushes = 0  # границы пересчитать при следующей отправке
+	_dirty = true
 
 
 func get_visible_count() -> int:
@@ -130,12 +140,14 @@ func set_raw_buffer(data: PackedFloat32Array) -> void:
 		push_error("CrowdLayer.set_raw_buffer: нужно %d чисел" % _buf.size())
 		return
 	_buf = data
+	_flushes = 0
 	_dirty = true
 
 
 func _enter_tree() -> void:
 	if not RenderingServer.frame_pre_draw.is_connected(_flush):
 		RenderingServer.frame_pre_draw.connect(_flush)
+	_apply_lod()
 
 
 func _exit_tree() -> void:
@@ -148,8 +160,26 @@ func _flush() -> void:
 	if not _dirty or _mm.is_empty():
 		return
 	_dirty = false
+	# границы: точный пересчёт по видимым экземплярам раз в 15 отправок, между ними — расширение
+	if _flushes % 15 == 0:
+		_recompute_bounds()
+	_flushes += 1
+	var box := AABB()
+	if _visible > 0 and _lo.x <= _hi.x:
+		box = AABB(_lo - AABB_PAD_LO, (_hi - _lo) + AABB_PAD_LO + AABB_PAD_HI)
 	for mm in _mm:
 		RenderingServer.multimesh_set_buffer(mm.get_rid(), _buf)
+		mm.custom_aabb = box
+
+
+func _recompute_bounds() -> void:
+	_lo = Vector3(INF, INF, INF)
+	_hi = Vector3(-INF, -INF, -INF)
+	for i in _visible:
+		var o := i * STRIDE
+		var p := Vector3(_buf[o + 3], _buf[o + 7], _buf[o + 11])
+		_lo = _lo.min(p)
+		_hi = _hi.max(p)
 
 
 func _apply_lod() -> void:
@@ -165,7 +195,9 @@ func _apply_lod() -> void:
 
 
 func _is_low() -> bool:
-	var ordo := get_node_or_null("/root/Ordo")
+	if not is_inside_tree():
+		return false
+	var ordo := get_tree().root.get_node_or_null("Ordo")
 	return ordo != null and ordo.has_method("is_low") and ordo.is_low()
 
 

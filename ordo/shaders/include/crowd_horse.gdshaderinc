@@ -154,7 +154,8 @@ void rp_charge_weapon(inout RPose p, Xf T, int wk, bool banner) {
 	if (banner) {
 		rp_weapon_t(p, T, vec3(-0.2, 1.05, 0.26), vec3(0.0, 1.0, 0.55), vec3(0.0, 0.0, 1.0));
 	} else if (wk == WK_LANCE) {
-		rp_weapon_t(p, T, vec3(-0.17, 1.08, 0.0), vec3(0.13, -0.05, 1.0), vec3(0.0, 1.0, 0.0));
+		// копьё наперевес: ось поднята на наклон торса — в мире почти горизонтально
+		rp_weapon_t(p, T, vec3(-0.17, 1.08, 0.0), vec3(0.13, 0.4, 1.0), vec3(0.0, 1.0, 0.0));
 		p.elbow_r = T.b * vec3(-1.0, -0.3, -0.2);
 	} else if (wk == WK_MACE) {
 		rp_weapon_t(p, T, vec3(-0.26, 1.5, 0.12), vec3(0.0, 0.9, 0.4), vec3(0.0, 0.0, 1.0));

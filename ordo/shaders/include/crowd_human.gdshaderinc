@@ -166,7 +166,7 @@ void hp_gait(inout HPose p, float ph, float stride, float duty, float lift, floa
 	p.chest_rot.z = -0.03 * cos(a - mid);
 	p.head_rot.y = -0.05 * cos(a);
 	p.head_rot.x = -0.04 - 0.1 * run;
-	p.skirt = 0.9;
+	p.skirt = 0.78;
 	p.flare = 0.03 + 0.08 * run;
 }
 
@@ -240,6 +240,7 @@ void hp_idle(inout HPose p, float ph, float var, float t) {
 	p.pel_rot = vec3(0.02, 0.06 * sh, 0.05 * sh);
 	p.chest_rot = vec3(0.02 - 0.025 * br, -0.04 * sh, -0.05 * sh);
 	p.head_rot = vec3(-0.03 + 0.04 * (noise1(t * 0.07 + var * 5.0) - 0.5), 0.9 * look, 0.03 * sh);
+	p.skirt = 0.6;
 }
 
 void hp_kneel(inout HPose p) {
@@ -586,6 +587,11 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			float br = sin(TAU * ph);
 			p.hand_l = xf_pt(C, HP_HAND_L + vec3(-0.01, 0.01 * br, 0.04));
 			p.hand_r = xf_pt(C, HP_HAND_R + vec3(0.01, 0.01 * br, 0.04));
+			if (st == HS_IDLE && hash11(var * 3.3) > 0.35) {
+				// левая рука на кушаке, локоть в сторону — поза, а не «манекен»
+				p.hand_l = xf_pt(C, vec3(0.175, 1.0 + 0.01 * br, 0.07));
+				p.elbow_l = C.b * vec3(1.0, -0.1, -0.35);
+			}
 		}
 		if (wk == WK_MUSKET) {
 			if (st == HS_RUN) {
@@ -665,7 +671,7 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 			float pitch = atan(d.z, -d.y);
 			float roll = atan(d.x, -d.y);
 			v.xz += normalize(v.xz + vec2(0.0001)) * p.flare * wgt;
-			X = xf_mul(P, xf_piv(rot_z(roll * 0.5) * rot_x(-pitch * p.skirt), HP_SKIRT_L, vec3(0.0)));
+			X = xf_mul(P, xf_piv(rot_z(roll * 0.2) * rot_x(-pitch * p.skirt), HP_SKIRT_L, vec3(0.0)));
 		} else {
 			X = part == H_THIGH_L ? up : lo;
 		}
@@ -679,7 +685,7 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 			float pitch = atan(d.z, -d.y);
 			float roll = atan(d.x, -d.y);
 			v.xz += normalize(v.xz + vec2(0.0001)) * p.flare * wgt;
-			X = xf_mul(P, xf_piv(rot_z(roll * 0.5) * rot_x(-pitch * p.skirt), HP_SKIRT_R, vec3(0.0)));
+			X = xf_mul(P, xf_piv(rot_z(roll * 0.2) * rot_x(-pitch * p.skirt), HP_SKIRT_R, vec3(0.0)));
 		} else {
 			X = part == H_THIGH_R ? up : lo;
 		}

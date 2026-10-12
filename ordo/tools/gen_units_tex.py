@@ -87,6 +87,14 @@ def vgrad(c: Canvas, top_k=1.12, bottom_k=0.78):
     c._blend(arr * (top_k + (bottom_k - top_k) * t))
 
 
+def temperature(c: Canvas, w, h, warm="#ffb070", cool="#3a5a8a", n=260, alpha=(0.06, 0.16), split=0.45):
+    """Свет и тень, нарисованные цветом: тёплые мазки сверху (низкое солнце), холодные снизу (небо в тени)."""
+    c.strokes(n, [warm, _mix(warm, "#ffe0b0", 0.4)], length=(14, 40), width=(4, 10), angle=90, angle_jitter=25,
+              alpha=alpha, region=(0, 0, w, h * split))
+    c.strokes(n, [cool, _mix(cool, "#203048", 0.4)], length=(14, 40), width=(4, 10), angle=90, angle_jitter=25,
+              alpha=alpha, region=(0, h * (1 - split), w, h))
+
+
 def folds(c: Canvas, w, h, dark, light, n=40, vertical=True, length=(0.35, 0.9), width=(6, 16), alpha=(0.18, 0.4),
           flare=0.0, region=None):
     """Складки ткани: длинные мазки тени и света вдоль ткани."""
@@ -136,9 +144,10 @@ def kaftan_torso(main, dark, light, trimc, inner, emb=None, seed=0):
             x = c.rs.uniform(0, w)
             side = 1 if x > w * 0.5 else -1
             ang = 90 + side * 18 * (1 - abs(x / w - 0.5) * 2) + c.rs.normal(0, 6)
-            col = _shade(main, 0.72) if i % 2 else _mix(main, light, 0.35)
+            col = _shade(main, 0.62) if i % 2 else _mix(main, light, 0.42)
             c._stroke(x, c.rs.uniform(h * 0.25, h * 0.85), math.radians(ang), c.rs.uniform(0.25, 0.6) * h,
-                      c.rs.uniform(6, 14), np.array(rgb8(col), float), c.rs.uniform(0.15, 0.35), c.rs.normal(0, 0.2), 3, 0.4)
+                      c.rs.uniform(6, 14), np.array(rgb8(col), float), c.rs.uniform(0.2, 0.45), c.rs.normal(0, 0.2), 3, 0.4)
+        temperature(c, w, h)
         c.strokes(500, [_shade(main, 0.9), _mix(main, light, 0.25), main], length=(10, 26), width=(3, 7),
                   angle=90, angle_jitter=25, alpha=(0.15, 0.35))
         vgrad(c, 1.18, 0.7)
@@ -170,10 +179,11 @@ def kaftan_skirt(main, dark, light, trimc, seed=0, hem=True, ornament=None):
         # тяжёлые вертикальные складки, к подолу шире
         for i in range(56):
             x = (i + c.rs.uniform(-0.3, 0.3)) / 56 * w
-            col = _shade(main, 0.62) if i % 2 else _mix(main, light, 0.38)
+            col = _shade(main, 0.52) if i % 2 else _mix(main, light, 0.48)
             L = c.rs.uniform(0.55, 1.0) * h
             c._stroke(x, h - L * 0.5 + c.rs.uniform(0, h * 0.1), math.radians(90 + c.rs.normal(0, 3)), L,
-                      c.rs.uniform(7, 15), np.array(rgb8(col), float), c.rs.uniform(0.2, 0.42), c.rs.normal(0, 0.1), 3, -0.6)
+                      c.rs.uniform(7, 15), np.array(rgb8(col), float), c.rs.uniform(0.28, 0.52), c.rs.normal(0, 0.1), 3, -0.6)
+        temperature(c, w, h, split=0.4)
         c.strokes(400, [_shade(main, 0.9), main], length=(14, 34), width=(3, 7), angle=90, angle_jitter=8,
                   alpha=(0.12, 0.3))
         vgrad(c, 1.1, 0.62)
@@ -192,8 +202,9 @@ def sleeve(main, light, trimc, seed=0, h_frac=1.0):
     def p(c: Canvas, w, h):
         c.underpaint([_shade(main, 0.86), main, _mix(main, light, 0.15)], cell=36, seed=seed)
         # поперечные складки на сгибе
-        c.strokes(160, [_shade(main, 0.68), _mix(main, light, 0.35)], length=(18, 46), width=(4, 9), angle=0,
-                  angle_jitter=18, alpha=(0.18, 0.38))
+        c.strokes(170, [_shade(main, 0.58), _mix(main, light, 0.42)], length=(18, 46), width=(4, 9), angle=0,
+                  angle_jitter=18, alpha=(0.22, 0.45))
+        temperature(c, w, h)
         c.strokes(240, [main, _shade(main, 0.9)], length=(10, 24), width=(3, 6), angle=90, angle_jitter=20,
                   alpha=(0.12, 0.3))
         vgrad(c, 1.1, 0.8)
@@ -745,7 +756,7 @@ def build_kokand(path):
     region(img, A, "torso", kaftan_torso(main, dark, light, gold, "#e9e0c8", emb=gold, seed=40), seed=40)
     region(img, A, "skirt", kaftan_skirt(main, dark, light, gold, seed=41), seed=41)
     region(img, A, "sleeve", sleeve(main, light, gold, seed=42), seed=42)
-    region(img, A, "trousers", plain_cloth("#3a3f52", "#6a7088", seed=43), seed=43)
+    region(img, A, "trousers", plain_cloth("#3c3a5c", "#76709a", seed=43), seed=43)
     # офицерский кафтан: глубокий изумруд с густым золотом
     off_main = "#1f7a5c"
     region(img, A, "torso2", kaftan_torso(off_main, dark, light, gold, "#c9a24a", emb="#ffe39a", seed=44), seed=44)

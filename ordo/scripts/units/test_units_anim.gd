@@ -88,6 +88,8 @@ func _add(unit: String, state: int, pos: Vector3, yaw_deg := 0.0, speed := 0.0, 
 		l.name = unit
 		add_child(l)
 		l.setup(unit, 64)
+		if _arg("lod", "") != "":
+			l.lod_distance = float(_arg("lod", "90"))  # проверка LOD1: --lod=0.5
 		_layers[unit] = l
 	var i := 0
 	for e in _entries:
@@ -160,8 +162,9 @@ func _build_lineup() -> void:
 		_add("horse", R.IDLE, Vector3(x + 12.0, 0, -9.0), 30.0)
 		_add("horse", R.IDLE, Vector3(x + 14.5, 0, -10.0), -40.0)
 	if _on("close"):
-		_add("kip_sayisker", R.IDLE, Vector3(-4.2, 0, 9.0), 35.0)
-		_add("kok_sarboz", H.IDLE, Vector3(-2.4, 0, 10.2), 20.0)
+		_add("kip_sayisker", R.IDLE, Vector3(-6.2, 0, 7.6), 118.0)
+		_add("kok_sarboz", H.IDLE, Vector3(-2.5, 0, 10.4), 62.0)
+		_add("kip_jooker", H.IDLE, Vector3(-6.6, 0, 11.6), 75.0)
 	if _on("lanes"):
 		# дорожки с движением (вдоль +X, по кругу): проверка шага без скольжения
 		var lanes := [
@@ -273,7 +276,7 @@ func _build_world() -> void:
 	env.adjustment_saturation = 1.05
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.42, 0.42, 0.5)
-	env.fog_density = 0.005
+	env.fog_density = 0.0025
 	env.fog_sun_scatter = 0.35
 	env.fog_aerial_perspective = 0.4
 	env.glow_enabled = true
@@ -300,7 +303,8 @@ func _build_world() -> void:
 	ground.material_override = gm
 	add_child(ground)
 	_cam("CamLineup", Vector3(-1.5, 15.5, 17.0), Vector3(-1.5, 0.6, -2.6), 50.0)
-	_cam("CamClose", Vector3(-1.2, 2.1, 15.2), Vector3(-3.4, 1.35, 9.4), 40.0)
+	# крупно, контровой свет: камера смотрит в сторону низкого солнца (запад)
+	_cam("CamClose", Vector3(1.6, 1.55, 12.6), Vector3(-4.2, 1.45, 9.3), 42.0)
 	_cam("CamTop", Vector3(-8.0, 58.0, 52.0), Vector3(-8.0, 0.0, -2.0), 50.0)
 	_cam("CamGait", Vector3(27.0, 11.0, 15.0), Vector3(27.0, 0.6, -4.0), 55.0)
 	_cam("CamRiders", Vector3(-1.0, 6.0, 4.5), Vector3(-1.0, 1.2, -6.5), 55.0)
