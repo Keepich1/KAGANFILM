@@ -20,6 +20,12 @@ BUDGET = {
     "main": (3000, 5000, 6000, 10000),
     "infantry": (150, 300, 300, 600),
     "rider": (400, 600, 800, 1200),
+    # не из таблицы ТЗ 11.5 — свои пределы среза для мелочей, животных и природы
+    "prop": (0, 400, 0, 600),            # костёр, казан, поленница, кошмы, сено, сёдла
+    "prop_large": (0, 800, 0, 1500),     # туг, арба
+    "animal": (0, 300, 0, 600),          # овца, конь без всадника
+    "tree": (0, 300, 0, 600),            # тополь, ива, арча, карагач
+    "rock": (0, 150, 0, 300),
 }
 CATEGORY = {
     "devor": "wall", "tosh": "wall", "chep": "wall",
@@ -28,6 +34,10 @@ CATEGORY = {
     "kazarma": "medium", "otxona": "medium", "jooker": "medium", "jylky": "medium", "koroo": "medium",
     "topxona": "medium",
     "urda": "main", "ordo": "main", "kurultai": "main",
+    "campfire": "prop", "kazan": "prop", "woodpile": "prop", "felt_rolls": "prop", "hay": "prop",
+    "saddle_rack": "prop", "tug": "prop_large", "arba": "prop_large",
+    "sheep": "animal", "horse": "animal",
+    "poplar": "tree", "willow": "tree", "juniper": "tree", "elm": "tree",
 }
 UNIT_RIDER = ("sayisker", "atchan", "chabuul", "jüz", "juz", "navkar", "yuzboshi", "kolbashchy", "rider")
 
@@ -36,6 +46,8 @@ def category(name):
     base = name.replace("_lod1", "")
     if base in CATEGORY:
         return CATEGORY[base]
+    if base.startswith("rock_"):
+        return "rock"
     if base.startswith(("kip_", "kok_")):
         return "rider" if any(k in base for k in UNIT_RIDER) else "infantry"
     return None
@@ -60,6 +72,8 @@ def main(root):
             else:
                 ok = s["triangles"] <= hi_p
                 line += f"  [{cat}: ПК {lo_p}–{hi_p}] {'ok' if ok else 'ПРЕВЫШЕН'}"
+                if ok and s["triangles"] < lo_p:
+                    line += "  (меньше нижней границы — можно добавить деталей)"
                 bad += not ok
         if s["min"][1] < -0.05:
             line += "  ниже земли!"

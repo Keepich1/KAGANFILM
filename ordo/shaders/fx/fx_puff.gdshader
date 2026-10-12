@@ -93,14 +93,19 @@ void fragment() {
 	// против солнца дым светится (рассеяние вперёд): весь клуб чуть, тонкие края — сильно
 	vec3 cam_fwd = -normalize(INV_VIEW_MATRIX[2].xyz);
 	float back = pow(clamp(dot(cam_fwd, L) * 1.15, 0.0, 1.0), 2.0);
-	float thin = 1.0 - smoothstep(thr, thr + 0.22, t.a);
+	// свечение против солнца — широкой растушёвкой от края внутрь, а не тонким ободком
+	// у каждого клуба (иначе дым читается как вата с обводкой)
+	float thin = 1.0 - smoothstep(thr, thr + 0.42, t.a);
 	// кромка светится у молодого плотного дыма; старый, полупрозрачный — светится ровнее,
 	// без ободков (иначе сквозь него видны кольца задних клубов)
 	float rim = mix(thin, 0.35, smoothstep(0.2, 0.8, v_age));
-	float scatter = back * clamp(0.1 + 0.9 * rim, 0.0, 1.0) * glow_strength * (1.0 - 0.45 * v_age);
+	float scatter = back * clamp(0.18 + 0.62 * rim, 0.0, 1.0) * glow_strength * (1.0 - 0.45 * v_age);
+	// плотное ядро против солнца темнее: свет проходит только сквозь тонкие места
+	col *= 1.0 - 0.35 * back * smoothstep(0.55, 0.95, t.a);
 	col = mix(col * mix(1.0, 0.8, back), col_glow.rgb * sun_color * sun_energy * 1.25, clamp(scatter, 0.0, 0.95));
 	// старый дым теряет контраст и уходит в цвет дымки
-	col = mix(col, col_haze.rgb * mix(vec3(1.0), sun_color, 0.3), smoothstep(0.25, 1.0, v_age) * 0.6);
+	// старый дым теряет контраст, но ступени тона (тёплый свет / холодная тень) держит долго
+	col = mix(col, col_haze.rgb * mix(vec3(1.0), sun_color, 0.45), smoothstep(0.5, 1.0, v_age) * 0.38);
 	col *= v_col.rgb;
 	// мягкое касание земли и предметов
 	float depth = texture(depth_tex, SCREEN_UV).r;

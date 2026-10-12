@@ -45,7 +45,14 @@
 - Все непрозрачные шейдеры подключают `shaders/include/painterly.gdshaderinc`
   (граница света ломается мазком, тёплая полоса на терминаторе, цветная тень, контровой свет).
 - Общие параметры — глобальные uniform `ordo_*` в `project.godot` (раздел `[shader_globals]`).
-  Тон картинки настраивается там, а не в каждом шейдере.
+  Тон картинки настраивается там, а не в каждом шейдере. Значения для заката ставит мир при
+  запуске (`World.PAINT_GLOBALS`), в `project.godot` — те же значения по умолчанию.
+- `ordo_wind` (vec4): xy — куда дует ветер в мировых x/z (не откуда), z — сила (толпа умножает
+  на 6 м/с), w — порывистость. `ordo_sun_dir` (vec3) — единичный вектор НА солнце (ставит мир).
+  Процессорным эффектам (дым, частицы) те же значения отдаёт автозагрузка: `Ordo.wind`,
+  `Ordo.sun_dir`; менять ветер — `Ordo.set_wind(v)` (шейдеры и процессор видят одно и то же).
+- Скрипты, которые могут работать в безголовых тестах (`godot --script`), берут автозагрузку
+  по пути: `get_node_or_null("/root/Ordo")` — по имени `Ordo` её там не видно.
 - `shaders/painterly_surface.gdshader` и `painterly_cutout.gdshader` — готовые материалы.
   `Painterly.apply(node)` переводит материалы импортированного glb в живописные.
 
@@ -78,6 +85,16 @@
 - Данные экземпляра `INSTANCE_CUSTOM` и состояния анимаций — `scripts/units/anim_spec.gd`
   (`AnimSpec`). Это договор симуляции и шейдера: меняйте его только вместе.
 - Цвет стороны занимает 20–30% силуэта (плащ, попона, знамя) и узнаётся с любого зума (ТЗ 11.2).
+
+## 7а. Сборка среза
+
+`scenes/slice.tscn` (`scripts/slice.gd`) — главная сцена: `Cameras` (кадры Cam*), `World`
+(`scenes/world/world.tscn`: земля, небо, солнце, туман, трава, деревья, река, живописный фильтр —
+единственные WorldEnvironment и DirectionalLight3D), `Camp` (`scenes/camp/camp.tscn` в корне без
+сдвига, сам встаёт на `Terrain.height_at`) и `Battle` (`scenes/battle/battle.tscn`). Бой берёт свет
+из мира (первый DirectionalLight3D), метки лагеря — по именам (SheepPen, HorsePen, WorkSpot_*,
+GuardPost_*), толпу — из `scripts/units/crowd_layer.gd`. Свои небо и солнце тестовых сцен
+(stand-in) в срез не идут. Серия кадров: `-- --hero=9.8@CamVolley,14.3@CamImpact --hero_out=DIR`.
 
 ## 8. Владельцы папок
 

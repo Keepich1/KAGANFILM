@@ -138,8 +138,11 @@ void vertex() {
 	c *= 1.0 + wave * 0.12 * t;
 	vec3 pc = plume_color.rgb * (0.9 + 0.2 * h3);
 	pc = mix(mid_color.rgb, pc, smoothstep(0.15, 0.5, t));
-	v_color = mix(c, pc, is_plume);
-	v_plume = is_plume;
+	// вдали ости ковыля сливаются с травой: светлые метёлки иначе читаются как «сор» по полю
+	float cam_d = length(vec3(wxz.x, gy, wxz.y) - CAMERA_POSITION_WORLD);
+	float plume_k = is_plume * (1.0 - 0.8 * smoothstep(18.0, 55.0, cam_d));
+	v_color = mix(c, pc, plume_k);
+	v_plume = plume_k;
 	v_t = t;
 }
 

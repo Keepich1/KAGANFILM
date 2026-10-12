@@ -26,7 +26,7 @@ extends Node3D
 const TUNDUK_HEIGHT := {"boz": 4.55, "ordo": 8.1}
 const SMOKE := preload("res://scenes/camp/smoke.tscn")
 ## Контровой свет построек сильнее общего: белый войлок на закате должен светиться по краю
-const RIM_STRENGTH := 1.7
+const RIM_STRENGTH := 1.1
 
 
 func _ready() -> void:

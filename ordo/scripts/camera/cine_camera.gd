@@ -18,7 +18,7 @@ extends Camera3D
 signal shot_changed(name: String)
 
 @export var scenario_path: NodePath = ^"../../Scenario"
-@export_enum("auto", "establish", "war_cry", "charge", "volley", "lances", "impact", "melee", "rout", "aftermath")
+@export_enum("auto", "establish", "war_cry", "charge", "volley", "lances", "impact", "general", "melee", "rout", "aftermath")
 var shot := "auto"
 ## Плавность слежения (больше — жёстче)
 @export var follow := 3.5
@@ -197,6 +197,16 @@ func _plan(name: String, t: float, st: float) -> Array:
 			var a := Vector3(oa.x, 0.0, oa.y)
 			var p := a + Vector3(-5.0, 1.7, 33.0) + Vector3(st * 0.4, st * 0.25, 0.0)
 			return [p, a + Vector3(-1.0, 1.2, -2.0), 46.0]
+		"general":
+			# полководец на первом плане, за ним — удар и свалка; камера со стороны солнца
+			# (свет спереди на полководце и бойцах, длинные тени уходят от камеры)
+			var g := sim.general[1]
+			var gp := Vector3(sim.u_x[g], 0.0, sim.u_z[g])
+			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
+			var d := Vector3(mid.x - gp.x, 0.0, mid.z - gp.z).normalized()
+			var sd := Vector3(-d.z, 0.0, d.x)
+			var p := gp - d * (9.0 + st * 0.25) + sd * 3.0 + Vector3(0.0, 2.3, 0.0)
+			return [p, gp + d * 20.0 + Vector3(0.0, 1.8, 0.0), 42.0]
 		"melee":
 			var mid := Vector3((kc.x + oc.x) * 0.5, 0.0, (kc.y + oc.y) * 0.5)
 			var p := mid + Vector3(8.0 + st * 0.3, 3.2 + st * 0.25, 24.0)

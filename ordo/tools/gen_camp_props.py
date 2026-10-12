@@ -355,7 +355,7 @@ def saddle(lod=0, seed=0):
 
 def wheel(radius, lod=0):
     """Большое колесо арбы (в плоскости YZ, ось вдоль X): обод, ступица, спицы."""
-    seg = _q(lod, 18, 10)
+    seg = _q(lod, 18, 8)
     w = 0.09
     rim = K.lathe([(radius - 0.07, -w), (radius, -w), (radius, w), (radius - 0.07, w), (radius - 0.07, -w)], seg,
                   1.0, normals="crease")
@@ -366,7 +366,7 @@ def wheel(radius, lod=0):
     G.to_region(hub, "walnut")
     hub.rotate_z(-90)
     parts.append(hub)
-    n_sp = _q(lod, 12, 8)
+    n_sp = _q(lod, 12, 6)
     for k in range(n_sp):
         a = 2 * math.pi * k / n_sp
         d = np.array([0, math.cos(a), math.sin(a)])
@@ -391,9 +391,9 @@ def arba(lod=0):
     for sx in (-1, 1):  # борта: стойки и верхняя жердь
         parts.append(G.pole((sx * W / 2, bed_y + 0.42, zc - L / 2), (sx * W / 2, bed_y + 0.42, zc + L / 2), 0.035,
                             sides=4, region="pole"))
-        for z in (-L / 2 + 0.08, 0.0, L / 2 - 0.08):
-            parts.append(G.pole((sx * W / 2, bed_y, zc + z), (sx * W / 2, bed_y + 0.46, zc + z), 0.03, sides=4,
-                                region="pole"))
+        for z in ((-L / 2 + 0.08, 0.0, L / 2 - 0.08) if lod == 0 else (-L / 2 + 0.08, L / 2 - 0.08)):
+            parts.append(G.pole((sx * W / 2, bed_y, zc + z), (sx * W / 2, bed_y + 0.46, zc + z), 0.03,
+                                sides=_q(lod, 4, 3), region="pole"))
     # оглобли: от передка вперёд и вниз, концы лежат на земле
     front = zc + L / 2
     for sx in (-1, 1):
@@ -420,20 +420,20 @@ def arba(lod=0):
         parts.append(G.pole((x * 0.5, y, zc + 1.0), (x, y - 0.25, zc - 3.0 + rs.uniform(-0.2, 0.2)), 0.026, 0.02,
                             sides=3, region="pole"))
     # тюндюк стоит наклонно у заднего борта
-    tun = K.lathe([(0.6, 0.0), (0.6, 0.1), (0.48, 0.12), (0.48, 0.0)], _q(lod, 14, 8), 1.0, normals="crease")
+    tun = K.lathe([(0.6, 0.0), (0.6, 0.1), (0.48, 0.12), (0.48, 0.0)], _q(lod, 14, 6), 1.0, normals="crease")
     G.to_region(tun, "walnut")
     for d in ((1, 0), (0, 1)):
         p0 = np.array([-0.48 * d[0], 0.1, -0.48 * d[1]])
         p1 = np.array([0.48 * d[0], 0.1, 0.48 * d[1]])
         mid = np.array([0, 0.32, 0])
         pts = np.array([p0, (p0 + mid) / 2 + [0, 0.08, 0], mid, (p1 + mid) / 2 + [0, 0.08, 0], p1])
-        tun = Mesh.merge([tun, G.path_tube(pts, 0.03, sides=4, region="walnut", tile_len=2.0)])
+        tun = Mesh.merge([tun, G.path_tube(pts, 0.03, sides=_q(lod, 4, 3), region="walnut", tile_len=2.0)])
     parts.append(tun.rotate_x(-62).translate(0.0, top + 0.95, zc - L / 2 - 0.05))
     # верёвки поперёк груза
     for z in (-0.7, 0.55):
         path = [(-W / 2 - 0.02, bed_y + 0.42, zc + z), (-0.55, top + 1.05, zc + z), (0.0, top + 1.16, zc + z),
                 (0.55, top + 1.05, zc + z), (W / 2 + 0.02, bed_y + 0.42, zc + z)]
-        parts.append(G.path_tube(path, 0.022, sides=4, region="rope", tile_len=4.0))
+        parts.append(G.path_tube(path, 0.022, sides=_q(lod, 4, 3), region="rope", tile_len=4.0))
     for p in parts:
         if not p.has_color:
             G.white(p)

@@ -16,11 +16,11 @@ extends Node3D
 ## (низкое разрешение 3D, без теней и фильтра), за 1,5 с до кадра всё включается обратно.
 
 ## Сколько секунд до кадра работать в полном качестве (туман и дым успевают устояться)
-const FULL_BEFORE := 0.5
+const FULL_BEFORE := 0.1
 ## Масштаб 3D при промотке
 const FAST_SCALE := 0.34
 ## Скорость боя при промотке серии кадров (симуляция, частицы и камеры — вместе)
-const FAST_SPEED := 4.0
+const FAST_SPEED := 5.0
 
 @onready var world: World = $World
 @onready var camp: KipchakCamp = $Camp
@@ -33,6 +33,7 @@ var _hero_prefix := ""
 var _busy := false
 var _fast := false
 var _shot_at := -1.0
+var _frames := 0
 
 
 func _ready() -> void:
@@ -89,8 +90,20 @@ func _aim(cam_name: String, from: Vector3, to: Vector3, fov_deg: float) -> void:
 func _place_cameras() -> void:
 	# 1 — долина на закате: лагерь с дымами в среднем плане, горы, блик реки
 	_aim("CamEstablish", _ground(95.0, 120.0, 46.0), _ground(-95.0, -60.0, 8.0), 46.0)
-	# 2 — внутри лагеря: ставка, туг, боз үй, малчы, костры, дым; низкое солнце сбоку
-	_aim("CamCampLife", _ground(-28.0, 50.0, 3.4), _ground(-62.0, 22.0, 4.2), 50.0)
+	# 2 — внутри лагеря: ставка, туг, боз үй, малчы, костры, дым; низкое солнце сбоку-сзади
+	_aim("CamCampLife", _ground(-28.0, 48.0, 2.6), _ground(-74.0, 36.0, 4.5), 52.0)
+	# пробные камеры для подбора кадра: --cams=Имя@x,высота,z@x,высота,z@угол;…  (высота — над землёй)
+	if _ordo and _ordo.has_arg("cams"):
+		for item in String(_ordo.arg("cams")).split(";", false):
+			var f := item.split("@")
+			if f.size() < 4:
+				continue
+			var a := f[1].split_floats(",")
+			var b := f[2].split_floats(",")
+			var cam := Camera3D.new()
+			cam.name = f[0]
+			$Cameras.add_child(cam)
+			_aim(f[0], _ground(a[0], a[2], a[1]), _ground(b[0], b[2], b[1]), float(f[3]))
 
 
 # ---------------------------------------------------------------- клавиши
@@ -105,6 +118,10 @@ func _unhandled_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------- съёмка
 
 func _process(_delta: float) -> void:
+	_frames += 1
+	if _frames == 2 and _fast:
+		# WorldQuality применяет качество отложенно (после _ready) — промотку ставим поверх
+		_set_fast(true)
 	_update_fast()
 	if _targets.is_empty() or _busy or battle.scenario == null:
 		return
@@ -124,6 +141,8 @@ func _next_shot_time() -> float:
 
 
 func _update_fast() -> void:
+	if _busy:
+		return  # кадр серии ещё снимается — качество не трогаем
 	var t_next := _next_shot_time()
 	if t_next < 0.0:
 		if _fast:
@@ -145,6 +164,13 @@ func _set_fast(on: bool) -> void:
 		post.enabled = not on and not _ordo.call("is_low") and not _ordo.has_arg("nopost")
 	var env := world.environment_node.environment
 	env.ssao_enabled = not on and not _ordo.call("is_low")
+	# объёмный туман без накопления по кадрам: считается сразу, промотке он не нужен
+	env.volumetric_fog_temporal_reprojection_enabled = false
+	env.volumetric_fog_enabled = not on and not _ordo.call("is_low") and not _ordo.has_arg("nofog") \
+		and not _ordo.has_arg("novolfog")
+	var grass := world.get_node_or_null("Grass") as Node3D
+	if grass and not _ordo.has_arg("nograss"):
+		grass.visible = not on
 	if not _targets.is_empty() and battle.scenario:
 		battle.scenario.time_scale = FAST_SPEED if on else 1.0
 	print("[срез] %s t=%.2f, %d мс" % ["промотка" if on else "полное качество", _now(), Time.get_ticks_msec()])
@@ -167,6 +193,11 @@ func _capture(item: Array) -> void:
 	var path := "%s/%s%s.png" % [_hero_out, _hero_prefix, String(item[1])]
 	img.save_png(path)
 	print("[срез] кадр: %s t=%.2f, %d мс" % [path, battle.scenario.time, Time.get_ticks_msec()])
+	if String(item[1]) == "CamRTS":
+		# выделение нужно только кадру стратегии — дальше кольца не мешают кино
+		var sel := battle.get_node_or_null("Selection") as SquadSelection
+		if sel:
+			sel._select(PackedInt32Array())
 	_busy = false
 	if _targets.is_empty():
 		# серия снята — дальше ждать кадра --shot незачем

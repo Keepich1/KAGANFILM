@@ -68,7 +68,7 @@ func _ready() -> void:
 	var k := 0.5 if _low else 1.0
 	smoke = _make_puffs("Smoke", int(1100 * k), 11.0, ATLAS_SMOKE, Vector2(4, 4), {
 		"drag": 2.1, "buoyancy": 0.2, "wind_scale": 0.55, "grow": 3.4, "spin": 0.1},
-		{"col_lit": Color(0.8, 0.73, 0.63), "col_mid": Color(0.47, 0.45, 0.5), "col_shade": Color(0.25, 0.3, 0.4),
+		{"col_lit": Color(0.86, 0.76, 0.62), "col_mid": Color(0.5, 0.46, 0.47), "col_shade": Color(0.2, 0.31, 0.38),
 		"col_glow": Color(1.0, 0.8, 0.5), "erode_start": 0.08, "erode_end": 0.7, "opacity": 0.97, "stretch": 1.45,
 		"age_thin": 0.35, "glow_strength": 0.85})
 	dust = _make_puffs("Dust", int(1600 * k), 4.5, ATLAS_DUST, Vector2(4, 2), {
@@ -82,11 +82,12 @@ func _ready() -> void:
 	rays = _make_system("Rays", 64, 9.0, SH_STILL, {}, _ray_mat)
 	sparks = _make_system("Sparks", 320, 0.5, SH_SPARK_MOVE, {}, _material(SH_SPARK, {}))
 	if ambient_motes:
-		var fm := _material(SH_MOTE, {"atlas": ATLAS_FLUFF, "glow": 2.4})
+		# пылинки видны только вблизи: с высокой камеры они читались бы как сор по всему кадру
+		var fm := _material(SH_MOTE, {"atlas": ATLAS_FLUFF, "glow": 2.4, "fade_dist": 38.0})
 		fluff = _make_system("Fluff", int(320 * k), 14.0, SH_MOTE_MOVE, {
 			"box": Vector3(44, 7, 44), "size_min": 0.07, "size_max": 0.15, "wind_scale": 1.8}, fm, true)
 		_mote_mats.append(fm)
-		var am := _material(SH_MOTE, {"atlas": ATLAS_ASH, "glow": 0.5,
+		var am := _material(SH_MOTE, {"atlas": ATLAS_ASH, "glow": 0.5, "fade_dist": 26.0,
 			"tint_lit": Color(0.9, 0.8, 0.7), "tint_shade": Color(0.5, 0.5, 0.55)})
 		ash = _make_system("Ash", int(120 * k), 12.0, SH_MOTE_MOVE, {
 			"box": Vector3(50, 8, 50), "size_min": 0.03, "size_max": 0.07, "wind_scale": 1.2, "rise": 0.25}, am, true)

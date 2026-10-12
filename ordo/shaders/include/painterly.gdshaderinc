@@ -44,9 +44,10 @@ float paint_brush(vec3 wp, vec3 wn) {
 }
 
 // Рассеянный свет с нарисованной границей. Возвращает добавку к DIFFUSE_LIGHT.
-vec3 paint_diffuse(vec3 n, vec3 l, vec3 light_color, float atten, float brush, bool directional) {
+// soft_mul — во сколько раз граница света мягче общей (мелкие круглые формы юнитов: ~2).
+vec3 paint_diffuse_soft(vec3 n, vec3 l, vec3 light_color, float atten, float brush, bool directional, float soft_mul) {
 	float ndl = dot(n, l);
-	float soft = max(ordo_band_soft, 0.005);
+	float soft = max(ordo_band_soft * soft_mul, 0.005);
 	float b = (brush - 0.5) * ordo_brush_amount;
 	float band = smoothstep(-soft, soft, ndl + b);
 	// внутри освещённой стороны — мягкая лепка формы
@@ -63,6 +64,10 @@ vec3 paint_diffuse(vec3 n, vec3 l, vec3 light_color, float atten, float brush, b
 		c += ordo_shadow_tint.rgb * hidden * length(light_color) * 0.25;
 	}
 	return c / PI;
+}
+
+vec3 paint_diffuse(vec3 n, vec3 l, vec3 light_color, float atten, float brush, bool directional) {
+	return paint_diffuse_soft(n, l, light_color, atten, brush, directional, 1.0);
 }
 
 // Контровой свет по краю силуэта, сильнее всего против солнца.

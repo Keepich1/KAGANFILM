@@ -39,7 +39,7 @@ uniform vec4 macro_warm : source_color = vec4(1.08, 0.98, 0.80, 1.0);
 uniform float macro_amount = 0.55;
 uniform float macro_scale = 140.0;        // м
 // Общая яркость земли (земля темнее юнитов, ТЗ 11.2)
-uniform float ground_value = 0.95;
+uniform float ground_value = 0.88;
 // Вдали детали гаснут, цвет спокойнее
 uniform float far_calm_start = 120.0;
 uniform float far_calm_end = 700.0;
@@ -62,8 +62,8 @@ uniform float brush_light = 0.45;
 // в дымке. Свет на дальних склонах мягче: грани сетки не читаются.
 uniform vec4 air_warm : source_color = vec4(0.98, 0.6, 0.42, 1.0);
 uniform vec4 air_cool : source_color = vec4(0.33, 0.38, 0.55, 1.0);
-uniform float air_start = 240.0;
-uniform float air_end = 2300.0;
+uniform float air_start = 160.0;
+uniform float air_scale = 950.0;          // м: на этом расстоянии сверх air_start воздух берёт ~63%
 uniform float air_amount = 0.8;
 uniform float air_energy = 0.42;
 uniform float air_low = 0.45;             // низ хребтов в дымке сильнее
@@ -142,6 +142,24 @@ void fragment() {
 	layer(col, hcur, te, tint_earth.rgb, sp.g, brush, 0.16);
 	layer(col, hcur, tr, tint_rock.rgb, sp.b, brush, 0.12);
 
+	// поле боя (CONTRACT §3: центр (90, 0) ±80 м): старые вытоптанные полосы с востока на запад
+	// (табуны, арбы) и пятна короткой выгоревшей травы — земля живописная, но тише юнитов
+	float field = (1.0 - smoothstep(70.0, 100.0, abs(wp.x - 90.0))) * (1.0 - smoothstep(55.0, 90.0, abs(wp.z)));
+	float trk = texture(brush_tex, vec2(wp.x * 0.0045, wp.z * 0.042) + vec2(0.31, 0.17)).r;
+	float trk2 = texture(brush_tex, vec2(wp.x * 0.011 + 0.5, wp.z * 0.09)).r;
+	float tracks = smoothstep(0.6, 0.7, trk * 0.75 + trk2 * 0.25 + (b3 - 0.5) * 0.12) * field;
+	col = mix(col, te.rgb * tint_earth.rgb * vec3(0.92, 0.9, 0.88), tracks * 0.55);
+	float dry_patch = smoothstep(0.55, 0.75, texture(brush_tex, wp.xz * 0.013 + vec2(0.7, 0.2)).r) * field;
+	col = mix(col, td.rgb * tint_dry.rgb, dry_patch * 0.35 * (1.0 - tracks));
+
+	// осыпи и кулуары на крутых склонах: мазки вдоль линии падения склона (горы не «глиняные»)
+	vec2 downhill = normalize(wn.xz + vec2(1e-4, 0.0));
+	float across = dot(wp.xz, vec2(-downhill.y, downhill.x));
+	float gully = texture(brush_tex, vec2(across * 0.018, wp.y * 0.0035 + b1 * 0.05)).r;
+	float gully2 = texture(brush_tex, vec2(across * 0.061 + 0.4, wp.y * 0.011)).r;
+	float steep_k = smoothstep(0.22, 0.55, slope) * (1.0 - sp.a);
+	col *= mix(1.0, mix(0.62, 1.14, gully * 0.65 + gully2 * 0.35), steep_k * 0.85);
+
 	// мокрый берег и дно: темнее, холоднее
 	float under = smoothstep(water_level + 0.05, water_level - 0.6, wp.y);
 	float wet = max(gm.a * 0.85, under);
@@ -168,7 +186,7 @@ void fragment() {
 
 	col = mix(vec3(dot(col, vec3(0.3, 0.55, 0.15))), col, ground_saturation);
 	// воздух: слоями по расстоянию, граница слоя ломается мазком; снег на вершинах ловит свет
-	float air = smoothstep(air_start, air_end, v_cam_dist);
+	float air = 1.0 - exp(-max(v_cam_dist - air_start, 0.0) / air_scale);
 	air = clamp(air + (1.0 - smoothstep(-5.0, 140.0, wp.y)) * air * air_low + (b1 - 0.5) * 0.14 * air, 0.0, 1.0);
 	air *= air_amount * (1.0 - snow * 0.45);
 	vec3 vdir = normalize(wp - CAMERA_POSITION_WORLD);

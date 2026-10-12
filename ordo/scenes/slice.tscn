@@ -21,12 +21,14 @@ fov = 50.0
 far = 6000.0
 
 [node name="CamRTS" type="Camera3D" parent="Cameras"]
-fov = 45.0
+fov = 50.0
 far = 6000.0
 script = ExtResource("6")
-focus = Vector3(70, 0, 8)
-distance = 82.0
-yaw_deg = -28.0
+focus = Vector3(80, 0, 10)
+distance = 92.0
+yaw_deg = 72.0
+pitch_near = 20.0
+pitch_far = 55.0
 interactive = false
 
 [node name="CamVolley" type="Camera3D" parent="Cameras"]
@@ -44,11 +46,11 @@ scenario_path = NodePath("../../Battle/Scenario")
 shot = "charge"
 
 [node name="CamImpact" type="Camera3D" parent="Cameras"]
-fov = 46.0
+fov = 42.0
 far = 6000.0
 script = ExtResource("5")
 scenario_path = NodePath("../../Battle/Scenario")
-shot = "impact"
+shot = "general"
 
 [node name="CamAftermath" type="Camera3D" parent="Cameras"]
 fov = 46.0

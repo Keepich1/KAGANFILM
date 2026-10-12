@@ -55,7 +55,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	if scenario:
+	if scenario and not _shot_mode:
 		if scenario.paused:
 			_status.text = "Пауза"
 		elif scenario.time_scale != 1.0:
