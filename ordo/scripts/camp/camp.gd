@@ -145,6 +145,8 @@ func _set_range(root: Node, begin: float, end: float) -> void:
 		g.visibility_range_end = end
 		g.visibility_range_begin_margin = 4.0 if begin > 0.0 else 0.0
 		g.visibility_range_end_margin = 4.0 if end > 0.0 else 0.0
+		# дизеринг вместо щелчка (и без «щели» на границе, где не видно ни LOD0, ни LOD1)
+		g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	for c in root.get_children():
 		_set_range(c, begin, end)
 

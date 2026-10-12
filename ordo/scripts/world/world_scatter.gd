@@ -153,4 +153,5 @@ func _apply_ranges() -> void:
 		mi.visibility_range_end = near if lod == 0 else far
 		mi.visibility_range_begin_margin = 10.0
 		mi.visibility_range_end_margin = 10.0
-		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		# дизеринг: без «щели» между LOD0 и LOD1, где дерево пропадало бы совсем
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
