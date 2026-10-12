@@ -16,7 +16,7 @@ extends Node3D
 ## (низкое разрешение 3D, без теней и фильтра), за 1,5 с до кадра всё включается обратно.
 
 ## Сколько секунд до кадра работать в полном качестве (туман и дым успевают устояться)
-const FULL_BEFORE := 0.8
+const FULL_BEFORE := 0.5
 ## Масштаб 3D при промотке
 const FAST_SCALE := 0.34
 ## Скорость боя при промотке серии кадров (симуляция, частицы и камеры — вместе)
@@ -52,6 +52,10 @@ func _ready() -> void:
 			_hero_out = _ordo.arg("hero_out", ProjectSettings.globalize_path("user://"))
 			_hero_prefix = _ordo.arg("hero_prefix", "")
 	_update_fast()
+	# для ролика: бой начинается не с нуля (--battle_skip=секунды), шаги без отрисовки
+	if _ordo and _ordo.has_arg("battle_skip") and battle.scenario:
+		for i in int(float(_ordo.arg("battle_skip")) / ScenarioClash.DT):
+			battle.scenario.step()
 
 
 ## Поляны без травы под юртами, загонами и предметами лагеря
@@ -164,5 +168,6 @@ func _capture(item: Array) -> void:
 	img.save_png(path)
 	print("[срез] кадр: %s t=%.2f, %d мс" % [path, battle.scenario.time, Time.get_ticks_msec()])
 	_busy = false
-	if _targets.is_empty() and not _ordo.has_arg("shot"):
+	if _targets.is_empty():
+		# серия снята — дальше ждать кадра --shot незачем
 		get_tree().quit()

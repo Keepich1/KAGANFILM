@@ -35,7 +35,7 @@ func _ready() -> void:
 	cine = get_node_or_null(cine_camera_path) as Camera3D
 	rts = get_node_or_null(rts_camera_path) as RtsCamera
 	var ordo := get_node_or_null("/root/Ordo")
-	_shot_mode = ordo != null and ordo.has_arg("shot")
+	_shot_mode = ordo != null and (ordo.has_arg("shot") or ordo.has_arg("movie"))
 	if rts:
 		rts.moved_by_player.connect(_use_rts)
 	if take_camera:

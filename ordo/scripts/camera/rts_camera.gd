@@ -41,7 +41,7 @@ var _drag := false
 
 func _ready() -> void:
 	var ordo := get_node_or_null("/root/Ordo")
-	if ordo and ordo.has_arg("shot"):
+	if ordo and (ordo.has_arg("shot") or ordo.has_arg("movie")):
 		interactive = false
 	_t_focus = focus
 	_t_distance = distance

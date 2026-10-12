@@ -98,7 +98,8 @@ func _process(delta: float) -> void:
 		_look = l
 		_fov = f
 	else:
-		var k := 1.0 - exp(-delta * follow)
+		# слежение во времени боя: при ускорении (+) камера не отстаёт от отрядов
+		var k := 1.0 - exp(-delta * maxf(scenario.time_scale, 1.0) * follow)
 		_pos = _pos.lerp(p, k)
 		_look = _look.lerp(l, k)
 		_fov = lerpf(_fov, f, k)

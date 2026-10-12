@@ -23,7 +23,7 @@ uniform sampler2D brush_tex : hint_default_white, filter_linear_mipmap_anisotrop
 uniform float map_half = 512.0;
 uniform float tile_size = 7.0;            // м на плитку текстуры
 uniform float water_level = -4.0;
-uniform float snow_line = 270.0;
+uniform float snow_line = 215.0;
 
 // Тон слоёв (множители к рисованным текстурам) — тут настраивается палитра земли
 uniform vec4 tint_grass : source_color = vec4(1.0, 1.16, 0.88, 1.0);
@@ -57,7 +57,20 @@ uniform float big_brush_scale = 0.045;
 // Насколько мазок ломает границу света на земле (на скользящем свете иначе пятна)
 uniform float brush_light = 0.45;
 
+// Дальние горы — «написанные» слои воздуха (ТЗ 11.1, дымка): чем дальше хребет, тем ближе он
+// к цвету воздуха — у солнца тёплому, в стороне холодному сине-сиреневому; низ хребтов тонет
+// в дымке. Свет на дальних склонах мягче: грани сетки не читаются.
+uniform vec4 air_warm : source_color = vec4(0.98, 0.6, 0.42, 1.0);
+uniform vec4 air_cool : source_color = vec4(0.33, 0.38, 0.55, 1.0);
+uniform float air_start = 240.0;
+uniform float air_end = 2300.0;
+uniform float air_amount = 0.8;
+uniform float air_energy = 0.42;
+uniform float air_low = 0.45;             // низ хребтов в дымке сильнее
+global uniform vec3 ordo_sun_dir;
+
 varying float v_cam_dist;
+varying float v_air;
 
 void vertex() {
 	PAINT_VERTEX;
@@ -136,7 +149,7 @@ void fragment() {
 
 	// снег на высоких пологих местах (дальнее кольцо)
 	float snow = smoothstep(snow_line - 25.0, snow_line + 20.0, wp.y + (b1 - 0.5) * 60.0)
-		* (1.0 - smoothstep(0.25, 0.45, slope));
+		* (1.0 - smoothstep(0.32, 0.55, slope));
 	col = mix(col, snow_color.rgb, snow);
 
 	// крупные пятна цвета: холодный серо-зелёный ↔ тёплая охра (как широкой кистью)
@@ -154,12 +167,21 @@ void fragment() {
 	col = mix(col, mix(avg, col, 0.75), calm);
 
 	col = mix(vec3(dot(col, vec3(0.3, 0.55, 0.15))), col, ground_saturation);
-	ALBEDO = col * ground_value;
+	// воздух: слоями по расстоянию, граница слоя ломается мазком; снег на вершинах ловит свет
+	float air = smoothstep(air_start, air_end, v_cam_dist);
+	air = clamp(air + (1.0 - smoothstep(-5.0, 140.0, wp.y)) * air * air_low + (b1 - 0.5) * 0.14 * air, 0.0, 1.0);
+	air *= air_amount * (1.0 - snow * 0.45);
+	vec3 vdir = normalize(wp - CAMERA_POSITION_WORLD);
+	float to_sun = pow(clamp(dot(vdir, normalize(ordo_sun_dir)) * 0.5 + 0.5, 0.0, 1.0), 3.0);
+	vec3 air_col = mix(air_cool.rgb, air_warm.rgb, to_sun);
+	v_air = air;
+	ALBEDO = col * ground_value * (1.0 - air);
+	EMISSION = air_col * air * air_energy;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.15;
 	// граница света ломается крупным мазком (земля видна издалека)
 	float pb = mix(paint_brush(v_world_pos, v_world_nrm), texture(brush_tex, wp.xz * big_brush_scale).r, 0.6);
-	paint_brush_v = 0.5 + (pb - 0.5) * brush_light;
+	paint_brush_v = 0.5 + (pb - 0.5) * brush_light * (1.0 - air);
 }
 
 void light() {
@@ -172,7 +194,7 @@ void light() {
 	DIFFUSE_LIGHT += paint_diffuse(NORMAL, LIGHT, LIGHT_COLOR * graze, ATTENUATION, paint_brush_v, LIGHT_IS_DIRECTIONAL);
 	// контровой свет только на склонах-гребнях (на ровной земле под скользящим взглядом он лишний)
 	float steep = smoothstep(0.88, 0.6, dot(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
-	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength * steep);
+	SPECULAR_LIGHT += paint_rim(NORMAL, LIGHT, VIEW, LIGHT_COLOR, ATTENUATION, rim_strength * steep * (1.0 - v_air));
 	if (LIGHT_IS_DIRECTIONAL) {
 		// цветная тень: холодный сине-бирюзовый мазок, сохраняет рисунок почвы
 		float sun_amt = smoothstep(-0.05, 0.25, ndl + (paint_brush_v - 0.5) * 0.2) * ATTENUATION;

@@ -184,11 +184,14 @@ func _build_far_ring() -> void:
 	# нормали дальнего кольца
 	var fnorm := PackedVector3Array()
 	fnorm.resize(fn * fn)
+	# сглаженные (по соседям ±1 и ±2 клетки): свет ложится по форме хребта, а не по граням сетки
 	for j in fn:
 		for i in fn:
-			var dx := (fh[j * fn + mini(i + 1, fn - 1)] - fh[j * fn + maxi(i - 1, 0)]) / (2.0 * fs)
-			var dz := (fh[mini(j + 1, fn - 1) * fn + i] - fh[maxi(j - 1, 0) * fn + i]) / (2.0 * fs)
-			fnorm[j * fn + i] = Vector3(-dx, 1.0, -dz).normalized()
+			var dx1 := (fh[j * fn + mini(i + 1, fn - 1)] - fh[j * fn + maxi(i - 1, 0)]) / (2.0 * fs)
+			var dz1 := (fh[mini(j + 1, fn - 1) * fn + i] - fh[maxi(j - 1, 0) * fn + i]) / (2.0 * fs)
+			var dx2 := (fh[j * fn + mini(i + 2, fn - 1)] - fh[j * fn + maxi(i - 2, 0)]) / (4.0 * fs)
+			var dz2 := (fh[mini(j + 2, fn - 1) * fn + i] - fh[maxi(j - 2, 0) * fn + i]) / (4.0 * fs)
+			fnorm[j * fn + i] = Vector3(-(dx1 + dx2 * 2.0) / 3.0, 1.0, -(dz1 + dz2 * 2.0) / 3.0).normalized()
 	# 4 части (север, юг, запад, восток) — для отсечения по видимости
 	var parts := {"FarN": [], "FarS": [], "FarW": [], "FarE": []}
 	for j in fn - 1:

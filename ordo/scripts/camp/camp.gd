@@ -150,14 +150,31 @@ func _set_range(root: Node, begin: float, end: float) -> void:
 
 
 func _wind_smoke() -> void:
-	# дым сносит общий ветер (ordo_wind: xy — направление по x/z, z — сила); берём из настроек проекта
-	var g: Variant = ProjectSettings.get_setting("shader_globals/ordo_wind", {})
-	if not (g is Dictionary and (g as Dictionary).get("value") is Vector4):
-		return
-	var wind: Vector4 = (g as Dictionary)["value"]
-	var dir := Vector2(wind.x, wind.y).normalized() * 0.4 * wind.z
-	# материал частиц общий у всех экземпляров smoke.tscn — достаточно одного дыма
+	# дым сносит общий ветер (ordo_wind: xy — куда дует по x/z, z — сила): живое значение
+	# у автозагрузки Ordo.wind, в безголовых тестах — из настроек проекта
+	var wind := Vector4(0.82, 0.35, 1.0, 0.55)
+	var o := get_node_or_null("/root/Ordo")
+	if o and o.get("wind") is Vector4:
+		wind = o.get("wind")
+	else:
+		var g: Variant = ProjectSettings.get_setting("shader_globals/ordo_wind", {})
+		if g is Dictionary and (g as Dictionary).get("value") is Vector4:
+			wind = (g as Dictionary)["value"]
+	var dir := Vector2(wind.x, wind.y).normalized()
+	var w3 := Vector3(dir.x, 0.0, dir.y)
 	for s in find_children("*Smoke", "GPUParticles3D", true, false):
-		var pm := (s as GPUParticles3D).process_material as ParticleProcessMaterial
+		var p := s as GPUParticles3D
+		var pm := p.process_material as ParticleProcessMaterial
 		if pm:
-			pm.gravity = Vector3(dir.x, 0.1, dir.y)
+			# материал частиц общий у всех экземпляров smoke.tscn: дым поднимается наискось по ветру
+			# и плавно сносится (не разгоняется вбок), клубы крупнее и перекрываются
+			pm.direction = Vector3(0.0, 1.0, 0.0) + w3 * 0.55 * wind.z
+			pm.gravity = w3 * 0.1 * wind.z + Vector3(0.0, 0.03, 0.0)
+			pm.damping_min = 0.02
+			pm.damping_max = 0.05
+			pm.scale_min = 1.6
+			pm.scale_max = 2.5
+		# видимость по сносу: дым уходит по ветру на ~20 м и вверх на ~16 м (в осях эмиттера)
+		var lw := p.global_basis.orthonormalized().inverse() * w3
+		var box := AABB(Vector3(-4.0, -1.0, -4.0), Vector3(8.0, 18.0, 8.0))
+		p.visibility_aabb = box.expand(lw * 24.0 + Vector3(0.0, 16.0, 0.0)).expand(lw * 24.0)

@@ -18,7 +18,7 @@ func _ready() -> void:
 	layer = 5
 	scenario = get_node_or_null(scenario_path) as ScenarioClash
 	var ordo := get_node_or_null("/root/Ordo")
-	_shot_mode = ordo != null and ordo.has_arg("shot")
+	_shot_mode = ordo != null and (ordo.has_arg("shot") or ordo.has_arg("movie"))
 	_bars = SquadBars.new()
 	_bars.name = "SquadBars"
 	add_child(_bars)

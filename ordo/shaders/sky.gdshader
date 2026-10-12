@@ -24,8 +24,8 @@ group_uniforms;
 group_uniforms sun;
 uniform vec4 sun_color : source_color = vec4(1.0, 0.82, 0.58, 1.0);
 uniform float sun_radius = 0.0105;       // рад (≈0,6°)
-uniform float sun_energy = 22.0;
-uniform float glow_energy = 1.4;
+uniform float sun_energy = 16.0;
+uniform float glow_energy = 0.95;
 uniform float glow_tight = 90.0;
 uniform float glow_wide = 7.0;
 // нарисованные лучи от солнца (сквозь просветы облаков)
@@ -233,7 +233,7 @@ void sky() {
 	// --- солнце: диск и свечение
 	float ang = acos(clamp(cs, -1.0, 1.0));
 	float disc = 1.0 - smoothstep(sun_radius * 0.82, sun_radius, ang);
-	float glow = pow(max(cs, 0.0), glow_tight) * 1.3 + pow(max(cs, 0.0), glow_wide) * 0.12;
+	float glow = pow(max(cs, 0.0), glow_tight) * 1.1 + pow(max(cs, 0.0), glow_wide) * 0.07;
 	col += sun_color.rgb * glow * glow_energy;
 	col = mix(col, sun_color.rgb * sun_energy, disc * (1.0 - cloud_a * 0.85));
 	col = mix(col, cloud_c, cloud_a);
