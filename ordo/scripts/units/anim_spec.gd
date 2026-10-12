@@ -14,6 +14,15 @@ extends RefCounted
 enum Human { IDLE, WALK, RUN, MELEE, SHOOT, RELOAD, DYING, DEAD, FLEE, CHEER, WORK, BRACE }
 enum Horse { IDLE, WALK, TROT, GALLOP, CHARGE, MELEE, DYING, DEAD, REAR, CHEER }
 enum Sheep { GRAZE, WALK, RUN, DYING, DEAD }
+## Арба (скелет «wagon» толпы, область Юниты — позже): колёса крутятся по пройденному пути
+enum Wagon { IDLE, ROLL, DYING, DEAD }
+
+## Вид работы в Human.WORK (z экземпляра; BattleSim.u_work, CombatPort.set_work).
+## Несёт груз (CARRY) — ноги шагают по пройденному пути, как в WALK.
+const WORK_CHOP := 0.0
+const WORK_DIG := 0.25
+const WORK_BUILD := 0.5
+const WORK_CARRY := 0.75
 
 ## Длина полного цикла (два шага), метров
 const STRIDE_HUMAN := { Human.WALK: 1.5, Human.RUN: 2.6, Human.FLEE: 2.6 }
