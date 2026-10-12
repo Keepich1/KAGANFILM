@@ -31,6 +31,11 @@ var stat_ms := 0.0
 var stat_ms_max := 0.0
 var stat_wait_ms := 0.0
 var stat_wait_ms_max := 0.0
+## Шаг этого боя за прошлую секунду, мс: среднее и худший (экран F9)
+var step_avg := 0.0
+var step_max := 0.0
+var _win := Vector3.ZERO           # сумма, худший, число — за текущую секунду
+var _win_start := 0
 ## Снимок для вида (только при фоне): тот бой, тот шаг
 var snap_sim: BattleSim
 var snap_time := 0.0
@@ -176,12 +181,20 @@ func _stat(ms: float) -> void:
 	stat_steps += 1
 	stat_ms += ms
 	stat_ms_max = maxf(stat_ms_max, ms)
+	_win = Vector3(_win.x + ms, maxf(_win.y, ms), _win.z + 1.0)
+	var now := Time.get_ticks_msec()
+	if now - _win_start >= 1000:
+		_win_start = now
+		step_avg = _win.x / maxf(_win.z, 1.0)
+		step_max = _win.y
+		_win = Vector3.ZERO
 
 
 func _launch() -> void:
 	_relay_capture()
 	_task_usec = 0
-	_task = WorkerThreadPool.add_task(_work, false, "Ордо: шаг боя")
+	# высокий приоритет: шаг нужен к сроку, его не должны задерживать фоновые загрузки
+	_task = WorkerThreadPool.add_task(_work, true, "Ордо: шаг боя")
 
 
 func _work() -> void:

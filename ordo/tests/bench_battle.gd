@@ -10,7 +10,10 @@ extends SceneTree
 ## главный поток «рисует» (здесь — ждёт конца кадра); «главный поток» — его занятость на кадр
 ## (шаги, вид, отправка), «ожидание» — сколько он ждал фоновый шаг. Сумма боя должна совпасть.
 ## --phases — раскладка шага симуляции по частям (отдельный прогон, мс на шаг).
-## Видеокарты здесь нет: это только время процессора на бой.
+## Видеокарты здесь нет: это только время процессора на бой. Время — процессорное время потока
+## (Linux: /proc/thread-self/schedstat), чтобы чужие процессы на машине не портили замер;
+## где его нет — по часам. Ожидание фона и шаг в фоне — по часам.
+## Работает и на старом коде (без SimStepper — только таблица 1): сравнение «до/после».
 
 const FRAME_USEC := 16667
 
@@ -19,6 +22,7 @@ var _seconds := 24.0
 var _phases := false
 var _threads := true
 var _done := false
+var _cpu_file := true
 
 
 ## Замер — в первом кадре: узлы в дереве уже готовы (_ready отработал)
@@ -55,10 +59,10 @@ func _run() -> void:
 		var per_frame: float = r.sim_avg * 0.5 + r.view_avg + r.flush_avg
 		print("%-7d | %6.2f / %6.2f | %6.2f / %6.2f | %6.2f / %6.2f | %10.2f | %-6d | %d" % [
 			r.units, r.sim_avg, r.sim_max, r.view_avg, r.view_max, r.flush_avg, r.flush_max, per_frame, r.alive, r.checksum])
-	if _threads:
+	if _threads and ResourceLoader.exists("res://scripts/battle/sim_stepper.gd"):
 		print("")
 		print("2) Как в игре: шаг боя в фоне (SimStepper), кадр 16,7 мс")
-		print("%-7s | %-15s | %-15s | %-15s | %-8s | %s" % ["солдат", "шаг сим, мс", "главный поток", "ожидание фона", "кадров", "сумма боя"])
+		print("%-7s | %-15s | %-15s | %-15s | %-8s | %s" % ["солдат", "шаг в фоне, мс", "главный поток", "ожидание фона", "кадров", "сумма боя"])
 		print("%-7s | %-15s | %-15s | %-15s | %-8s |" % ["", "сред / худш", "мс/к сред/худш", "мс/к сред/худш", "> 16,7"])
 		for n in _sizes:
 			var r := _bench_threaded(n)
@@ -68,6 +72,23 @@ func _run() -> void:
 	if _phases:
 		for n in _sizes:
 			_bench_phases(n)
+
+
+## Процессорное время этого потока, мкс (или часы, если ядро его не даёт)
+func _now_us() -> int:
+	if _cpu_file:
+		var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+		if f:
+			return int(f.get_line().split(" ")[0]) / 1000
+		_cpu_file = false
+	return Time.get_ticks_usec()
+
+
+func _view_frame(view: Node) -> void:
+	if view.has_method("update_view"):
+		view.update_view()
+	else:
+		view._process(1.0 / 60.0)   # старый вид: шагов в _process нет
 
 
 func _make(n: int) -> Array:
@@ -108,21 +129,21 @@ func _bench(n: int) -> Dictionary:
 	var flush_max := 0.0
 	var frames := 0
 	for i in steps:
-		var t0 := Time.get_ticks_usec()
+		var t0 := _now_us()
 		sc.step()
-		var dt := (Time.get_ticks_usec() - t0) / 1000.0
+		var dt := (_now_us() - t0) / 1000.0
 		sim_sum += dt
 		sim_max = maxf(sim_max, dt)
 		for k in 2:
 			sc.alpha = 0.5 * k
-			t0 = Time.get_ticks_usec()
-			view.update_view()
-			dt = (Time.get_ticks_usec() - t0) / 1000.0
+			t0 = _now_us()
+			_view_frame(view)
+			dt = (_now_us() - t0) / 1000.0
 			view_sum += dt
 			view_max = maxf(view_max, dt)
-			t0 = Time.get_ticks_usec()
+			t0 = _now_us()
 			_flush(view)
-			dt = (Time.get_ticks_usec() - t0) / 1000.0
+			dt = (_now_us() - t0) / 1000.0
 			flush_sum += dt
 			flush_max = maxf(flush_max, dt)
 			frames += 1
@@ -144,8 +165,8 @@ func _bench_threaded(n: int) -> Dictionary:
 	var made := _make(n)
 	var holder: Node3D = made[0]
 	var sc: StressScenario = made[1]
-	var view: BattleView = made[2]
-	var st := view.stepper()
+	var view: Node = made[2]
+	var st = view.call("stepper")
 	st.mode = "on"
 	var steps := int(_seconds / BattleSim.DT)
 	var main_sum := 0.0
@@ -154,18 +175,21 @@ func _bench_threaded(n: int) -> Dictionary:
 	var over := 0
 	while sc.sim.steps < steps:
 		var f0 := Time.get_ticks_usec()
+		var c0 := _now_us()
 		# ровно столько времени, чтобы не перескочить нужный шаг
 		var left := (steps - sc.sim.steps) * BattleSim.DT
 		view._process(minf(1.0 / 60.0, left))
 		_flush(view)
-		var busy := Time.get_ticks_usec() - f0
-		main_sum += busy / 1000.0
-		main_max = maxf(main_max, busy / 1000.0)
+		# занятость главного потока — его процессорное время (ожидание фона сюда не входит)
+		var busy := (_now_us() - c0) / 1000.0
+		main_sum += busy
+		main_max = maxf(main_max, busy)
 		frames += 1
-		if busy > FRAME_USEC:
+		var wall := Time.get_ticks_usec() - f0
+		if wall > FRAME_USEC:
 			over += 1
 		else:
-			OS.delay_usec(FRAME_USEC - busy)   # «отрисовка» — фон считает следующий шаг
+			OS.delay_usec(FRAME_USEC - wall)   # «отрисовка» — фон считает следующий шаг
 	st.sync()
 	var sim := sc.sim
 	var out := {"units": sim.n, "sim_avg": st.stat_ms / maxi(st.stat_steps, 1), "sim_max": st.stat_ms_max,
