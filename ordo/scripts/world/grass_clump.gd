@@ -23,7 +23,7 @@ static func build(detail: int, seed: int) -> ArrayMesh:
 		var length := rs.randf_range(0.55, 1.0)
 		var base := Vector3(cos(yaw), 0.0, sin(yaw)) * rs.randf_range(0.0, 0.06)
 		# вдали листья шире: тонкие травинки мельче пикселя и пропадают
-		var width := rs.randf_range(0.035, 0.055) if detail > 0 else rs.randf_range(0.2, 0.28)
+		var width := rs.randf_range(0.06, 0.09) if detail > 0 else rs.randf_range(0.2, 0.28)
 		_ribbon(verts, norms, cols, uvs, idx, base, yaw, lean, length, width, segs, 0.0, rs.randf(), 1.6)
 	var plumes := 4 if detail > 0 else 3
 	var psegs := 5 if detail > 0 else 3
@@ -33,7 +33,7 @@ static func build(detail: int, seed: int) -> ArrayMesh:
 		var lean := deg_to_rad(rs.randf_range(18.0, 34.0))
 		var length := rs.randf_range(1.15, 1.55)
 		var base := Vector3(rs.randf_range(-0.04, 0.04), 0.0, rs.randf_range(-0.04, 0.04))
-		_ribbon(verts, norms, cols, uvs, idx, base, yaw, lean, length, 0.03 if detail > 0 else 0.11, psegs, 1.0, rs.randf(), 3.2)
+		_ribbon(verts, norms, cols, uvs, idx, base, yaw, lean, length, 0.045 if detail > 0 else 0.11, psegs, 1.0, rs.randf(), 3.2)
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts

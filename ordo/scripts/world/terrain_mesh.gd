@@ -74,6 +74,7 @@ static func make_material() -> ShaderMaterial:
 	m.set_shader_parameter("tex_earth", load(t + "ground_earth.png"))
 	m.set_shader_parameter("tex_rock", load(t + "ground_rock.png"))
 	m.set_shader_parameter("tex_sand", load(t + "ground_sand.png"))
+	m.set_shader_parameter("brush_tex", load(t + "brush_world.png"))
 	m.set_shader_parameter("water_level", Terrain.water_level())
 	return m
 

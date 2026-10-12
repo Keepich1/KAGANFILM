@@ -17,6 +17,8 @@ uniform sampler2D tex_dry : source_color, filter_linear_mipmap_anisotropic, repe
 uniform sampler2D tex_earth : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_rock : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_sand : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+// кисть с мип-картами для крупных пятен (как ordo_brush, но без ряби вдали)
+uniform sampler2D brush_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
 
 uniform float map_half = 512.0;
 uniform float tile_size = 7.0;            // м на плитку текстуры
@@ -26,7 +28,7 @@ uniform float snow_line = 270.0;
 // Тон слоёв (множители к рисованным текстурам) — тут настраивается палитра земли
 uniform vec4 tint_grass : source_color = vec4(1.0, 1.16, 0.88, 1.0);
 uniform vec4 tint_dry : source_color = vec4(0.95, 0.9, 0.82, 1.0);
-uniform vec4 tint_earth : source_color = vec4(0.95, 0.9, 0.86, 1.0);
+uniform vec4 tint_earth : source_color = vec4(0.82, 0.82, 0.8, 1.0);
 uniform vec4 tint_rock : source_color = vec4(0.92, 0.92, 0.95, 1.0);
 uniform vec4 tint_sand : source_color = vec4(0.95, 0.92, 0.86, 1.0);
 uniform vec4 snow_color : source_color = vec4(0.86, 0.85, 0.9, 1.0);
@@ -44,7 +46,7 @@ uniform float far_calm_end = 700.0;
 uniform float far_calm = 0.55;
 // Скользящий свет низкого солнца: ровная земля темнее склонов, обращённых к солнцу
 uniform float grazing_dim = 0.62;
-uniform float backlit_dim = 0.55;
+uniform float backlit_dim = 0.7;
 uniform float rim_strength = 0.25;
 // Насыщенность земли (приглушённая палитра ТЗ 11.1)
 uniform float ground_saturation = 0.9;
@@ -97,9 +99,9 @@ void fragment() {
 	vec4 gm = texture(grass_map, muv) * inside;
 
 	// мазки большой кисти в мире
-	float b1 = texture(ordo_brush, wp.xz * 0.021 + vec2(0.13, 0.57)).r;
-	float b2 = texture(ordo_brush, wp.xz * 0.083 + vec2(0.71, 0.29)).r;
-	float b3 = texture(ordo_brush, wp.xz * 0.31).r;
+	float b1 = texture(brush_tex, wp.xz * 0.021 + vec2(0.13, 0.57)).r;
+	float b2 = texture(brush_tex, wp.xz * 0.083 + vec2(0.71, 0.29)).r;
+	float b3 = texture(brush_tex, wp.xz * 0.31).r;
 	float brush = mix(b2, b3, 0.4);
 
 	float slope = 1.0 - wn.y;
@@ -117,8 +119,8 @@ void fragment() {
 	// камень: мелкие грани + крупные плоскости (видны с дальних планов как широкие мазки)
 	vec4 tr = triplanar(tex_rock, wp, wn, tile_size * 1.6);
 	vec4 tr_big = triplanar(tex_rock, wp + vec3(13.0, 0.0, 7.0), wn, tile_size * 11.0);
-	tr = mix(tr, tr_big, 0.3 + 0.4 * smoothstep(60.0, 500.0, v_cam_dist));
-	tr.rgb *= mix(0.75, 1.15, tr_big.a);
+	tr = mix(tr, tr_big, 0.2 + 0.25 * smoothstep(60.0, 500.0, v_cam_dist));
+	tr.rgb *= mix(0.85, 1.1, tr_big.a);
 
 	vec3 col = tg.rgb * tint_grass.rgb;
 	float hcur = tg.a;
@@ -138,8 +140,8 @@ void fragment() {
 	col = mix(col, snow_color.rgb, snow);
 
 	// крупные пятна цвета: холодный серо-зелёный ↔ тёплая охра (как широкой кистью)
-	float m1 = texture(ordo_brush, wp.xz / macro_scale + vec2(0.5, 0.2)).r;
-	float m2 = texture(ordo_brush, wp.zx / (macro_scale * 2.7) + vec2(0.1, 0.8)).r;
+	float m1 = texture(brush_tex, wp.xz / macro_scale + vec2(0.5, 0.2)).r;
+	float m2 = texture(brush_tex, wp.zx / (macro_scale * 2.7) + vec2(0.1, 0.8)).r;
 	float macro = mix(m1, m2, 0.5);
 	vec3 tint = mix(macro_cool.rgb, macro_warm.rgb, smoothstep(0.3, 0.7, macro));
 	col *= mix(vec3(1.0), tint, macro_amount * (1.0 - snow));
@@ -156,7 +158,7 @@ void fragment() {
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.15;
 	// граница света ломается крупным мазком (земля видна издалека)
-	float pb = mix(paint_brush(v_world_pos, v_world_nrm), texture(ordo_brush, wp.xz * big_brush_scale).r, 0.6);
+	float pb = mix(paint_brush(v_world_pos, v_world_nrm), texture(brush_tex, wp.xz * big_brush_scale).r, 0.6);
 	paint_brush_v = 0.5 + (pb - 0.5) * brush_light;
 }
 

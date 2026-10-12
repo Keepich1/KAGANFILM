@@ -307,9 +307,9 @@ def willow(seed, lod=0):
         d /= np.linalg.norm(d)
         r = rs.uniform(0.6, 1.0)
         p = np.array(cc) + d * np.array(cr) * r
-        hang = rs.random() < 0.65
+        hang = rs.random() < 0.4 and d[1] < 0.75
         if hang:
-            w, h = rs.uniform(1.8, 2.6), rs.uniform(3.0, 4.6)
+            w, h = rs.uniform(2.0, 2.8), rs.uniform(2.4, 3.6)
             parts.append(card(w, h, R_WILLOW, p + np.array([0, 0.8, 0]), cc, cr, rs,
                               face=math.degrees(-math.atan2(d[2], d[0])) + 90, sway=0.9, hang=True))
         else:

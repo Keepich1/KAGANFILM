@@ -4,8 +4,8 @@ extends Node3D
 ## котловинах — из assets/world/scatter.json (ключ fog: x, y, z, rx, rz, толщина слоя).
 ## Плотнее у земли, кверху тает. Работает только с объёмным туманом (качество «Высокое»).
 
-@export var density := 0.035
-@export var height_falloff := 0.35
+@export var density := 0.014
+@export var height_falloff := 0.7
 @export var albedo := Color(0.86, 0.88, 0.92)
 @export var emission := Color(0.02, 0.03, 0.045)
 

@@ -5,11 +5,12 @@
 shader_type sky;
 render_mode use_debanding;
 
-global uniform sampler2D ordo_brush : hint_default_white, filter_linear_mipmap, repeat_enable;
+// та же кисть, что ordo_brush, но с мип-картами (без ряби вдали): assets/textures/world/brush_world.png
+uniform sampler2D brush_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 
 group_uniforms gradient;
-uniform vec4 zenith_color : source_color = vec4(0.04, 0.09, 0.17, 1.0);
-uniform vec4 upper_color : source_color = vec4(0.12, 0.27, 0.36, 1.0);
+uniform vec4 zenith_color : source_color = vec4(0.025, 0.085, 0.16, 1.0);
+uniform vec4 upper_color : source_color = vec4(0.09, 0.26, 0.34, 1.0);
 uniform vec4 horizon_sun : source_color = vec4(1.0, 0.56, 0.26, 1.0);
 uniform vec4 horizon_rose : source_color = vec4(0.86, 0.47, 0.44, 1.0);
 uniform vec4 horizon_cool : source_color = vec4(0.38, 0.40, 0.55, 1.0);
@@ -30,12 +31,12 @@ uniform float glow_wide = 7.0;
 group_uniforms;
 
 group_uniforms clouds;
-uniform vec4 cloud_lit : source_color = vec4(1.0, 0.62, 0.42, 1.0);
+uniform vec4 cloud_lit : source_color = vec4(1.0, 0.56, 0.36, 1.0);
 uniform vec4 cloud_gold : source_color = vec4(1.0, 0.82, 0.5, 1.0);
-uniform vec4 cloud_shade : source_color = vec4(0.30, 0.28, 0.40, 1.0);
-uniform vec4 cloud_far : source_color = vec4(0.44, 0.38, 0.48, 1.0);
-uniform float cloud_cover = 0.52;
-uniform float cloud_soft = 0.16;
+uniform vec4 cloud_shade : source_color = vec4(0.2, 0.2, 0.31, 1.0);
+uniform vec4 cloud_far : source_color = vec4(0.42, 0.33, 0.42, 1.0);
+uniform float cloud_cover = 0.49;
+uniform float cloud_soft = 0.22;
 uniform float cloud_scale = 0.9;
 group_uniforms;
 
@@ -71,12 +72,21 @@ float pnoise1(float x, float P, float seed) {
 	return mix(hash11(mod(i, P) + seed), hash11(mod(i + 1.0, P) + seed), u);
 }
 
+// Градиентный шум 0..1 (без квадратных «блоков» шума значений)
+vec2 grad2(vec2 i) {
+	float a = hash12(i) * 6.2831853;
+	return vec2(cos(a), sin(a));
+}
+
 float noise2(vec2 p) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
-		mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float n00 = dot(grad2(i), f);
+	float n10 = dot(grad2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+	float n01 = dot(grad2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+	float n11 = dot(grad2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+	return 0.5 + 0.7 * mix(mix(n00, n10, u.x), mix(n01, n11, u.x), u.y);
 }
 
 float fbm2(vec2 p) {
@@ -163,8 +173,8 @@ void sky() {
 
 	// --- мазки: горизонтальные «полосы кисти» ломают градиент
 	vec2 buv = vec2(t * 3.0, elev * 2.2);
-	float st = texture(ordo_brush, buv).r;
-	float st2 = texture(ordo_brush, vec2(t * 7.0 + 0.3, elev * 5.0)).r;
+	float st = texture(brush_tex, buv).r;
+	float st2 = texture(brush_tex, vec2(t * 7.0 + 0.3, elev * 1.1)).r;
 	float e = elev + (st - 0.5) * stroke_amount + (st2 - 0.5) * stroke_amount * 0.5;
 
 	// --- градиент неба
@@ -181,14 +191,18 @@ void sky() {
 	// --- облака мазками: длинные горизонтальные гряды (азимут × высота), гуще у заката
 	float cloud_a = 0.0;
 	vec3 cloud_c = vec3(0.0);
-	float e_deg = degrees(e);
+	// облака — по настоящей высоте (сдвиг мазками градиента их рвёт на полосы)
+	float e_deg = degrees(elev) + (st - 0.5) * 0.6;
 	if (e_deg > -1.0) {
-		// чем ближе к горизонту, тем «площе» облака (перспектива слоя)
-		float squash = mix(3.2, 1.0, smoothstep(2.0, 30.0, e_deg));
-		vec2 cq = vec2(t * 26.0 * cloud_scale, e_deg * 0.33 * squash);
+		// чем ближе к горизонту, тем «площе» облака (перспектива слоя). Отображение высоты
+		// обязано быть монотонным: иначе шум «стоит» по вертикали и рвётся на полосы
+		float ey = 3.0 * log(1.0 + max(e_deg, -0.9) / 3.0) + 0.15 * e_deg;
+		float squash = 1.0;
+		vec2 cq = vec2(t * 26.0 * cloud_scale, ey);
 		float dens = fbm2(cq * vec2(0.55, 1.0) + vec2(3.0, 0.0));
-		float br = texture(ordo_brush, vec2(t * 9.0, e_deg * 0.05 * squash) + vec2(0.31, 0.12)).r;
-		float br2 = texture(ordo_brush, vec2(t * 23.0, e_deg * 0.11 * squash) + vec2(0.7, 0.4)).r;
+		// мазки вытянуты по горизонтали (как кисть по небу), иначе получается «штрихкод»
+		float br = texture(brush_tex, vec2(t * 7.0, ey * 0.09) + vec2(0.31, 0.12)).r;
+		float br2 = texture(brush_tex, vec2(t * 19.0, ey * 0.2) + vec2(0.7, 0.4)).r;
 		dens = dens * 0.85 + (br - 0.5) * 0.28 + (br2 - 0.5) * 0.12;
 		// гряды лежат полосами по высоте
 		float band = smoothstep(1.0, 3.5, e_deg) * (1.0 - smoothstep(20.0, 38.0, e_deg));
@@ -196,16 +210,20 @@ void sky() {
 		float cov = cloud_cover - 0.1 * sun_side;
 		cloud_a = smoothstep(cov, cov + cloud_soft, dens) * band;
 		// нижняя кромка гряды (плотность ниже меньше) — подсвечена снизу
-		float dens_lo = fbm2(vec2(cq.x * 0.55 + 3.0, (e_deg - 0.6) * 0.33 * squash)) * 0.85 + (br - 0.5) * 0.28;
-		float under = clamp((dens - dens_lo) * 7.0 + 0.35, 0.0, 1.0);
+		float ey_lo = 3.0 * log(1.0 + max(e_deg - 0.6, -0.9) / 3.0) + 0.15 * (e_deg - 0.6);
+		float dens_lo = fbm2(vec2(cq.x * 0.55 + 3.0, ey_lo)) * 0.85 + (br - 0.5) * 0.28;
+		float under = clamp((dens - dens_lo) * 5.0 + 0.4, 0.0, 1.0);
 		float near_sun = pow(max(cs, 0.0), 4.0);
 		float facing = 0.25 + 0.75 * exp(-(da * da) / 1.6);
-		vec3 lit = mix(cloud_lit.rgb, cloud_gold.rgb, near_sun) * (0.55 + 1.2 * near_sun);
-		vec3 shade = mix(cloud_far.rgb, cloud_shade.rgb, smoothstep(2.0, 18.0, e_deg));
-		cloud_c = mix(shade, lit, clamp(under * facing + near_sun * 0.35, 0.0, 1.0));
-		// тонкие края против солнца — золотая кайма
-		float thin = 1.0 - smoothstep(cov, cov + cloud_soft * 3.0, dens);
-		cloud_c += cloud_gold.rgb * thin * pow(max(cs, 0.0), 12.0) * 2.0;
+		// тело облака: холодное, у солнца — тёмный силуэт (контражур)
+		vec3 body = mix(cloud_far.rgb, cloud_shade.rgb, smoothstep(2.0, 18.0, e_deg));
+		body = mix(body, cloud_shade.rgb * 0.8, near_sun * 0.6);
+		// нижняя кромка подсвечена закатом: оранжевым у солнца, розовым в стороне
+		vec3 lit = mix(cloud_lit.rgb * vec3(0.95, 0.75, 0.85), cloud_lit.rgb, facing) * (0.65 + 0.5 * facing);
+		cloud_c = mix(body, lit, clamp(under * (1.0 - near_sun * 0.55), 0.0, 1.0));
+		// тонкие края против солнца — золотая кайма («серебряная подкладка»)
+		float thin = 1.0 - smoothstep(cov, cov + cloud_soft * 2.0, dens);
+		cloud_c += cloud_gold.rgb * thin * pow(max(cs, 0.0), 6.0) * 3.5;
 		cloud_c *= 0.9 + 0.2 * br2;
 	}
 
@@ -232,7 +250,7 @@ void sky() {
 			float front = smoothstep(2.6, 0.8, abs(da));           // против солнца вершины светятся прямо
 			float lit = clamp(smoothstep(-30.0, 50.0, side) * 0.8 + front * 0.35, 0.0, 1.0);
 			// борозды-кулуары: вертикальные мазки
-			float gully = texture(ordo_brush, vec2(t * 40.0 + float(k) * 0.37, el_deg * 0.08)).r;
+			float gully = texture(brush_tex, vec2(t * 40.0 + float(k) * 0.37, el_deg * 0.08)).r;
 			vec3 base = (k == 0) ? mount_far.rgb : ((k == 1) ? mount_mid.rgb : mount_near.rgb);
 			vec3 rockc = base * mix(0.82, 1.1, lit) * mix(0.9, 1.06, gully);
 			// снег: верх высоких гребней, языками вниз
@@ -246,10 +264,11 @@ void sky() {
 			vec3 snowc = mix(snow_shade.rgb, snow_lit.rgb, lit) * ((k == 0) ? 1.0 : 0.85);
 			vec3 mc = mix(rockc, snowc, sn);
 			// дымка: дальние слои почти тонут в воздухе, у подножия — туман
-			float haze = (k == 0) ? mount_haze : ((k == 1) ? mount_haze * 0.65 : mount_haze * 0.4);
+			float haze = (k == 0) ? mount_haze : ((k == 1) ? mount_haze * 0.7 : mount_haze * 0.55);
+			haze = mix(haze, 0.92, exp(-(da * da) / 1.2) * 0.6);
 			haze = mix(haze, 1.0, exp(-max(el_deg, 0.0) / ((k == 2) ? 0.5 : 0.9)) * 0.8);
 			mc = mix(mc, hz * 0.95, haze);
-			float edge = smoothstep(h + 0.05, h - 0.05, el_deg);
+			float edge = smoothstep(h + 0.08, h - 0.08, el_deg);
 			col = mix(col, mc, edge);
 		}
 	}

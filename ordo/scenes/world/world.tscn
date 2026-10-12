@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/world.gd" id="1"]
 [ext_resource type="Shader" path="res://shaders/sky.gdshader" id="2"]
@@ -9,9 +9,11 @@
 [ext_resource type="Script" path="res://scripts/world/world_scatter.gd" id="7"]
 [ext_resource type="Script" path="res://scripts/world/fog_banks.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/world/world_quality.gd" id="9"]
+[ext_resource type="Texture2D" path="res://assets/textures/world/brush_world.png" id="10"]
 
 [sub_resource type="ShaderMaterial" id="SkyMat"]
 shader = ExtResource("2")
+shader_parameter/brush_tex = ExtResource("10")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
@@ -46,7 +48,7 @@ glow_hdr_threshold = 1.1
 fog_enabled = true
 fog_light_color = Color(0.42, 0.45, 0.56, 1)
 fog_light_energy = 0.7
-fog_sun_scatter = 0.12
+fog_sun_scatter = 0.05
 fog_density = 0.0005
 fog_aerial_perspective = 0.75
 fog_height = -2.0

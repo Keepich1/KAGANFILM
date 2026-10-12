@@ -27,14 +27,14 @@ func apply(level: String) -> void:
 	vp.scaling_3d_scale = 1.0 if high else 0.75
 	if we:
 		var env := we.environment
-		env.volumetric_fog_enabled = high
+		env.volumetric_fog_enabled = high and not (Ordo.has_arg("nofog") or Ordo.has_arg("novolfog"))
 		env.ssao_enabled = high
 		# без объёмного тумана низинам нужна обычная высотная дымка погуще
 		env.fog_height_density = 0.025 if high else 0.06
 		if we.compositor:
 			for e in we.compositor.compositor_effects:
 				if e is PainterlyPost:
-					e.enabled = high
+					e.enabled = high and not Ordo.has_arg("nopost")
 	if sun:
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if high \
 			else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS

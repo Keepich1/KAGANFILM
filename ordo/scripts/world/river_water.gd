@@ -71,6 +71,7 @@ func build() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = SHADER
 	mat.set_shader_parameter("water_level", wl)
+	mat.set_shader_parameter("brush_tex", load("res://assets/textures/world/brush_world.png"))
 	material_override = mat
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 

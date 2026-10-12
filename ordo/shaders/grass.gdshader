@@ -39,7 +39,7 @@ group_uniforms;
 uniform float min_height = 0.14;
 uniform float max_height = 0.8;
 uniform float wind_bend = 0.4;
-uniform float translucency = 1.2;
+uniform float translucency = 0.55;
 uniform float plume_glow_strength = 2.6;
 uniform float rim_strength = 0.35;
 
@@ -47,10 +47,11 @@ varying vec3 v_color;
 varying float v_plume;
 varying float v_t;
 
-float hash(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
+// Четыре независимых случайных числа по целой клетке (без корреляции соседей)
+vec4 hash4(vec2 p) {
+	vec4 p4 = fract(vec4(p.xyxy) * vec4(0.1031, 0.1030, 0.0973, 0.1099));
+	p4 += dot(p4, p4.wzxy + 33.33);
+	return fract((p4.xxyz + p4.yzzw) * p4.zywx);
 }
 
 void vertex() {
@@ -59,12 +60,16 @@ void vertex() {
 	int gz = INSTANCE_ID / grid_n;
 	float cell = patch_size / float(grid_n);
 	// ключ привязан к миру: пучок не «плывёт», когда участки сдвигаются за камерой
-	vec2 key = floor(origin.xz + 0.5) + vec2(float(gx), float(gz)) * 1.37;
-	float h1 = hash(key);
-	float h2 = hash(key + 17.13);
-	float h3 = hash(key + 31.71);
-	float h4 = hash(key + 47.29);
-	float h5 = hash(key + 59.83);
+	vec2 key = floor(origin.xz + 0.5) * 3.0 + vec2(float(gx), float(gz));
+	vec4 ha = hash4(key);
+	vec4 hb = hash4(key + vec2(113.0, 271.0));
+	float h1 = ha.x;
+	float h2 = ha.y;
+	float h3 = ha.z;
+	float h4 = ha.w;
+	float h5 = hb.x;
+	float h6 = hb.y;
+	float h7 = hb.z;
 	vec2 wxz = origin.xz + (vec2(float(gx), float(gz)) + vec2(h1, h2)) * cell;
 
 	vec2 muv = (wxz + vec2(map_half)) / (2.0 * map_half);
@@ -83,15 +88,17 @@ void vertex() {
 			keep = 0.0;
 		}
 	}
-	float height = mix(min_height, max_height, gm.g) * (0.6 + 0.8 * h4) * clump_scale * density_comp;
+	float height = mix(min_height, max_height, gm.g) * (0.5 + 1.0 * h4 * h4 + 0.2 * h6) * clump_scale * density_comp;
 	float is_plume = COLOR.r;
 	float kov = step(h5, gm.b * 1.1);
-	float scale = keep * vis * mix(1.0, kov, is_plume);
+	// у каждого пучка своё число остей: часть остей прячется
+	float plume_keep = step(COLOR.b, 0.25 + 0.75 * h7);
+	float scale = keep * vis * mix(1.0, kov * plume_keep, is_plume);
 
 	// поворот пучка; ости — по ветру
 	vec2 wdir = normalize(ordo_wind.xy + vec2(1e-4));
 	float yaw = h1 * 6.2832 + h2 * 3.0;
-	float wyaw = atan(wdir.y, wdir.x) + (h4 - 0.5) * 0.7;
+	float wyaw = atan(wdir.y, wdir.x) + (h6 - 0.5) * 1.3 + (COLOR.b - 0.5) * 0.6;
 	float ang = mix(yaw, wyaw, is_plume);
 	float ca = cos(ang);
 	float sa = sin(ang);
@@ -99,7 +106,9 @@ void vertex() {
 	v.xz = vec2(v.x * ca - v.z * sa, v.x * sa + v.z * ca);
 	vec3 n = NORMAL;
 	n.xz = vec2(n.x * ca - n.z * sa, n.x * sa + n.z * ca);
-	float spread = 0.75 + 0.5 * h2;
+	float spread = 0.6 + 0.8 * h2;
+	// наклон всего пучка
+	v.xz += v.y * (vec2(h3, h7) - 0.5) * 0.5;
 	v *= vec3(height * spread, height, height * spread);
 
 	// ветер: изгиб к кончику, бегущие волны порывов, мелкая дрожь
@@ -122,7 +131,7 @@ void vertex() {
 	vec3 tip = mix(tip_color.rgb, cool_tip.rgb, smoothstep(0.4, 1.0, h2));
 	tip = mix(tip, dry_tip.rgb, clamp(sp.r * 1.2 + h5 * 0.25 - 0.1, 0.0, 1.0));
 	c = mix(c, tip, smoothstep(0.45, 1.0, t));
-	c *= 0.85 + 0.3 * h4;
+	c *= 0.7 + 0.45 * h4 * h2;
 	// гребень волны ветра чуть светлее — по полю бегут световые волны
 	c *= 1.0 + wave * 0.12 * t;
 	vec3 pc = plume_color.rgb * (0.9 + 0.2 * h3);

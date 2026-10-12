@@ -9,6 +9,8 @@ render_mode blend_mix, cull_back, depth_draw_always, specular_schlick_ggx;
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable;
+// кисть с мип-картами (как ordo_brush): assets/textures/world/brush_world.png
+uniform sampler2D brush_tex : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
 
 uniform float water_level = -4.0;
 uniform vec4 scatter_color : source_color = vec4(0.07, 0.17, 0.18, 1.0);   // цвет толщи воды
@@ -42,8 +44,8 @@ float flow_strokes(vec2 p, vec2 f, vec2 perp, float t, float stretch) {
 	float a = fract(ph);
 	float b = fract(ph + 0.5);
 	vec2 s = vec2(ripple_scale / stretch, ripple_scale);
-	float h1 = texture(ordo_brush, q * s - vec2(a, 0.0) + vec2(0.0, 0.31)).r;
-	float h2 = texture(ordo_brush, q * s - vec2(b, 0.0) + vec2(0.47, 0.0)).r;
+	float h1 = texture(brush_tex, q * s - vec2(a, 0.0) + vec2(0.0, 0.31)).r;
+	float h2 = texture(brush_tex, q * s - vec2(b, 0.0) + vec2(0.47, 0.0)).r;
 	float w = abs(1.0 - 2.0 * a);
 	return mix(h1, h2, 1.0 - w);
 }
@@ -86,7 +88,7 @@ void fragment() {
 
 	// пена: у берега — тонкая кромка мазками, на перекате брода — штрихи по течению
 	float st = flow_strokes(wp.xz * 1.7, f, perp, t * 1.5, 5.0);
-	float st2 = texture(ordo_brush, wp.xz * 0.45 + vec2(0.2, 0.6)).r;
+	float st2 = texture(brush_tex, wp.xz * 0.45 + vec2(0.2, 0.6)).r;
 	float shore = smoothstep(shore_foam, 0.02, vdepth) * smoothstep(0.42, 0.62, st + st2 * 0.3);
 	float riffle = v_ford * v_speed * smoothstep(0.62, 0.78, st) * smoothstep(0.9, 0.2, vdepth) * ford_foam;
 	float foam = clamp(shore * 0.85 + riffle, 0.0, 1.0);
@@ -94,7 +96,7 @@ void fragment() {
 	ALBEDO = foam_color.rgb * foam;
 	EMISSION = water * (1.0 - foam);
 	ROUGHNESS = mix(roughness, 0.95, foam);
-	SPECULAR = mix(0.5, 0.1, foam);
+	SPECULAR = mix(0.36, 0.1, foam);
 	METALLIC = 0.0;
 	// мягкая кромка у самого берега
 	ALPHA = smoothstep(0.0, 0.06, thick);
