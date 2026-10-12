@@ -322,5 +322,7 @@ func _capture(item: Array) -> void:
 			sel._select(PackedInt32Array())
 	_busy = false
 	if _targets.is_empty():
-		# серия снята — дальше ждать кадра --shot незачем
+		# серия снята — дальше ждать кадра --shot незачем; последний кадр серии идёт и в --shot
+		if _ordo.has_arg("shot"):
+			img.save_png(ProjectSettings.globalize_path(String(_ordo.arg("shot"))))
 		get_tree().quit()
