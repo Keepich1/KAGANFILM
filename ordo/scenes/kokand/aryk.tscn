@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/kokand/kokand_building.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kokand/aryk.glb" id="2"]
+
+[node name="Aryk" type="Node3D"]
+script = ExtResource("1")
+kind = "aryk"
+footprint = Vector2(4, 1.6)
+ground_decal = false
+metadata/footprint = Vector2(4, 1.6)
+metadata/kind = "aryk"
+metadata/side = "kokand"
+
+[node name="Model" parent="." instance=ExtResource("2")]
+
+[node name="Markers" type="Node3D" parent="."]
