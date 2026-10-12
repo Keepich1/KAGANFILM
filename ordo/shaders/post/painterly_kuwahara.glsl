@@ -45,6 +45,7 @@ void main() {
 	}
 	vec4 orig = imageLoad(color_image, uv);
 	vec3 painted = imageLoad(src_image, uv).rgb;
+	float local_amount = p.amount;
 
 	if (p.amount > 0.001 && p.radius >= 1.0) {
 		// направление и анизотропия из тензора
@@ -137,8 +138,13 @@ void main() {
 		if (outc.w > 0.0) {
 			painted = outc.rgb / outc.w;
 		}
+		// мелкая пёстрая деталь (листва, дальняя трава): даже самый спокойный сектор шумный —
+		// там Кувахара собирает пятна в «мозаику». Такие места оставляем ближе к исходнику,
+		// мазок работает на крупных формах и вдоль контуров (A — вытянутость структуры)
+		float busy = smoothstep(0.0015, 0.012, smin) * (1.0 - smoothstep(0.25, 0.7, A));
+		local_amount = p.amount * (1.0 - 0.6 * busy);
 	}
-	vec3 col = mix(orig.rgb, decode(painted), p.amount);
+	vec3 col = mix(orig.rgb, decode(painted), local_amount);
 
 	// тон: цветные тени (не чёрные), тёплый свет
 	float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));

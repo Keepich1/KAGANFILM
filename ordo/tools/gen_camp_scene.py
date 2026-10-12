@@ -115,7 +115,8 @@ def build(out_path):
              front_of(6, 6.0, -1.0)]
     for i, f in enumerate(fires):
         node(f"Fire_{i + 1}", "Fires", inst="res://scenes/camp/campfire.tscn", xf=xform(f, rs.uniform(0, 360)),
-             props={"light_energy": "3.2" if i == 0 else "2.4", "light_range": "11.0" if i == 0 else "8.5"})
+             props=dict({"light_energy": "3.2" if i == 0 else "2.4", "light_range": "11.0" if i == 0 else "8.5"},
+                        **({"under_pot": "true"} if i == 1 else {})))
     # казан над вторым костром, без своего кострища (огонь уже есть)
     node("Kazan", "Props", inst=M + "kazan.glb", xf=xform(fires[1], 15))
 
@@ -176,7 +177,8 @@ def build(out_path):
         node(name, "Ground", "Decal", xf=xform(mid, yaw),
              props={"size": size,
                     "texture_albedo": f'ExtResource("{ext(f"res://assets/textures/kipchak/{tex}_decal.png", "Texture2D")}")',
-                    "albedo_mix": ("0.75" if width > 3 else "0.5") if tex == "path" else "0.6", "modulate": "Color(0.92, 0.9, 0.86, 1)",
+                    "albedo_mix": ("0.45" if width > 3 else "0.38") if tex == "path" else "0.55",
+                    "modulate": "Color(0.8, 0.78, 0.76, 1)" if tex == "path" else "Color(0.86, 0.84, 0.8, 1)",
                     "upper_fade": "0.3", "lower_fade": "0.3", "normal_fade": "0.5",
                     "cull_mask": "1"})
 
@@ -204,15 +206,22 @@ def build(out_path):
     decal("Trample_Jylky_2", jylky + np.array([-2.0, 0, 1.0]), jylky + np.array([-2.0, 0, 1.0]), 12.0, tex="trample")
     for i, f in enumerate(fires[1:]):
         decal(f"Trample_Fire_{i + 2}", f, f, 7.0, tex="trample")
-    # у каждой юрты — вытоптанное пятно у двери и тропинка к ставке
+    # у каждой юрты — вытоптанное пятно у двери; тропинки к ставке только у половины юрт,
+    # изогнутые, разной ширины, не доходят до центра (не «спицы колеса» на виде сверху)
     for i in range(len(yurts)):
         door_p = front_of(i, 1.5)
         decal(f"Trample_Boz_{i + 1}", door_p, door_p, 9.0 * rs.uniform(0.9, 1.15), tex="trample")
         to_c = C - door_p
         dist = float(np.linalg.norm(to_c))
         to_c /= dist
-        mid = door_p + to_c * dist * 0.5 + np.array([to_c[2], 0, -to_c[0]]) * rs.uniform(-3, 3)
-        path(f"Path_Boz_{i + 1}", [door_p + to_c * 3.0, mid, C + (door_p - C) / dist * 12.0], 1.8)
+        perp = np.array([to_c[2], 0, -to_c[0]])
+        bend = rs.uniform(-4, 4)
+        width = rs.uniform(1.2, 2.4)
+        if i % 2 == 1:
+            continue
+        p1 = door_p + to_c * dist * 0.35 + perp * bend
+        p2 = door_p + to_c * dist * 0.62 + perp * bend * 0.4
+        path(f"Path_Boz_{i + 1}", [door_p + to_c * 3.0, p1, p2, C + (door_p - C) / dist * 16.0], width)
 
     # ---- метки для интеграции
     node("SheepPen", "Markers", "Marker3D", xf=xform(koroo, k_yaw),

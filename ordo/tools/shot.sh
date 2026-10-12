@@ -4,6 +4,8 @@
 # Время сцены идёт ровно 1/30 с за кадр (--fixed-fps 30), поэтому кадр повторяем.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# кадры проверки не импортируются в проект
+mkdir -p "$ROOT/renders" && touch "$ROOT/renders/.gdignore"
 SCENE="$1"; OUT="$(realpath -m "$2")"; shift 2
 SIZE=1920x1080; EXTRA=()
 for a in "$@"; do
@@ -14,5 +16,5 @@ for a in "$@"; do
 done
 mkdir -p "$(dirname "$OUT")"
 XVFB_SIZE="${SIZE}x24" timeout "${SHOT_TIMEOUT:-900}" "$ROOT/tools/godot.sh" --path "$ROOT" --resolution "$SIZE" \
-  --fixed-fps 30 "$SCENE" -- --shot="$OUT" "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio driver|audio_server|alsa|^\s*$" || true
+  --audio-driver Dummy --fixed-fps 30 "$SCENE" -- --shot="$OUT" "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio driver|audio_server|alsa|^\s*$" || true
 [ -f "$OUT" ] && echo "OK $OUT" || { echo "НЕТ КАДРА $OUT"; exit 1; }

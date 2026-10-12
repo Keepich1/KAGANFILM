@@ -116,6 +116,7 @@ light_range = 11.0
 transform = Transform3D(-0.0399821, 0, -0.9992, 0, 1, 0, 0.9992, 0, -0.0399821, -23.7482, 0, 16.9182)
 light_energy = 2.4
 light_range = 8.5
+under_pot = true
 
 [node name="Fire_3" parent="Fires" instance=ExtResource("8")]
 transform = Transform3D(-0.379488, 0, 0.925197, 0, 1, 0, -0.925197, 0, -0.379488, -69.0682, 0, -11.9771)
@@ -199,8 +200,8 @@ transform = Transform3D(-0.422618, 0, 0.906308, 0, 1, 0, -0.906308, 0, -0.422618
 transform = Transform3D(0.591364, 0, 0.806405, 0, 1, 0, -0.806405, 0, 0.591364, -48.3327, 0, 30.253)
 size = Vector3(4.27, 3.0, 16.83)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -210,8 +211,8 @@ cull_mask = 1
 transform = Transform3D(0.83957, 0, 0.543251, 0, 1, 0, -0.543251, 0, 0.83957, -39.1403, 0, 40.1525)
 size = Vector3(4.31, 3.0, 18.00)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -221,8 +222,8 @@ cull_mask = 1
 transform = Transform3D(0.654931, 0, 0.755689, 0, 1, 0, -0.755689, 0, 0.654931, -29.948, 0, 50.7591)
 size = Vector3(4.38, 3.0, 17.72)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -232,8 +233,8 @@ cull_mask = 1
 transform = Transform3D(0.543251, 0, 0.83957, 0, 1, 0, -0.83957, 0, 0.543251, -18.6343, 0, 59.2444)
 size = Vector3(4.86, 3.0, 18.00)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -243,8 +244,8 @@ cull_mask = 1
 transform = Transform3D(0.781348, 0, -0.624096, 0, 1, 0, 0.624096, 0, 0.781348, -72.2074, 0, 31.926)
 size = Vector3(3.26, 3.0, 17.04)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -254,8 +255,8 @@ cull_mask = 1
 transform = Transform3D(0.373561, 0, -0.927606, 0, 1, 0, 0.927606, 0, 0.373561, -84.45, 0, 40.6506)
 size = Vector3(3.70, 3.0, 19.48)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -265,8 +266,8 @@ cull_mask = 1
 transform = Transform3D(0.695167, 0, -0.718848, 0, 1, 0, 0.718848, 0, 0.695167, -100.904, 0, 52.1745)
 size = Vector3(3.60, 3.0, 26.87)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -276,8 +277,8 @@ cull_mask = 1
 transform = Transform3D(0.997749, 0, 0.0670612, 0, 1, 0, -0.0670612, 0, 0.997749, -50.838, 0, 38.5535)
 size = Vector3(3.10, 3.0, 22.90)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -287,8 +288,8 @@ cull_mask = 1
 transform = Transform3D(0.7282, 0, 0.685365, 0, 1, 0, -0.685365, 0, 0.7282, -43.0059, 0, 56.2243)
 size = Vector3(3.55, 3.0, 23.60)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -298,8 +299,8 @@ cull_mask = 1
 transform = Transform3D(0.930855, 0, 0.365389, 0, 1, 0, -0.365389, 0, 0.930855, -31.7669, 0, 74.2302)
 size = Vector3(3.58, 3.0, 25.07)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.75
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.45
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -309,8 +310,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -50.8076, 0, 29.1924)
 size = Vector3(26.00, 3.0, 26.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -320,8 +321,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -115, 0, 65)
 size = Vector3(16.00, 3.0, 16.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -331,8 +332,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -113.5, 0, 64)
 size = Vector3(11.00, 3.0, 11.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -342,8 +343,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -25, 0, 90)
 size = Vector3(18.00, 3.0, 18.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -353,8 +354,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27, 0, 91)
 size = Vector3(12.00, 3.0, 12.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -364,8 +365,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -23.7482, 0, 16.9182)
 size = Vector3(7.00, 3.0, 7.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -375,8 +376,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -69.0682, 0, -11.9771)
 size = Vector3(7.00, 3.0, 7.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -386,8 +387,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -82.4025, 0, 38.5018)
 size = Vector3(7.00, 3.0, 7.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -397,8 +398,8 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -94.3862, 0, 21.7603)
 size = Vector3(7.00, 3.0, 7.00)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -408,30 +409,41 @@ cull_mask = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20.5297, 0, 34.0762)
 size = Vector3(9.11, 3.0, 9.11)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_1_1" type="Decal" parent="Ground"]
-transform = Transform3D(-0.336688, 0, -0.941616, 0, 1, 0, 0.941616, 0, -0.336688, -31.8076, 0, 30.0463)
-size = Vector3(1.66, 3.0, 19.39)
+transform = Transform3D(-0.337511, 0, -0.941322, 0, 1, 0, 0.941322, 0, -0.337511, -28.8465, 0, 31.0997)
+size = Vector3(1.36, 3.0, 12.73)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_1_2" type="Decal" parent="Ground"]
-transform = Transform3D(-0.334337, 0, -0.942454, 0, 1, 0, 0.942454, 0, -0.334337, -44.4785, 0, 25.5275)
-size = Vector3(1.85, 3.0, 10.39)
+transform = Transform3D(-0.334913, 0, -0.942249, 0, 1, 0, 0.942249, 0, -0.334913, -39.6681, 0, 27.2361)
+size = Vector3(1.28, 3.0, 12.37)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
+upper_fade = 0.3
+lower_fade = 0.3
+normal_fade = 0.5
+cull_mask = 1
+
+[node name="Path_Boz_1_3" type="Decal" parent="Ground"]
+transform = Transform3D(0.432077, 0, 0.901837, 0, 1, 0, -0.901837, 0, 0.432077, -44.9641, 0, 25.358)
+size = Vector3(1.26, 3.0, 1.13)
+texture_albedo = ExtResource("15")
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -439,32 +451,10 @@ cull_mask = 1
 
 [node name="Trample_Boz_2" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -25.7353, 0, 16.1048)
-size = Vector3(8.90, 3.0, 8.90)
+size = Vector3(8.52, 3.0, 8.52)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_2_1" type="Decal" parent="Ground"]
-transform = Transform3D(0.0150318, 0, -0.999887, 0, 1, 0, 0.999887, 0, 0.0150318, -35.8711, 0, 16.5512)
-size = Vector3(1.69, 3.0, 15.75)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_2_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.365906, 0, -0.930652, 0, 1, 0, 0.930652, 0, 0.365906, -45.5514, 0, 17.6517)
-size = Vector3(1.94, 3.0, 6.87)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -472,32 +462,43 @@ cull_mask = 1
 
 [node name="Trample_Boz_3" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -32.189, 0, -9.13965)
-size = Vector3(9.69, 3.0, 9.69)
+size = Vector3(9.83, 3.0, 9.83)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_3_1" type="Decal" parent="Ground"]
-transform = Transform3D(0.784752, 0, -0.619811, 0, 1, 0, 0.619811, 0, 0.784752, -39.5956, 0, -0.21433)
-size = Vector3(1.96, 3.0, 18.66)
+transform = Transform3D(0.90132, 0, -0.433154, 0, 1, 0, 0.433154, 0, 0.90132, -36.7876, 0, -1.71056)
+size = Vector3(2.44, 3.0, 13.47)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_3_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.575846, 0, -0.817558, 0, 1, 0, 0.817558, 0, 0.575846, -48.3229, 0, 8.92994)
-size = Vector3(1.94, 3.0, 9.74)
+transform = Transform3D(0.57483, 0, -0.818273, 0, 1, 0, 0.818273, 0, 0.57483, -43.8517, 0, 6.73544)
+size = Vector3(2.12, 3.0, 12.89)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
+upper_fade = 0.3
+lower_fade = 0.3
+normal_fade = 0.5
+cull_mask = 1
+
+[node name="Path_Boz_3_3" type="Decal" parent="Ground"]
+transform = Transform3D(-0.935666, 0, -0.352887, 0, 1, 0, 0.352887, 0, -0.935666, -48.6709, 0, 9.17403)
+size = Vector3(2.42, 3.0, 3.40)
+texture_albedo = ExtResource("15")
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -505,32 +506,10 @@ cull_mask = 1
 
 [node name="Trample_Boz_4" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -47.46, 0, -13.6239)
-size = Vector3(10.18, 3.0, 10.18)
+size = Vector3(9.55, 3.0, 9.55)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_4_1" type="Decal" parent="Ground"]
-transform = Transform3D(0.888092, 0, -0.459665, 0, 1, 0, 0.459665, 0, 0.888092, -51.9679, 0, -4.12905)
-size = Vector3(1.93, 3.0, 16.49)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_4_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.998135, 0, -0.0610466, 0, 1, 0, 0.0610466, 0, 0.998135, -55.6171, 0, 5.65572)
-size = Vector3(1.85, 3.0, 7.65)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -538,32 +517,43 @@ cull_mask = 1
 
 [node name="Trample_Boz_5" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -71.8767, 0, -14.9957)
-size = Vector3(9.41, 3.0, 9.41)
+size = Vector3(9.76, 3.0, 9.76)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_5_1" type="Decal" parent="Ground"]
-transform = Transform3D(0.880926, 0, 0.473254, 0, 1, 0, -0.473254, 0, 0.880926, -67.1991, 0, -5.24257)
-size = Vector3(1.89, 3.0, 17.13)
+transform = Transform3D(0.789459, 0, 0.613803, 0, 1, 0, -0.613803, 0, 0.789459, -67.6856, 0, -8.00444)
+size = Vector3(1.58, 3.0, 11.75)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_5_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.998587, 0, -0.053148, 0, 1, 0, 0.053148, 0, 0.998587, -63.6711, 0, 5.15316)
-size = Vector3(1.95, 3.0, 8.42)
+transform = Transform3D(0.992447, 0, 0.122671, 0, 1, 0, -0.122671, 0, 0.992447, -63.8337, 0, 1.20245)
+size = Vector3(1.55, 3.0, 11.42)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
+upper_fade = 0.3
+lower_fade = 0.3
+normal_fade = 0.5
+cull_mask = 1
+
+[node name="Path_Boz_5_3" type="Decal" parent="Ground"]
+transform = Transform3D(-0.589298, 0, -0.807916, 0, 1, 0, 0.807916, 0, -0.589298, -64.1753, 0, 5.55383)
+size = Vector3(1.66, 3.0, 3.63)
+texture_albedo = ExtResource("15")
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -571,32 +561,10 @@ cull_mask = 1
 
 [node name="Trample_Boz_6" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -86.2879, 0, 4.289)
-size = Vector3(8.74, 3.0, 8.74)
+size = Vector3(8.82, 3.0, 8.82)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_6_1" type="Decal" parent="Ground"]
-transform = Transform3D(0.454183, 0, 0.890908, 0, 1, 0, -0.890908, 0, 0.454183, -78.2157, 0, 8.63043)
-size = Vector3(1.81, 3.0, 13.78)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_6_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.706075, 0, 0.708137, 0, 1, 0, -0.708137, 0, 0.706075, -71.5096, 0, 12.6383)
-size = Vector3(1.93, 3.0, 4.85)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -604,32 +572,43 @@ cull_mask = 1
 
 [node name="Trample_Boz_7" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -96.454, 0, 17.6403)
-size = Vector3(8.82, 3.0, 8.82)
+size = Vector3(9.02, 3.0, 9.02)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_7_1" type="Decal" parent="Ground"]
-transform = Transform3D(-4.21383e-05, 0, 1, 0, 1, 0, -1, 0, -4.21383e-05, -85.8117, 0, 17.8338)
-size = Vector3(1.72, 3.0, 16.74)
+transform = Transform3D(0.0938309, 0, 0.995588, 0, 1, 0, -0.995588, 0, 0.0938309, -88.587, 0, 18.2934)
+size = Vector3(1.28, 3.0, 10.81)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_7_2" type="Decal" parent="Ground"]
-transform = Transform3D(0.219372, 0, 0.975641, 0, 1, 0, -0.975641, 0, 0.219372, -75.069, 0, 18.5291)
-size = Vector3(1.77, 3.0, 7.78)
+transform = Transform3D(0.0471612, 0, 0.998887, 0, 1, 0, -0.998887, 0, 0.0471612, -78.7868, 0, 18.9853)
+size = Vector3(1.29, 3.0, 10.89)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
+upper_fade = 0.3
+lower_fade = 0.3
+normal_fade = 0.5
+cull_mask = 1
+
+[node name="Path_Boz_7_3" type="Decal" parent="Ground"]
+transform = Transform3D(-0.118513, 0, -0.992952, 0, 1, 0, 0.992952, 0, -0.118513, -74.9133, 0, 19.0922)
+size = Vector3(1.27, 3.0, 3.15)
+texture_albedo = ExtResource("15")
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -637,32 +616,10 @@ cull_mask = 1
 
 [node name="Trample_Boz_8" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -86.3452, 0, 37.6623)
-size = Vector3(9.14, 3.0, 9.14)
+size = Vector3(9.09, 3.0, 9.09)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_8_1" type="Decal" parent="Ground"]
-transform = Transform3D(-0.38133, 0, 0.924439, 0, 1, 0, -0.924439, 0, -0.38133, -77.7896, 0, 33.4905)
-size = Vector3(1.79, 3.0, 14.56)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_8_2" type="Decal" parent="Ground"]
-transform = Transform3D(-0.9258, 0, 0.378013, 0, 1, 0, -0.378013, 0, -0.9258, -70.8466, 0, 28.8357)
-size = Vector3(1.82, 3.0, 6.09)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -670,32 +627,43 @@ cull_mask = 1
 
 [node name="Trample_Boz_9" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -78.0147, 0, 60.4239)
-size = Vector3(9.18, 3.0, 9.18)
+size = Vector3(9.02, 3.0, 9.02)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_9_1" type="Decal" parent="Ground"]
-transform = Transform3D(-0.905789, 0, 0.423729, 0, 1, 0, -0.423729, 0, -0.905789, -72.7403, 0, 49.0192)
-size = Vector3(1.84, 3.0, 20.57)
+transform = Transform3D(-0.987994, 0, 0.154489, 0, 1, 0, -0.154489, 0, -0.987994, -75.7942, 0, 51.2922)
+size = Vector3(2.25, 3.0, 14.61)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
 cull_mask = 1
 
 [node name="Path_Boz_9_2" type="Decal" parent="Ground"]
-transform = Transform3D(-0.926943, 0, 0.375203, 0, 1, 0, -0.375203, 0, -0.926943, -66.7859, 0, 35.6578)
-size = Vector3(1.73, 3.0, 11.57)
+transform = Transform3D(-0.832479, 0, 0.554056, 0, 1, 0, -0.554056, 0, -0.832479, -71.4372, 0, 39.8559)
+size = Vector3(2.15, 3.0, 13.79)
 texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
+upper_fade = 0.3
+lower_fade = 0.3
+normal_fade = 0.5
+cull_mask = 1
+
+[node name="Path_Boz_9_3" type="Decal" parent="Ground"]
+transform = Transform3D(-0.124545, 0, 0.992214, 0, 1, 0, -0.992214, 0, -0.124545, -67.2963, 0, 34.7128)
+size = Vector3(1.94, 3.0, 3.25)
+texture_albedo = ExtResource("15")
+albedo_mix = 0.38
+modulate = Color(0.8, 0.78, 0.76, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5
@@ -703,32 +671,10 @@ cull_mask = 1
 
 [node name="Trample_Boz_10" type="Decal" parent="Ground"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -58.5758, 0, 58.3304)
-size = Vector3(9.02, 3.0, 9.02)
+size = Vector3(9.43, 3.0, 9.43)
 texture_albedo = ExtResource("16")
-albedo_mix = 0.6
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_10_1" type="Decal" parent="Ground"]
-transform = Transform3D(-0.981537, 0, -0.191273, 0, 1, 0, 0.191273, 0, -0.981537, -60.2533, 0, 47.2958)
-size = Vector3(1.89, 3.0, 17.82)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
-upper_fade = 0.3
-lower_fade = 0.3
-normal_fade = 0.5
-cull_mask = 1
-
-[node name="Path_Boz_10_2" type="Decal" parent="Ground"]
-transform = Transform3D(-0.95471, 0, 0.297539, 0, 1, 0, -0.297539, 0, -0.95471, -60.6869, 0, 35.6255)
-size = Vector3(1.94, 3.0, 9.05)
-texture_albedo = ExtResource("15")
-albedo_mix = 0.5
-modulate = Color(0.92, 0.9, 0.86, 1)
+albedo_mix = 0.55
+modulate = Color(0.86, 0.84, 0.8, 1)
 upper_fade = 0.3
 lower_fade = 0.3
 normal_fade = 0.5

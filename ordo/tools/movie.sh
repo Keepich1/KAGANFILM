@@ -3,6 +3,8 @@
 #   tools/movie.sh res://scenes/slice.tscn out.mp4 [секунды=20] [--size=1280x720] [--cam=...]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# кадры проверки не импортируются в проект
+mkdir -p "$ROOT/renders" && touch "$ROOT/renders/.gdignore"
 SCENE="$1"; OUT="$(realpath -m "$2")"; SECS="${3:-20}"; shift 3 || shift $#
 SIZE=1280x720; EXTRA=()
 for a in "$@"; do
@@ -14,7 +16,7 @@ done
 TMP="$(mktemp -d)"
 FRAMES=$((SECS * 30))
 XVFB_SIZE="${SIZE}x24" "$ROOT/tools/godot.sh" --path "$ROOT" --resolution "$SIZE" --write-movie "$TMP/f.png" \
-  --fixed-fps 30 --quit-after "$FRAMES" "$SCENE" -- "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio|^\s*$" | tail -5 || true
+  --audio-driver Dummy --fixed-fps 30 --quit-after "$FRAMES" "$SCENE" -- "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio|^\s*$" | tail -5 || true
 ffmpeg -y -loglevel error -framerate 30 -i "$TMP/f%08d.png" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow "$OUT"
 rm -rf "$TMP"
 echo "OK $OUT"

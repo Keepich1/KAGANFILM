@@ -347,7 +347,9 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 		hp_weapon_t(p, C, hr, vec3(-0.3, -0.2, 1.0), vec3(0.0, -1.0, 0.0));
 		p.w_pos = p.hand_r;
 		if (banner) {
-			p.w_vis = 0.0;
+			// знамя не исчезает: древко падает вместе с телом и ложится на землю вперёд
+			hp_weapon_t(p, C, hr, vec3(-0.3, 0.08, 1.0), vec3(0.0, -1.0, 0.0));
+			p.w_pos = p.hand_r;
 		}
 	} else if (st == HS_FLEE) {
 		float a = TAU * ph;

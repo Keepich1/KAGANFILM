@@ -331,7 +331,9 @@ RPose rider_pose(int st, float ph, float aux, float var, float t) {
 		p.elbow_l = T.b * vec3(0.5, -1.0, -0.2);
 		p.elbow_r = T.b * vec3(-0.5, -1.0, -0.2);
 		if (banner) {
-			p.w_vis = 0.0;
+			// знамя падает вместе со всадником (в сторону падения), а не исчезает
+			rp_weapon_t(p, T, vec3(-0.34, 0.95, 0.35), vec3(-0.85, 0.15, 0.5), vec3(0.0, 1.0, 0.0));
+			p.hand_r = rp_wp(p, 0.0);
 		}
 	} else if (st == RS_CHARGE || (st == RS_GALLOP && wk == WK_SABER && !banner)) {
 		rp_charge_weapon(p, T, wk, banner);

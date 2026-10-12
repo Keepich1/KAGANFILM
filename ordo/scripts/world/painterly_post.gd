@@ -12,14 +12,14 @@ extends CompositorEffect
 const CTX := &"ordo_painterly_post"
 
 ## Радиус мазка в пикселях при высоте кадра 1080 (масштабируется с разрешением)
-@export_range(0.0, 8.0, 0.1) var radius_1080 := 4.0
+@export_range(0.0, 8.0, 0.1) var radius_1080 := 2.6
 ## Резкость выбора сектора (больше — чётче границы мазков)
-@export_range(1.0, 20.0, 0.1) var hardness := 8.0
-@export_range(1.0, 16.0, 0.1) var sharpness_q := 8.0
+@export_range(1.0, 20.0, 0.1) var hardness := 3.5
+@export_range(1.0, 16.0, 0.1) var sharpness_q := 3.0
 ## Вытянутость мазка вдоль контура (меньше — сильнее вытянут)
-@export_range(0.2, 4.0, 0.05) var anisotropy_alpha := 1.0
+@export_range(0.2, 4.0, 0.05) var anisotropy_alpha := 0.45
 ## Доля живописного фильтра (0 — только тон и холст)
-@export_range(0.0, 1.0, 0.01) var amount := 1.0
+@export_range(0.0, 1.0, 0.01) var amount := 0.75
 ## Подъём теней холодным цветом (rgb, сила в a)
 @export var shadow_lift := Color(0.012, 0.026, 0.04, 1.0)
 ## Ниже какой яркости (линейной) тень поднимается

@@ -71,8 +71,9 @@ void fragment() {
 	if (use_vertex_color) {
 		a.rgb *= COLOR.rgb;
 	}
+	// изнанка: нормаль Godot уже развернул сам (cull_disabled → DO_SIDE_CHECK), второй разворот
+	// освещал изнанку как лицо; здесь только темнее
 	if (!FRONT_FACING) {
-		NORMAL = -NORMAL;
 		a.rgb *= back_shade;
 	}
 	ALBEDO = a.rgb;

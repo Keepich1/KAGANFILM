@@ -1,6 +1,64 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=8 format=3]
 
-[ext_resource type="Script" path="res://scripts/tools/smoke.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/slice.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/world.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/camp/camp.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/battle/battle.tscn" id="4"]
+[ext_resource type="Script" path="res://scripts/camera/cine_camera.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/camera/rts_camera.gd" id="6"]
 
 [node name="Slice" type="Node3D"]
 script = ExtResource("1")
+
+[node name="Cameras" type="Node3D" parent="."]
+
+[node name="CamEstablish" type="Camera3D" parent="Cameras"]
+fov = 46.0
+far = 6000.0
+
+[node name="CamCampLife" type="Camera3D" parent="Cameras"]
+fov = 50.0
+far = 6000.0
+
+[node name="CamRTS" type="Camera3D" parent="Cameras"]
+fov = 45.0
+far = 6000.0
+script = ExtResource("6")
+focus = Vector3(70, 0, 8)
+distance = 82.0
+yaw_deg = -28.0
+interactive = false
+
+[node name="CamVolley" type="Camera3D" parent="Cameras"]
+fov = 50.0
+far = 6000.0
+script = ExtResource("5")
+scenario_path = NodePath("../../Battle/Scenario")
+shot = "volley"
+
+[node name="CamCharge" type="Camera3D" parent="Cameras"]
+fov = 46.0
+far = 6000.0
+script = ExtResource("5")
+scenario_path = NodePath("../../Battle/Scenario")
+shot = "charge"
+
+[node name="CamImpact" type="Camera3D" parent="Cameras"]
+fov = 46.0
+far = 6000.0
+script = ExtResource("5")
+scenario_path = NodePath("../../Battle/Scenario")
+shot = "impact"
+
+[node name="CamAftermath" type="Camera3D" parent="Cameras"]
+fov = 46.0
+far = 6000.0
+script = ExtResource("5")
+scenario_path = NodePath("../../Battle/Scenario")
+shot = "aftermath"
+
+[node name="World" parent="." instance=ExtResource("2")]
+
+[node name="Camp" parent="." instance=ExtResource("3")]
+
+[node name="Battle" parent="." instance=ExtResource("4")]

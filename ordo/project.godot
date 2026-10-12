@@ -38,33 +38,35 @@ anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/size=8192
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
 lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+environment/volumetric_fog/volume_size=128
+environment/volumetric_fog/volume_depth=128
 environment/defaults/default_clear_color=Color(0.12, 0.14, 0.2, 1)
 
 [shader_globals]
 
 ordo_key_tint={
 "type": "color",
-"value": Color(1, 0.93, 0.84, 1)
+"value": Color(1, 0.92, 0.82, 1)
 }
 ordo_shadow_tint={
 "type": "color",
-"value": Color(0.16, 0.25, 0.42, 1)
+"value": Color(0.17, 0.27, 0.44, 1)
 }
 ordo_terminator={
 "type": "color",
-"value": Color(0.9, 0.34, 0.18, 0.35)
+"value": Color(0.95, 0.38, 0.2, 0.42)
 }
 ordo_rim_color={
 "type": "color",
-"value": Color(1, 0.78, 0.5, 0.9)
+"value": Color(1, 0.76, 0.48, 0.95)
 }
 ordo_band_soft={
 "type": "float",
-"value": 0.12
+"value": 0.13
 }
 ordo_brush_amount={
 "type": "float",
-"value": 0.35
+"value": 0.38
 }
 ordo_brush_scale={
 "type": "float",
@@ -76,5 +78,9 @@ ordo_brush={
 }
 ordo_wind={
 "type": "vec4",
-"value": Vector4(0.8, 0.35, 1, 0.5)
+"value": Vector4(0.82, 0.35, 1, 0.55)
+}
+ordo_sun_dir={
+"type": "vec3",
+"value": Vector3(-0.91, 0.17, 0.38)
 }

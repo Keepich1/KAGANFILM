@@ -96,25 +96,26 @@ def sheet(frame_fn, frame_size, seeds):
 
 
 def path_decal(w, h, seed=0):
-    """Пыльная тропа вдоль длины (y): светлая охра, колеи и следы, рваные края."""
-    c = Canvas(w, h, base="#8a7350", seed=seed, tile=False)
-    c.underpaint(["#8a7350", "#7a6446", "#9a825c", "#6e5a40"], cell=48, seed=seed)
-    c.strokes(int(w * h / 300), ["#a08860", "#6a5640", "#b29a70", "#5e4c38"], length=(20, 60), width=(4, 10),
-              angle=90, angle_jitter=12, alpha=(0.2, 0.45), bristles=3, curve=0.1)
+    """Тропа вдоль длины (y): мягкая утоптанная земля — темнее и спокойнее земли мира (ТЗ 11.2),
+    плотная середина чуть темнее, края рваные и растушёванные; без колей и «протектора»."""
+    c = Canvas(w, h, base="#6c5e47", seed=seed, tile=False)
+    c.underpaint(["#6c5e47", "#62553f", "#74664c", "#5a4f3b"], cell=56, seed=seed)
+    c.strokes(int(w * h / 420), ["#7a6a50", "#5c5040", "#80705a", "#544a3a"], length=(10, 26), width=(5, 12),
+              angle=0, angle_jitter=180, alpha=(0.12, 0.3), bristles=3, curve=0.3)
     yy, xx = np.mgrid[0:h, 0:w]
     u = (xx + 0.5) / w
     n = fbm(w, h, 40, 4, seed=seed + 3, tile=False)
-    half = 0.36 + 0.12 * (n - 0.5) + 0.05 * np.sin(yy / h * 2 * math.pi * 3 + seed)
+    n2 = fbm(w, h, 18, 3, seed=seed + 7, tile=False)
+    half = 0.3 + 0.16 * (n - 0.5) + 0.04 * np.sin(yy / h * 2 * math.pi * 3 + seed)
     d = np.abs(u - 0.5)
-    alpha = np.clip((half - d) / 0.08, 0, 1)
-    ends = np.clip(np.minimum(yy, h - yy) / (h * 0.06), 0, 1)
-    alpha *= ends * (0.75 + 0.25 * n)
-    # колеи: две тёмные полосы
+    alpha = np.clip((half - d) / 0.16, 0, 1) ** 1.3
+    ends = np.clip(np.minimum(yy, h - yy) / (h * 0.16), 0, 1)
+    # прерывистая: местами трава пробивается сквозь тропу
+    alpha *= ends * np.clip(0.45 + 0.75 * n2, 0, 1)
     img = np.asarray(c.image(), dtype=np.float64)
-    for cx in (0.38, 0.62):
-        rut = np.exp(-((u - cx - 0.02 * np.sin(yy / 90.0 + cx * 9)) / 0.025) ** 2)
-        img *= (1 - 0.25 * rut)[..., None]
-    return Image.fromarray(np.dstack([np.clip(img, 0, 255), alpha * 255 * 0.85]).astype(np.uint8), "RGBA")
+    core = np.exp(-((u - 0.5) / 0.17) ** 2)
+    img *= (1 - 0.1 * core)[..., None]
+    return Image.fromarray(np.dstack([np.clip(img, 0, 255), alpha * 255 * 0.8]).astype(np.uint8), "RGBA")
 
 
 def trample_decal(size, seed=0):

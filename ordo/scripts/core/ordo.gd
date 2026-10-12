@@ -18,6 +18,12 @@ const QUALITY_LOW := "low"
 var quality := QUALITY_HIGH
 var seed := 1
 var scene_time := 0.0
+## Живой ветер — зеркало global ordo_wind (RenderingServer отдаёт глобальные uniform только
+## в редакторе): xy — куда дует по мировым x/z, z — сила (×6 м/с), w — порывистость.
+## Менять через set_wind(), чтобы шейдеры и эффекты на процессоре видели одно и то же.
+var wind := Vector4(0.82, 0.35, 1.0, 0.55)
+## Направление НА солнце — зеркало global ordo_sun_dir (ставит мир, World.place_sun)
+var sun_dir := Vector3(-0.91, 0.17, 0.38)
 
 var _shot_path := ""
 var _shot_at := 1.0
@@ -34,6 +40,9 @@ func _ready() -> void:
 	_shot_at = float(_args.get("at", "1.0"))
 	_cam_name = _args.get("cam", "")
 	seed = int(_args.get("seed", "1"))
+	var g: Variant = ProjectSettings.get_setting("shader_globals/ordo_wind", {})
+	if g is Dictionary and (g as Dictionary).get("value") is Vector4:
+		wind = (g as Dictionary)["value"]
 	if _args.has("quality"):
 		quality = _args["quality"]
 	elif OS.has_feature("mobile"):
@@ -51,6 +60,16 @@ func has_arg(name: String) -> bool:
 func set_quality(level: String) -> void:
 	quality = level
 	quality_changed.emit(level)
+
+
+func set_wind(w: Vector4) -> void:
+	wind = w
+	RenderingServer.global_shader_parameter_set("ordo_wind", w)
+
+
+func set_sun_dir(d: Vector3) -> void:
+	sun_dir = d.normalized()
+	RenderingServer.global_shader_parameter_set("ordo_sun_dir", sun_dir)
 
 
 func is_low() -> bool:

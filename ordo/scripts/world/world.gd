@@ -59,6 +59,7 @@ func _ready() -> void:
 	if set_paint_globals:
 		for k in PAINT_GLOBALS:
 			RenderingServer.global_shader_parameter_set(k, PAINT_GLOBALS[k])
+		Ordo.set_wind(PAINT_GLOBALS["ordo_wind"])
 	place_sun()
 	_place_markers()
 	_debug_args()
@@ -114,6 +115,8 @@ func place_sun() -> void:
 	_sun_dir = Vector3(sin(az) * cos(el), sin(el), -cos(az) * cos(el)).normalized()
 	if sun:
 		sun.basis = Basis.looking_at(-_sun_dir, Vector3.UP)
+	if is_inside_tree():
+		Ordo.set_sun_dir(_sun_dir)
 
 
 func get_marker(name: String) -> Vector3:
