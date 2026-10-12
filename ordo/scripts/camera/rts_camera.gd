@@ -10,7 +10,7 @@ extends Camera3D
 signal moved_by_player
 
 ## Точка взгляда (x, z) и начальные параметры
-@export var focus := Vector3(84.0, 0.0, 4.0)
+@export var focus := Vector3(94.0, 0.0, 6.0)
 @export var distance := 70.0
 @export_range(-180.0, 180.0) var yaw_deg := 12.0
 @export var min_distance := 14.0
@@ -25,7 +25,7 @@ signal moved_by_player
 @export var interactive := true
 ## Готовые виды 1–4: (x, z, расстояние, азимут)
 @export var presets: Array[Vector4] = [
-	Vector4(80.0, 4.0, 100.0, 12.0),     # 1 — всё поле боя
+	Vector4(78.0, 4.0, 110.0, 12.0),     # 1 — всё поле боя
 	Vector4(104.0, 0.0, 42.0, -58.0),    # 2 — кокандская линия
 	Vector4(30.0, 10.0, 46.0, 38.0),     # 3 — конница кыпчаков
 	Vector4(-62.0, 30.0, 150.0, 20.0),   # 4 — лагерь
