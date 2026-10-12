@@ -1439,6 +1439,9 @@ func _integrate() -> void:
 
 ## Расталкивание: никто не стоит друг в друге (пространственный хэш, одна итерация)
 func _separate() -> void:
+	var rmax := 0.0
+	for r in t_radius:
+		rmax = maxf(rmax, r)
 	for u in n:
 		if u_life[u] != Life.ALIVE:
 			continue
@@ -1446,6 +1449,9 @@ func _separate() -> void:
 		var z := u_z[u]
 		var ru := t_radius[u_type[u]]
 		var mu := t_mass[u_type[u]]
+		var lim := ru + rmax
+		var xu := x
+		var zu := z
 		var cx := clampi(int((x - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 		var cz := clampi(int((z - _GRID_ORIGIN) / _CELL), 0, _GRID_N - 1)
 		for gz in range(maxi(cz - 1, 0), mini(cz + 1, _GRID_N - 1) + 1):
@@ -1453,9 +1459,16 @@ func _separate() -> void:
 				# списки клеток идут по убыванию номера: после v <= u пар (v > u) в клетке больше нет
 				var v := _head[gz * _GRID_N + gx]
 				while v > u:
+					# дальше суммы радиусов по x или z — не касаются (|dx| ≥ rr ⇒ d2 ≥ rr²): не считаем
+					var dx := u_x[v] - xu
+					if dx >= lim or dx <= -lim:
+						v = _next[v]
+						continue
+					var dz := u_z[v] - zu
+					if dz >= lim or dz <= -lim:
+						v = _next[v]
+						continue
 					if u_life[v] == Life.ALIVE:
-						var dx := u_x[v] - u_x[u]
-						var dz := u_z[v] - u_z[u]
 						var rr := ru + t_radius[u_type[v]]
 						var d2 := dx * dx + dz * dz
 						if d2 < rr * rr:
@@ -1472,6 +1485,8 @@ func _separate() -> void:
 							u_z[u] -= dz * over * ku
 							u_x[v] += dx * over * kv
 							u_z[v] += dz * over * kv
+							xu = u_x[u]
+							zu = u_z[u]
 					v = _next[v]
 
 
