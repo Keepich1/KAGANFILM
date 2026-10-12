@@ -11,7 +11,8 @@
 - Без монитора (сервер, облако): `tools/godot.sh` (Xvfb + программный Vulkan).
   - `tools/import.sh` — импорт новых glb/png (создаёт `.godot/`, в git не идёт);
   - `tools/shot.sh res://scenes/X.tscn out.png --at=6 --cam=Имя --size=1920x1080` — кадр;
-  - `tools/movie.sh res://scenes/X.tscn out.mp4 20 --size=1280x720` — видео.
+  - `tools/movie.sh res://scenes/X.tscn out.mp4 20 --size=1280x720` — видео
+    (для среза: `… 25 --size=1280x720 --movie --battle_skip=0.5` — без подсказок, бой с 0,5 с).
   - Время сцены идёт ровно 1/30 с за кадр (`--fixed-fps 30`), кадры повторяемы.
 - Автозагрузка `Ordo` (`scripts/core/ordo.gd`): качество `Ordo.quality` (`high`/`low`),
   аргументы командной строки `Ordo.arg("имя")`, зерно `Ordo.seed`.
@@ -51,6 +52,10 @@
   на 6 м/с), w — порывистость. `ordo_sun_dir` (vec3) — единичный вектор НА солнце (ставит мир).
   Процессорным эффектам (дым, частицы) те же значения отдаёт автозагрузка: `Ordo.wind`,
   `Ordo.sun_dir`; менять ветер — `Ordo.set_wind(v)` (шейдеры и процессор видят одно и то же).
+- `ordo_clouds` (vec4) — тени облаков на земле (сила, масштаб 1/м, снос м/с). Во всех `light()`
+  вместо `ATTENUATION` пишите `PAINT_ATTEN` (так делают `PAINT_LIGHT` и `CROWD_LIGHT`) — тогда тени
+  облаков ложатся одинаково на землю, траву, деревья, юрты и юнитов.
+- `paint_diffuse_soft(..., soft_mul)` — тот же живописный свет с более мягкой границей (юниты).
 - Скрипты, которые могут работать в безголовых тестах (`godot --script`), берут автозагрузку
   по пути: `get_node_or_null("/root/Ordo")` — по имени `Ordo` её там не видно.
 - `shaders/painterly_surface.gdshader` и `painterly_cutout.gdshader` — готовые материалы.

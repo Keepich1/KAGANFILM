@@ -17,6 +17,8 @@ TMP="$(mktemp -d)"
 FRAMES=$((SECS * 30))
 XVFB_SIZE="${SIZE}x24" "$ROOT/tools/godot.sh" --path "$ROOT" --resolution "$SIZE" --write-movie "$TMP/f.png" \
   --audio-driver Dummy --fixed-fps 30 --quit-after "$FRAMES" "$SCENE" -- "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio|^\s*$" | tail -5 || true
-ffmpeg -y -loglevel error -framerate 30 -i "$TMP/f%08d.png" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow "$OUT"
+# кадры пишутся в размер окна проекта — приводим к заказанному размеру
+ffmpeg -y -loglevel error -framerate 30 -i "$TMP/f%08d.png" -vf "scale=${SIZE/x/:}:flags=lanczos" \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow -an "$OUT"
 rm -rf "$TMP"
 echo "OK $OUT"
