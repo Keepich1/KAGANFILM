@@ -94,7 +94,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	if interactive and current:
+	if interactive:
 		_read_controls(delta)
 	var k := 1.0 - exp(-delta * 8.0)
 	focus = focus.lerp(_t_focus, k)
@@ -111,7 +111,8 @@ func _read_controls(delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_A): move.x -= 1.0
 	if Input.is_physical_key_pressed(KEY_D): move.x += 1.0
 	var vp := get_viewport()
-	if vp and DisplayServer.window_is_focused():
+	# края экрана — только когда эта камера уже текущая (иначе мышь у края сбивала бы кино)
+	if current and vp and DisplayServer.window_is_focused():
 		var m := vp.get_mouse_position()
 		var size := vp.get_visible_rect().size
 		if m.x >= 0 and m.y >= 0 and m.x <= size.x and m.y <= size.y:
