@@ -20,7 +20,7 @@ const SHOTS := [
 	["chop", {"work": 0.0, "near": Vector2(166, 30), "dist": 15.0, "yaw": -55.0, "pitch": 20.0}],
 	["dig", {"work": 0.25, "near": Vector2(266, -66), "dist": 15.0, "yaw": -60.0, "pitch": 22.0}],
 	["build", {"work": 0.5, "near": Vector2(214, 8), "dist": 15.0, "yaw": -50.0, "pitch": 22.0}],
-	["carry", {"work": 0.75, "near": Vector2(180, 20), "dist": 15.0, "yaw": -60.0, "pitch": 20.0}],
+	["carry", {"work": 0.75, "near": Vector2(180, 20), "dist": 9.0, "yaw": -60.0, "pitch": 16.0}],
 	["select", {"view": Vector4(150, 52, 78, -72), "select": ["drill", "urda"]}],
 	["fields", {"view": Vector4(168, -36, 72, -62), "pitch": 36.0}],
 	["herd_sheep", {"view": Vector4(-112, 68, 40, -64), "pitch": 28.0}],
