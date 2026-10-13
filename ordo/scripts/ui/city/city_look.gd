@@ -13,7 +13,7 @@ extends Node3D
 
 const STILLS := {"kokand": "res://docs/shots/03_rts.jpg", "kipchak": "res://docs/shots/02_camp_life.jpg"}
 ## Виды камеры по сторонам: (x, z, расстояние, азимут)
-const VIEWS := {"kokand": Vector4(116.0, 96.0, 82.0, 8.0), "kipchak": Vector4(-62.0, 34.0, 112.0, 14.0)}
+const VIEWS := {"kokand": Vector4(124.0, 66.0, 56.0, 32.0), "kipchak": Vector4(-62.0, 34.0, 112.0, 14.0)}
 
 var driver: FakeCityDriver
 var camera: RtsCamera

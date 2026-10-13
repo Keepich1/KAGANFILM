@@ -152,7 +152,8 @@ func _card(c: Dictionary, at: Vector2) -> void:
 		fl.size = Vector2(28, 28)
 		fl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bg.add_child(fl)
-	var nm := UiTheme.label(String(c.get("name", "")), UiTheme.head_bold(), 17, true)
+	var nm_text := String(c.get("name", ""))
+	var nm := UiTheme.label(nm_text, UiTheme.head_bold(), 17 if nm_text.length() <= 10 else (15 if nm_text.length() <= 12 else 13), true)
 	nm.position = Vector2(4, 78)
 	nm.size = Vector2(CARD.x - 8, 22)
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

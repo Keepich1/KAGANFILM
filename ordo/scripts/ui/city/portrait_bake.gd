@@ -14,6 +14,7 @@ var _frames := 0
 
 
 func _ready() -> void:
+	print("[портрет] начало, видов: ", IDS.size())
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 	for id in IDS:
 		_vps.append(_stage(id))
@@ -68,6 +69,7 @@ func _stage(id: String) -> SubViewport:
 
 func _process(_delta: float) -> void:
 	_frames += 1
+	print("[портрет] кадр ", _frames)
 	if _frames < 8:
 		return
 	set_process(false)

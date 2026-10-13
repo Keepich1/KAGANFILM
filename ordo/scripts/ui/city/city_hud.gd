@@ -5,9 +5,15 @@ extends CanvasLayer
 ## наконечник. Читает только GameQuery (FakeCity до I4) и SimEvents; приказы — через RtsInput (SimCmd).
 ## Обновление панелей 6–7 Гц, миникарты 4 Гц, записки — каждый кадр по курсору событий.
 ##
-##   var hud := CityHud.new()
-##   add_child(hud)
-##   hud.setup(driver.query, driver, selection, player, camera, rts_input)
+## Сборка в сцене «Города» (gorod.tscn, VIEW; образец — scripts/ui/city/city_look.gd):
+##   var selection := SelectionModel.new()                      # его же читает SelectionView
+##   var input := RtsInput.new(); add_child(input)              # ПОСЛЕ RtsCamera (колесо в режиме постройки)
+##   input.set_ghost(ghost_view)                                # GhostView: show_building / show_wall / hide
+##   input.setup(driver.query, selection, driver.local_player, driver.issue, camera, driver)
+##   var hud := CityHud.new(); add_child(hud)
+##   hud.setup(driver.query, driver, selection, driver.local_player, camera, input)
+##   camera.presets_enabled = false                             # цифры — группы; виды — F5–F8
+##   camera.edge_blocked = hud.blocks_edge_pan
 
 signal tab_opened(tab: StringName)
 
