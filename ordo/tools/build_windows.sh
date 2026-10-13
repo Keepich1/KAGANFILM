@@ -10,6 +10,11 @@ GODOT="${GODOT:-$(command -v godot || echo /opt/godot/godot)}"
 OUT="$ROOT/../build/windows"
 rm -rf "$OUT/Ordo" && mkdir -p "$OUT/Ordo"
 
+# номер сборки — в project.godot (application/config/version: подпись внизу главного меню) на время экспорта
+cp "$ROOT/project.godot" "$OUT/.project.godot.bak"
+trap 'cp "$OUT/.project.godot.bak" "$ROOT/project.godot"; rm -f "$OUT/.project.godot.bak"' EXIT
+sed -i "s|^config/name=\(.*\)$|config/name=\1\nconfig/version=\"$VER\"|" "$ROOT/project.godot"
+
 "$GODOT" --headless --path "$ROOT" --import >/dev/null 2>&1 || true
 "$GODOT" --headless --path "$ROOT" --export-release "Windows Desktop" "$OUT/Ordo/Ordo.exe" 2>&1 \
   | grep -vE "ALSA|audio|^\s*$" | grep -iE "error|warn|export" || true
