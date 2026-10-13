@@ -179,15 +179,28 @@ func _placeholder(gold: bool, st: int, seed: int) -> Node3D:
 	var rng := BattleRng.new(seed * 31 + 5)
 	var count: int = [0, 3, 6, 10][st]
 	var scale: float = [0.0, 0.55, 0.8, 1.0][st]
+	# валуны сливаются в один меш на материал (камень, золотая жила): мало вызовов отрисовки
+	var tools: Array[SurfaceTool] = [SurfaceTool.new(), SurfaceTool.new()]
+	var used := [false, false]
+	for t in tools:
+		t.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in count:
-		var mi := MeshInstance3D.new()
-		mi.mesh = _rock_meshes[rng.range_i(_rock_meshes.size())] if not _rock_meshes.is_empty() else BoxMesh.new()
-		mi.material_override = _gold_mat if gold and i % 3 == 0 else _rock_mat
+		var mesh: Mesh = _rock_meshes[rng.range_i(_rock_meshes.size())] if not _rock_meshes.is_empty() else BoxMesh.new()
+		var which := 1 if gold and i % 3 == 0 else 0
 		var a := rng.range_f(-PI, PI)
 		var r := rng.range_f(0.0, 3.2) * scale
 		var s := rng.range_f(0.7, 1.5) * scale * (1.4 if i == 0 else 1.0)
-		mi.transform = Transform3D(Basis(Vector3.UP, rng.range_f(-PI, PI)).scaled(Vector3(s, s * rng.range_f(0.7, 1.2), s)),
+		var xf := Transform3D(Basis(Vector3.UP, rng.range_f(-PI, PI)).scaled(Vector3(s, s * rng.range_f(0.7, 1.2), s)),
 			Vector3(sin(a) * r, -0.25 * s, cos(a) * r))
+		for surf in mesh.get_surface_count():
+			tools[which].append_from(mesh, surf, xf)
+		used[which] = true
+	for w in 2:
+		if not used[w]:
+			continue
+		var mi := MeshInstance3D.new()
+		mi.mesh = tools[w].commit()
+		mi.material_override = _gold_mat if w == 1 else _rock_mat
 		root.add_child(mi)
 	# щебень и (у золота) самородки
 	var k := BuildingLook.Kit.new()

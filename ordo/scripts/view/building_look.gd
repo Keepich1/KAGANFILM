@@ -604,7 +604,7 @@ static func _field(k: Kit, sz: Vector2) -> void:
 	var rows := int(sz.y / 1.1)
 	for i in rows:
 		var z := lerpf(-hz + 0.5, hz - 0.5, float(i) / (rows - 1))
-		k.box(Vector3(0, 0.14, z), Vector3(hx - 0.5, 0.1, 0.22), "hay", Color(0.62, 0.95, 0.42))
+		k.box(Vector3(0, 0.14, z), Vector3(hx - 0.5, 0.1, 0.36), "hay", Color(0.5, 0.8, 0.36))
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(sx * hx, 0.18, 0), Vector3(0.25, 0.18, hz), "rough", ADOBE_DARK)
 		k.box(Vector3(0, 0.18, sx * hz), Vector3(hx, 0.18, 0.25), "rough", ADOBE_DARK)

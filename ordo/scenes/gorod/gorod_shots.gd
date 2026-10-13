@@ -26,6 +26,7 @@ const SHOTS := [
 	["gold", {"work": 0.25, "near": Vector2(-56, 168), "dist": 18.0, "yaw": -70.0, "pitch": 24.0}],
 	["raid", {"view": Vector4(112, 132, 40, -60), "pitch": 28.0}],
 	["overview", {"view": Vector4(170, 170, 260, -25)}],
+	["overview_world", {"view": Vector4(170, 170, 260, -25), "hide_views": true}],
 ]
 
 
@@ -34,6 +35,9 @@ static func setup(scene: GorodScene, s: Array) -> void:
 	var q := CityView.query_of(scene.driver)
 	var cam := scene.camera
 	scene.ghost.hide_ghost()
+	# без видов «Города» — только мир (замер: сколько вызовов отрисовки добавляют виды)
+	(scene.get_node("Views") as Node3D).visible = not bool(cfg.get("hide_views", false))
+	(scene.get_node("HUD") as CanvasLayer).visible = not bool(cfg.get("hide_views", false))
 	scene.selection.set_selection(PackedInt32Array())
 	var view := Vector4.ZERO
 	if cfg.has("view"):

@@ -187,15 +187,17 @@ func _building_plate(cam: Camera3D, b: int) -> void:
 ## Табличка: орех, латунь, заклёпки, название слева и число справа; возвращает прямоугольник
 func _plate(p: Vector2, title: String, right: String, h: float) -> Rect2:
 	var fs := 15
-	var w := maxf(104.0, _title.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 56.0)
+	var tw := _title.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var rw := _font.get_string_size(right, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x if right != "" else 0.0
+	var w := maxf(104.0, tw + rw + 30.0)
 	var r := Rect2(p - Vector2(w * 0.5, h), Vector2(w, h))
 	draw_rect(r, WALNUT)
 	draw_rect(r, BRASS, false, 1.5)
 	for c: Vector2 in [r.position, r.position + Vector2(w, 0), r.position + Vector2(0, h), r.end]:
 		draw_circle(c, 2.2, BRASS)
-	draw_string(_title, r.position + Vector2(7, 15), title, HORIZONTAL_ALIGNMENT_LEFT, w - 50, fs, TEXT)
+	draw_string(_title, r.position + Vector2(7, 15), title, HORIZONTAL_ALIGNMENT_LEFT, w - rw - 18, fs, TEXT)
 	if right != "":
-		draw_string(_font, r.position + Vector2(w - 60, 15), right, HORIZONTAL_ALIGNMENT_RIGHT, 54, 13, TEXT)
+		draw_string(_font, r.position + Vector2(w - rw - 7, 15), right, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TEXT)
 	draw_line(Vector2(p.x, r.end.y), p + Vector2(0, 6), BRASS, 1.5)
 	return r
 
