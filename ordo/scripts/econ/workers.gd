@@ -13,6 +13,8 @@ extends RefCounted
 ##
 ## Модель ходки (тесты считают её из Defs): UnitEcon.gather — ЭФФЕКТИВНАЯ скорость при складе в 25 м
 ## (ECONOMY §1.1); сырая скорость у узла выводится так, чтобы ходка «ноша + 2 × 25 м пути» давала её.
+## Склад ближе 25 м быстрее не делает (ECONOMY §1.1: «эффективная скорость, когда склад не дальше 25 м»):
+## работа у узла или на поле начинается позже на недошедшие до 25 м шаги (w_t в будущем).
 ## Каждые лишние 20 м пути — около −15% (при ноше 30 и беге 3,8 м/с).
 
 enum Job { IDLE, TO_NODE, GATHER, TO_DROP, TO_SITE, BUILD, FARM, IN_ARBA, TO_FIELD, TO_PEN, HERD, TO_KILN, KILN,
@@ -124,7 +126,7 @@ func rate_for(utype: int, carry_milli: int, eff_milli_min: int) -> int:
 static func trip_model(carry_milli: int, raw_micro: int, v: float, d: float) -> float:
 	if raw_micro <= 0:
 		return 0.0
-	var cycle := float(carry_milli) * 1000.0 / float(raw_micro) + 2.0 * d / v * 30.0 + OVERHEAD
+	var cycle := float(carry_milli) * 1000.0 / float(raw_micro) + 2.0 * maxf(d, REF_M) / v * 30.0 + OVERHEAD
 	return float(carry_milli) / cycle * 1800.0
 
 
@@ -473,7 +475,8 @@ func _think(e: EconomySim, w: int) -> void:
 				_set_idle(e, w)
 			elif _arrived(e, w):
 				w_job[w] = Job.FARM
-				w_t[w] = e.tick
+				w_carry_res[w] = int(e.defs.b_work[e.buildings.btype[e.buildings.slot(w_target[w])]]["res"])
+				w_t[w] = e.tick + _near_pad(e, w, _upos(e, w))
 				w_mult[w] = _field_mult(e, e.buildings.slot(w_target[w]))
 				_wake_full(e, w, _farm_rate(e, w))
 				w_wake[w] = mini(w_wake[w], e.tick + 90)
@@ -534,8 +537,8 @@ func _start_gather(e: EconomySim, w: int) -> void:
 	var n := e.nodes.slot(w_target[w])
 	var r := e.nodes.res[n]
 	w_job[w] = Job.GATHER
-	w_t[w] = e.tick
 	w_carry_res[w] = r
+	w_t[w] = e.tick + _near_pad(e, w, _upos(e, w))
 	w_mult[w] = _gather_mult(e, w_owner[w], r, Vector2(e.nodes.x[n], e.nodes.z[n]))
 	_wake_full(e, w, _gather_rate(e, w, r))
 	e.port.set_work(w_unit[w], e.defs.n_work_aux[e.nodes.ntype[n]])
@@ -565,14 +568,16 @@ func _wake_full(e: EconomySim, w: int, rate: int) -> void:
 		w_wake[w] = e.tick + 90
 		return
 	var need := (w_cap[w] - w_carry[w]) * 1000 - w_frac[w]
-	w_wake[w] = e.tick + maxi(1, (need + rate - 1) / rate) + (w * 13) % JITTER
+	w_wake[w] = maxi(e.tick, w_t[w]) + maxi(1, (need + rate - 1) / rate) + (w * 13) % JITTER
 
 
 ## Учёт добычи с w_t по сей такт: ноша растёт, запас узла убывает (поле — бесконечно)
 func _account(e: EconomySim, w: int, rate: int) -> void:
 	var dt := e.tick - w_t[w]
+	if dt <= 0:
+		return                  # ещё не начал (склад ближе 25 м — _near_pad)
 	w_t[w] = e.tick
-	if dt <= 0 or rate <= 0:
+	if rate <= 0:
 		return
 	var micro := rate * dt + w_frac[w]
 	var milli := micro / 1000
@@ -644,13 +649,15 @@ func _next_node(e: EconomySim, w: int) -> void:
 
 # ---------------------------------------------------------------- склад
 
-func _to_drop(e: EconomySim, w: int) -> void:
+## Ближний склад для ноши работника из точки pos (слот, −1): принимает ресурс, для поля — из carry_to
+func _drop_for(e: EconomySim, w: int, pos: Vector2) -> int:
 	var r := w_carry_res[w]
+	if r < 0:
+		return -1
 	var carry_to := PackedInt32Array()
 	if Ids.kind(w_target[w]) == Ids.Kind.BUILDING and e.buildings.valid(w_target[w]):
 		var wkd: Dictionary = e.defs.b_work[e.buildings.btype[e.buildings.slot(w_target[w])]]
 		carry_to = wkd.get("carry_to", PackedInt32Array())
-	var pos := _upos(e, w)
 	var best := -1
 	var bd := INF
 	for b in e.drops_of(w_owner[w]):
@@ -662,6 +669,23 @@ func _to_drop(e: EconomySim, w: int) -> void:
 		if d < bd:
 			bd = d
 			best = b
+	return best
+
+
+## Склад ближе REF_M: тактов, на которые работа начинается позже, чтобы ходка не была короче, чем при 25 м
+func _near_pad(e: EconomySim, w: int, pos: Vector2) -> int:
+	var b := _drop_for(e, w, pos)
+	if b < 0:
+		return 0
+	var d := maxf(sqrt(e.rect_dist2(b, pos)) - 1.0, 0.0)        # до точки у края (отступ 1 м)
+	if d >= REF_M:
+		return 0
+	return int(2.0 * (REF_M - d) / speed[w_utype[w]] * 30.0)
+
+
+func _to_drop(e: EconomySim, w: int) -> void:
+	var pos := _upos(e, w)
+	var best := _drop_for(e, w, pos)
 	if best < 0:
 		# склада нет — ждать с ношей
 		w_job[w] = Job.TO_DROP
