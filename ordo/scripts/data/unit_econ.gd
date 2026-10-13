@@ -8,6 +8,8 @@ class_name UnitEcon
 ##   cost {ресурс: число} (конь кыпчакского всадника — "horse": 1, берётся из табуна), time — с;
 ##   pop — мест населения (1; пушка с расчётом — 3; арба — 0); upkeep — еды в минуту;
 ##   carry — сколько несёт за ходку; gather {ресурс: в секунду} (эффективно, склад ≤ 25 м);
+##   ноша 30 даёт правило ECONOMY §1.1 «каждые лишние 20 м пути — −15%» при беге 3,8–4 м/с
+##   (модель ходки — scripts/econ/workers.gd, EconWorkers.trip_raw);
 ##   build_rate — сила на стройке (1 — один работник; n работников — n^0,75); trained_at [здания];
 ##   squad_max — бойцов этого рода в отряде (0 — не в отряд); requires [здания] — нужны для найма;
 ##   unique — один на игрока; respawn_s — после гибели снова через; enabled.
@@ -17,7 +19,7 @@ class_name UnitEcon
 
 const UNITS := {
 	# ---------------------------------------------------------------- Коканд (ТЗ 3.1, ECONOMY §2.7)
-	"dehqon": {"cost": {"food": 50}, "time": 7, "pop": 1, "upkeep": 0.0, "carry": 10,
+	"dehqon": {"cost": {"food": 50}, "time": 7, "pop": 1, "upkeep": 0.0, "carry": 30,
 		"gather": {"food": 0.5, "wood": 0.5, "stone": 0.4, "gold": 0.35},
 		"build_rate": 1.0, "trained_at": ["urda"], "squad_max": 0},
 	"yuzboshi": {"cost": {"food": 60, "gold": 60}, "time": 14, "pop": 1, "upkeep": 1.4,
@@ -40,7 +42,7 @@ const UNITS := {
 	"lashkarboshi": {"cost": {"food": 150, "gold": 150}, "time": 30, "pop": 1, "upkeep": 1.4,
 		"trained_at": ["urda"], "unique": true, "respawn_s": 120, "squad_max": 0},
 	# ---------------------------------------------------------------- Кыпчаки (ТЗ 3.2, ECONOMY §3.2)
-	"malchy": {"cost": {"food": 45}, "time": 6, "pop": 1, "upkeep": 0.0, "carry": 10,
+	"malchy": {"cost": {"food": 45}, "time": 6, "pop": 1, "upkeep": 0.0, "carry": 30,
 		"gather": {"food": 0.5, "wood": 0.5, "stone": 0.4, "gold": 0.35},
 		"build_rate": 1.0, "trained_at": ["ordo"], "squad_max": 0},
 	"juz_bashy": {"cost": {"food": 60, "gold": 50, "horse": 1}, "time": 12, "pop": 1, "upkeep": 0.7,
