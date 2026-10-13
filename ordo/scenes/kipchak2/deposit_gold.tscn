@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/kipchak2/resource_deposit.gd" id="1"]
+
+[node name="DepositGold" type="Node3D"]
+script = ExtResource("1")
+kind = "gold"
+metadata/kind = "deposit_gold"
+metadata/footprint = Vector2(7.2, 6.6)
+metadata/side = "neutral"
+metadata/amount = 3000
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="WorkSpot_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.929416, 0, -0.369033, 0, 1, 0, 0.369033, 0, -0.929416, 1.23127, 0, 3.10099)
+
+[node name="WorkSpot_2" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.159562, 0, -0.987188, 0, 1, 0, 0.987188, 0, -0.159562, 3.54531, 0, 0.573039)
+
+[node name="WorkSpot_3" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.737626, 0, -0.675209, 0, 1, 0, 0.675209, 0, 0.737626, 2.31404, 0, -2.52795)
+
+[node name="WorkSpot_4" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.929416, 0, 0.369033, 0, 1, 0, -0.369033, 0, 0.929416, -1.23127, 0, -3.10099)
+
+[node name="WorkSpot_5" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.159562, 0, 0.987188, 0, 1, 0, -0.987188, 0, 0.159562, -3.54531, 0, -0.573039)
+
+[node name="WorkSpot_6" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.737626, 0, 0.675209, 0, 1, 0, -0.675209, 0, -0.737626, -2.31404, 0, 2.52795)
