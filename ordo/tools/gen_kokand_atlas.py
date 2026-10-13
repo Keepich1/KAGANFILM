@@ -1079,8 +1079,10 @@ def paint_bronze(w, h):
 
 
 def paint_banner(w, h):
-    """Знамя Коканда: изумрудное полотно, золотой полумесяц со звездой, золотая кайма,
-    свободный край — языками (вырез по альфе). x — от древка (0) к краю, y — сверху вниз."""
+    """Знамя Коканда: изумрудно-бирюзовое полотно, золотой медальон-шамса (восьмиконечная звезда
+    с розеткой и лучами), золотые полосы «вязи» сверху и снизу, золотая кайма и бахрома по
+    свободному краю (языки — вырез по альфе). Без полумесяца со звездой (не читается как
+    современный флаг). x — от древка (0) к краю, y — сверху вниз."""
     c = Canvas(w, h, base=EMERALD, seed=301, tile=False)
     c.underpaint([EMERALD, "#2a8068", "#35987c", "#267660"], cell=40, seed=301)
     c.strokes(260, ["#3aa080", "#226a56", "#2f8f74"], length=(30, 80), width=(8, 16), angle=0, angle_jitter=15,
@@ -1089,7 +1091,7 @@ def paint_banner(w, h):
     yy, xx = np.mgrid[0:H, 0:W] / c.ss
     s, q = xx / w, yy / h
     # свободный край: три языка
-    tongue = 0.86 + 0.12 * np.abs(np.sin(np.pi * q * 3)) ** 0.7
+    tongue = 0.8 + 0.1 * np.abs(np.sin(np.pi * q * 3)) ** 0.7
     inside = s < tongue
     fold = 0.86 + 0.16 * np.sin(s * 2 * np.pi * 3.5 + 0.6) * (0.3 + 0.7 * s)
     B.multiply(c, fold)
@@ -1103,16 +1105,45 @@ def paint_banner(w, h):
     sleeve = xx < 18
     img = np.where(sleeve[..., None], img * 0.62, img)
     c._blend(img)
-    # полумесяц со звездой
-    cx, cy, R = w * 0.42, h * 0.46, h * 0.26
-    c.ellipse(cx, cy, R, R, GOLD, 1.0)
-    c.ellipse(cx + R * 0.36, cy - R * 0.12, R * 0.82, R * 0.82, EMERALD, 1.0)
-    st = B.star_points(cx + R * 0.95, cy - R * 0.1, R * 0.32, R * 0.14, 5)
-    c.polygon(st, GOLD, 1.0, wobble=0.2)
-    for y in (h * 0.8,):
-        pts = [(x, y + 6 * math.sin(x / 14)) for x in np.linspace(30, w * 0.8, 30)]
-        c.line(pts, 3, GOLD, 0.9, wobble=0.3)
-    alpha = (inside | sleeve).astype(float)
+    # медальон-шамса: восьмиконечная звезда, бирюзовая розетка, золотые лучи
+    cx, cy, R = w * 0.43, h * 0.5, h * 0.27
+    for k in range(16):
+        a = k * math.pi / 8
+        c.line([(cx + math.cos(a) * R * 0.95, cy + math.sin(a) * R * 0.95),
+                (cx + math.cos(a) * R * 1.32, cy + math.sin(a) * R * 1.32)], 3.2 if k % 2 == 0 else 1.8, GOLD,
+               0.9, wobble=0.2, seed=k)
+    st = B.star_points(cx, cy, R, R * 0.66, 8, rot=math.pi / 8)
+    c.polygon([(x + 2, y + 3) for x, y in st], EMERALD_D, 0.6, wobble=0.2)
+    c.polygon(st, GOLD, 1.0, wobble=0.25)
+    c.line(st + [st[0]], 2.4, GOLD_D, 1.0, wobble=0.2)
+    c.ellipse(cx, cy, R * 0.55, R * 0.55, TURQ, 1.0)
+    c.polygon(B.star_points(cx, cy, R * 0.5, R * 0.3, 8), EMERALD_D, 1.0, wobble=0.2)
+    for k in range(8):
+        a = k * math.pi / 4
+        B.leaf(c, cx + math.cos(a) * R * 0.27, cy + math.sin(a) * R * 0.27, R * 0.34, R * 0.14, math.degrees(a),
+               GOLD_L, 1.0)
+    c.ellipse(cx, cy, R * 0.1, R * 0.1, GOLD, 1.0)
+    # полосы «вязи» золотом сверху и снизу
+    for yb in (h * 0.14, h * 0.86):
+        x = 30.0
+        k = 0
+        while x < w * 0.78:
+            if k % 3 == 0:
+                c.line([(x, yb + 7), (x + 1, yb - 9)], 2.6, GOLD, 1.0, wobble=0.2, seed=k)
+                x += 9
+            else:
+                c.line([(x, yb + 6), (x + 7, yb + 9), (x + 14, yb + 5), (x + 11, yb - 2)], 2.2, GOLD, 1.0,
+                       wobble=0.2, seed=k + 40)
+                x += 18
+            k += 1
+    # бахрома: частые золотые нити за краем языков
+    fr_len = 0.08
+    fringe = (s >= tongue) & (s < tongue + fr_len) & (np.sin(yy * 1.6) > -0.2)
+    img = np.asarray(c.img, dtype=np.float64)
+    gold_f = np.array(rgb8(GOLD), float) * (0.8 + 0.3 * (1 - (s - tongue) / fr_len))[..., None]
+    img = np.where(fringe[..., None], gold_f, img)
+    c._blend(img)
+    alpha = (inside | sleeve | fringe).astype(float)
     alpha = np.asarray(Image.fromarray((alpha * 255).astype(np.uint8)).resize((w, h), Image.LANCZOS), float) / 255
     return _with_alpha(c.image(), alpha)
 

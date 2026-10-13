@@ -350,18 +350,18 @@ func _town_cameras() -> void:
 	var t := Vector3(0, 0, 4)
 	var d := 90.0
 	var pitch := deg_to_rad(50.0)
-	var yaw := deg_to_rad(-22.0)
+	var yaw := deg_to_rad(-38.0)
 	var off := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * d
 	_cam("CamTown", t + off, t, 45.0).make_current()
 	# одобренная форма: кирпичная стена с поясом и зубцами, снаружи, на закатном свету
 	_cam("CamWallClose", Vector3(-22, 2.4, 36.5), Vector3(-15.5, 3.4, 26), 42.0)
 	_cam("CamUrda", Vector3(-9, 13, 17), Vector3(0, 5.5, -12), 45.0)
-	_cam("CamFields", Vector3(-30, 15, 66), Vector3(-17, 0, 42), 48.0)
+	_cam("CamFields", Vector3(-31, 14, 29), Vector3(-17, 0, 47), 50.0)
 	_cam("CamGate", Vector3(-8, 4.5, 41), Vector3(0, 4.0, 26), 45.0)
 	_cam("CamHouses", Vector3(-1, 10, 31), Vector3(-10, 1.5, 10), 45.0)
 	_cam("CamMilitary", Vector3(-8, 22, 2), Vector3(-23, 2, -21), 45.0)
 	_cam("CamEconomy", Vector3(8, 18, 14), Vector3(23, 2, -10), 45.0)
-	_cam("CamMill", Vector3(20, 7, 56), Vector3(32, 2, 42), 45.0)
+	_cam("CamMill", Vector3(45, 6.5, 33), Vector3(32, 2, 43), 45.0)
 	_cam("CamFar", Vector3(-150, 140, 210), Vector3(0, 0, 0), 30.0)
 	_cam("CamLow", Vector3(-20, 1.7, 36), Vector3(0, 6.0, 20), 52.0)
 
