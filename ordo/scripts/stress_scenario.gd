@@ -5,13 +5,27 @@ extends ScenarioClash
 ## автор проверяет, сколько солдат тянет его компьютер (ТЗ 11.5: 1000+ в бою).
 ##
 ## soldiers — сколько добавить (≈60% сарбозов отрядами по 100, ≈40% сайыскеров по 60).
+##
+## Сигналы ядра (выстрелы, залпы, смерти…) идут эффектам (BattleFx в срезе). Большой бой SimStepper
+## считает в фоне, а сигнал узла из фонового потока движок не пропускает («caller thread can't call
+## emit_signalp»), поэтому сигналы фонового шага копятся здесь и выходят на главном потоке — когда
+## фон свободен (SimStepper спрашивает restarts_next() перед следующим фоновым шагом) или следующим
+## шагом на главном потоке, в том же порядке. Состояние боя от этого не меняется.
 
 ## Сколько солдат добавить
 var soldiers := 1000
 
+## Сигналы ядра, которые узел передаёт дальше
+const RELAYED: Array[StringName] = [&"shot", &"volley", &"charge_ordered", &"impact", &"charge_hit",
+	&"melee_hit", &"death", &"war_cry", &"rout", &"rallied", &"battle_over"]
+
 var _kok_sq: Array[int] = []
 var _kip_sq: Array[int] = []
 var _ordered := false
+var _ev: Array = []               # [имя, аргументы] — сигналы фонового шага
+var _ev_lock := Mutex.new()
+var _main_tid := OS.get_main_thread_id()
+var _stepping := false
 
 
 func _ready() -> void:
@@ -43,8 +57,65 @@ func start(p_seed: int) -> void:
 	kip = _kip_sq[0]
 	gen = -1
 	# сигналы ядра — эффектам (дым залпов, вспышки, пыль натиска; срез подключает BattleFx)
+	_ev_lock.lock()
+	_ev.clear()
+	_ev_lock.unlock()
 	wire_sim(sim)
 	started.emit(p_seed)
+
+
+## Сигналы ядра → сигналы узла через _relay (фоновый шаг — в очередь, главный поток — сразу)
+func wire_sim(s: BattleSim) -> void:
+	for name in RELAYED:
+		s.connect(name, _relay.bind(name))
+
+
+func step() -> void:
+	_stepping = true
+	super.step()
+	_stepping = false
+
+
+## SimStepper зовёт это на главном потоке, когда фоновый шаг принят и следующий ещё не начат
+func restarts_next() -> bool:
+	_flush_events()
+	return super.restarts_next()
+
+
+func _relay(...args: Array) -> void:
+	var name: StringName = args.pop_back()
+	if OS.get_thread_caller_id() != _main_tid:
+		_ev_lock.lock()
+		var first := _ev.is_empty()
+		_ev.append([name, args])
+		_ev_lock.unlock()
+		if first:
+			_flush_events.call_deferred()
+		return
+	_flush_events()     # сначала то, что накопил фоновый шаг
+	_emit(name, args)
+
+
+## Накопленные сигналы — на главном потоке, пока фоновый шаг не идёт
+func _flush_events() -> void:
+	if OS.get_thread_caller_id() != _main_tid or _stepping:
+		return
+	_ev_lock.lock()
+	var q := _ev
+	_ev = []
+	_ev_lock.unlock()
+	for item in q:
+		_emit(item[0], item[1])
+
+
+func _emit(name: StringName, args: Array) -> void:
+	match name:
+		&"rout":
+			_on_rout(args[0], args[1])
+		&"battle_over":
+			_on_over(args[0])
+		_:
+			callv("emit_signal", [name] + args)
 
 
 func _ai() -> void:
