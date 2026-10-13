@@ -177,7 +177,7 @@ func _ai_kipchak(t: float) -> void:
 			# преследуем бегущих, потом собираемся
 			if _rout_t >= 0.0 and (t - _rout_t > PURSUE_TIME or sim.squad_alive(kok) == 0):
 				sim.order_move(kip, RALLY_POS, BattleSim.Gait.TROT, PI / 2)
-				sim.sq_melee[kip] = 0
+				sim.clear_melee(kip)
 				_kip_phase = 4
 		4:
 			if sim.sq_order[kip] == BattleSim.Order.HOLD:
