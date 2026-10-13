@@ -353,8 +353,9 @@ func _test_defensive_and_sleep() -> void:
 # ================================================================= буферы
 
 func _test_events() -> void:
-	print("[буферы: смерти, прибытия]")
-	var port := _make_port()
+	print("[буферы: смерти, прибытия; бегство домой]")
+	# дома команд — на юге и на севере (не по оси X, как бегство среза)
+	var port := _make_port({"homes": PackedVector2Array([Vector2(90, 400), Vector2(90, -400)])})
 	var sim := port.sim
 	var base := SimHarness.flat_spot()
 	var a := port.spawn_squad(0, 0, &"kilichboz", 30, base + Vector2(10, 0), -PI / 2, &"", 0, 15)
@@ -369,8 +370,20 @@ func _test_events() -> void:
 	var recs := {}
 	var rec_dup := false
 	var killer_ok := true
+	var flee_start := {}     # отряд → [такт, z центра] в начале бегства
+	var flee_ok := 0
+	var flee_seen := 0
 	for t in 1500:
 		_tick(port)
+		for sq in [Ids.slot(a), Ids.slot(b)]:
+			if sim.sq_status[sq] == BattleSim.Status.FLEE and sim.sq_alive[sq] > 0:
+				if not flee_start.has(sq):
+					flee_start[sq] = [t, sim.sq_cz[sq]]
+				elif t - int(flee_start[sq][0]) == 60:
+					flee_seen += 1
+					var home_z := 400.0 if sim.sq_side[sq] == 0 else -400.0
+					if absf(home_z - sim.sq_cz[sq]) < absf(home_z - float(flee_start[sq][1])) - 3.0:
+						flee_ok += 1
 		var d := port.take_deaths()
 		for i in range(0, d.size(), 2):
 			rec_dup = rec_dup or recs.has(d[i])
@@ -383,6 +396,7 @@ func _test_events() -> void:
 	SimHarness.check(signals.size() > 10 and recs.size() == signals.size() and not dup and not rec_dup,
 		"одна запись на смерть (%d записей, %d сигналов)" % [recs.size(), signals.size()])
 	SimHarness.check(killer_ok, "убийца — из другой команды")
+	SimHarness.check(flee_seen >= 1 and flee_ok == flee_seen, "бегут домой (FleeMode.HOME): %d из %d" % [flee_ok, flee_seen])
 	sim.death.disconnect(on_death)  # иначе цикл ссылок «ядро → сигнал → лямбда → ядро»
 	# прибытие: одна запись на приказ
 	var s := port.spawn(0, 0, &"dehqon", base + Vector2(0, 60), 0.0)
