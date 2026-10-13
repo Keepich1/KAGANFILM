@@ -1079,6 +1079,8 @@ func allow_charge(s: int, ok := true) -> void:
 ## Стрелки: огонь шеренгами по отряду target, когда он ближе dist (не дальше дальности)
 func set_fire(s: int, target: int, dist: float) -> void:
 	sq_fire_target[s] = target
+	if target < 0:
+		return
 	var rmax := t_range[sq_type[s]]
 	if own_mods.size() > 0:
 		rmax *= owner_mod(sq_owner[s], MOD_RANGE)
@@ -1931,8 +1933,8 @@ func squad_speed(s: int) -> float:
 	return v * _tired(s)
 
 
-## Стреляет ли род (мушкет, лук, пушка)
-func _is_ranged(ti: int) -> bool:
+## Стреляет ли род ti (мушкет, лук, пушка) — для порта и ядра
+func is_ranged_type(ti: int) -> bool:
 	return t_flags[ti] & (UnitStats.MUSKET | UnitStats.BOW | UnitStats.CANNON) != 0 and t_range[ti] > 0.0
 
 
@@ -2059,7 +2061,7 @@ func _squad_step(s: int) -> void:
 				var dpz := p.y - sq_cz[s]
 				var dp := sqrt(dpx * dpx + dpz * dpz)
 				face_st = atan2(dpx, dpz)
-				if _is_ranged(ti):
+				if is_ranged_type(ti):
 					var rmax := t_range[ti] * (owner_mod(sq_owner[s], MOD_RANGE) if has_mods else 1.0)
 					if dp <= rmax * 0.8:
 						tx = sq_x[s]
@@ -2162,8 +2164,9 @@ func _squad_step(s: int) -> void:
 			sq_z[s] += dz / dist * stepd
 	elif sq_order[s] == Order.MOVE:
 		var m1 := sq_members[s][0] if fast else -1
-		if m1 >= 0 and (u_x[m1] - sq_x[s]) * (u_x[m1] - sq_x[s]) + (u_z[m1] - sq_z[s]) * (u_z[m1] - sq_z[s]) > 1.0:
-			pass  # одиночка: прибытие — когда сам боец у цели
+		if m1 >= 0 and (u_x[m1] - sq_x[s]) * (u_x[m1] - sq_x[s]) + (u_z[m1] - sq_z[s]) * (u_z[m1] - sq_z[s]) > 1.0 \
+				and sq_stuck[s] < 90:
+			sq_stuck[s] += 1  # одиночка: прибытие — когда сам боец у цели (или через 3 с: место занято)
 		else:
 			order_hold(s, sq_th[s])
 			if collect_events:
@@ -2430,7 +2433,7 @@ func _units_think() -> void:
 			if sq_status[u_squad[tg]] == Status.FLEE:
 				spd = vmax  # погоня
 			_try_melee(u, tg, rr)
-		elif sq_st_target[s] >= 0 and (sq_melee[s] == 1 or sq_single[s] == 1) and not _is_ranged(ti):
+		elif sq_st_target[s] >= 0 and (sq_melee[s] == 1 or sq_single[s] == 1) and not is_ranged_type(ti):
 			# ломать постройку (R8): к ближней точке стены
 			var sst := sq_st_target[s]
 			var sp := st_nearest(sst, x, z)

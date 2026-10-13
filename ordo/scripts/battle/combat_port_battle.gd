@@ -25,7 +25,7 @@ const TRACK_PERIOD := 15            # тактов между проверкам
 const TRACK_MOVED := 8.0            # м: цель ушла — новый путь
 const RESERVE := 2048               # юнитов и отрядов по умолчанию (cfg reserve_units / reserve_squads)
 
-enum K { NONE, MOVE, ATTACK, ATTACK_ST, AMOVE }
+enum K { NONE, MOVE, ATTACK, ATTACK_ST, AMOVE, FIRE }   # FIRE — стрелки бьют отряд с дистанции
 
 var sim: BattleSim
 var defs: Defs
@@ -208,7 +208,7 @@ func is_idle(h: int) -> bool:
 	if s < 0:
 		return false
 	_ensure()
-	return sim.squad_idle(s) and _o_kind[s] != K.AMOVE and _o_ticket[s] == 0
+	return sim.squad_idle(s) and _o_kind[s] != K.AMOVE and _o_kind[s] != K.FIRE and _o_ticket[s] == 0
 
 
 func hurt_within(u_h: int, ticks: int) -> bool:
@@ -268,7 +268,14 @@ func attack(hs: PackedInt32Array, target_h: int, run := true) -> void:
 		if sim.sq_side[ts] == sim.sq_side[s] or ts == s:
 			continue
 		_clear_work(s)
+		var ti := sim.sq_type[s]
+		if sim.is_ranged_type(ti):
+			# стрелки: встают на 0,75 дальности и бьют залпами (как сарбозы среза)
+			_fire_at(s, ts, target_h, gait)
+			continue
 		sim.order_attack(s, ts, gait)
+		if sim.t_charge[ti] > 1.0 and sim.t_flags[ti] & UnitStats.MOUNTED != 0:
+			sim.allow_charge(s, true)
 		_set_order(s, K.ATTACK, tp, gait, NAN, target_h)
 		_o_tpos[s] = tp
 		_request(PackedInt32Array([s]), PackedVector2Array([tp]), tp)
@@ -663,6 +670,26 @@ func _move_line(sqs: PackedInt32Array, a: Vector2, b: Vector2, gait: int) -> voi
 		_request(PackedInt32Array([s]), PackedVector2Array([mid]), mid)
 
 
+## Стрелки по отряду ts: дальше 0,75 дальности — подойти на неё (лицом к цели), ближе — стоять; огонь шеренгами
+func _fire_at(s: int, ts: int, target_h: int, gait: int) -> void:
+	var ti := sim.sq_type[s]
+	var rmax := sim.t_range[ti] * sim.owner_mod(sim.sq_owner[s], BattleSim.MOD_RANGE)
+	var me := sim.squad_centroid(s)
+	var tp := sim.squad_centroid(ts)
+	var d := me.distance_to(tp)
+	var facing := atan2(tp.x - me.x, tp.y - me.y)
+	sim.set_fire(s, ts, rmax)
+	if d > rmax * 0.8:
+		var goal := tp + (me - tp) / maxf(d, 0.01) * rmax * 0.75
+		_order_move(s, goal, gait, facing, K.FIRE)
+		_request(PackedInt32Array([s]), PackedVector2Array([goal]), goal)
+	else:
+		sim.order_hold(s, facing)
+		_set_order(s, K.FIRE, me, gait, facing)
+	_o_target[s] = target_h
+	_o_tpos[s] = tp
+
+
 func _amove_gait(s: int) -> int:
 	return BattleSim.Gait.TROT if sim.t_flags[sim.sq_type[s]] & UnitStats.MOUNTED != 0 else BattleSim.Gait.WALK
 
@@ -730,9 +757,19 @@ func _amove_scan() -> void:
 				_request(PackedInt32Array([s]), PackedVector2Array([_o_goal[s]]), _o_goal[s])
 
 
-## Цель атаки ушла дальше 8 м от того места, куда просили путь — путь заново
+## Цель атаки ушла дальше 8 м от того места, куда просили путь — путь заново; стрелки — новое место
 func _track_targets() -> void:
 	for s in _o_kind.size():
+		if _o_kind[s] == K.FIRE and (s + tick) % TRACK_PERIOD == 0 and _o_ticket[s] == 0:
+			var th := _o_target[s]
+			var ts := _squad_index(th)
+			if sim.sq_used[s] == 0 or sim.sq_gen[s] != _o_gen[s] or ts < 0 or sim.sq_alive[ts] == 0:
+				_o_kind[s] = K.NONE
+				if sim.sq_used[s] == 1:
+					sim.set_fire(s, -1, 0.0)
+			elif sim.squad_centroid(ts).distance_to(_o_tpos[s]) > TRACK_MOVED:
+				_fire_at(s, ts, th, _o_gait[s])
+			continue
 		if _o_kind[s] != K.ATTACK or (s + tick) % TRACK_PERIOD != 0 or _o_ticket[s] != 0:
 			continue
 		if sim.sq_order[s] != BattleSim.Order.ATTACK or not valid(_o_target[s]):
