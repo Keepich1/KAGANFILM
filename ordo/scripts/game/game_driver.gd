@@ -13,6 +13,8 @@ signal ticked(tick: int)
 @export var autostart := true
 @export var player_faction := &"kokand"
 @export var difficulty := 0
+## Местный игрок тоже ИИ (смотреть бой двух ИИ)
+@export var ai_vs_ai := false
 
 var game: GameSim
 var query: GameQuery
@@ -35,6 +37,7 @@ func _ready() -> void:
 			player_faction = StringName(ordo.arg("faction"))
 		if ordo.has_arg("difficulty"):
 			difficulty = clampi(int(ordo.arg("difficulty")), 0, 2)
+		ai_vs_ai = ai_vs_ai or ordo.has_arg("ai_vs_ai")
 		replay_path = ordo.arg("replay", "")
 		save_path = ordo.arg("save_replay", "")
 	if replay_path != "":
@@ -53,10 +56,7 @@ func start_game(p_seed: int, p_faction: StringName, p_difficulty: int) -> void:
 	player_faction = p_faction
 	difficulty = p_difficulty
 	var other := &"kipchak" if p_faction == &"kokand" else &"kokand"
-	var ctrl0 := PlayerTable.Ctrl.HUMAN
-	var ordo := get_node_or_null("/root/Ordo")
-	if ordo and ordo.has_arg("ai_vs_ai"):
-		ctrl0 = PlayerTable.Ctrl.AI
+	var ctrl0 := PlayerTable.Ctrl.AI if ai_vs_ai else PlayerTable.Ctrl.HUMAN
 	var players: Array[Dictionary] = [
 		{"faction": p_faction, "team": 0, "ctrl": ctrl0, "difficulty": p_difficulty},
 		{"faction": other, "team": 1, "ctrl": PlayerTable.Ctrl.AI, "difficulty": p_difficulty}]

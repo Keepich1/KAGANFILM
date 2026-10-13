@@ -74,8 +74,9 @@ const MAP := {
 		["stone", Vector2(-32, -126), -1],
 	],
 	"dam_sites": [Vector2(160, -170.5), Vector2(320, -187.8)],
+	# края набегов — на проходимой земле (уклон клетки 4 м < 0,75; ARCHITECTURE §9)
 	"raid_edges": [Vector2(-340, 40), Vector2(-200, 300), Vector2(120, 300), Vector2(280, 140), Vector2(120, -290),
-		Vector2(0, 300), Vector2(-380, 180)],
+		Vector2(0, 300)],
 	"zones": {"jailoo": [Vector3(-60, -270, 150)], "kyshtoo": [Vector3(-120, 230, 120)]},
 	"ai_base": {"tower_offsets": [Vector2(-28, -20), Vector2(-28, 20)]},
 }

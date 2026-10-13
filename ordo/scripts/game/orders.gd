@@ -17,6 +17,7 @@ var last_reject := 0            # причина последнего отказ
 var _defs: Defs
 var _rules := {}
 var _port: CombatPort
+var _nav: NavApi
 var _econ: EconApi
 var _events: SimEvents
 var _victory: Victory
@@ -27,6 +28,7 @@ func setup(p_game: GameSim) -> void:
 	_defs = p_game.defs
 	_rules = p_game.rules
 	_port = p_game.port
+	_nav = p_game.nav
 	_econ = p_game.econ
 	_events = p_game.events
 	_victory = p_game.victory
@@ -352,7 +354,7 @@ func _spawn(p: int, cmd: PackedInt32Array) -> int:
 	var officer := SimCmd.arg(cmd, 5)
 	if u >= _defs.unit_ids.size() or officer >= _defs.unit_ids.size() or count > SimCmd.MAX_IDS:
 		return -Err.INVALID
-	var at := SimCmd.arg_pos(cmd, 2)
+	var at := _nav.nearest_passable(P.team[p], SimCmd.arg_pos(cmd, 2))
 	var heading := SimCmd.arg_angle(cmd, 4)
 	if is_nan(heading):
 		heading = 0.0
