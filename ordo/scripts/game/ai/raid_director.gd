@@ -10,7 +10,8 @@ extends AiController
 ##              прочее — raid_value постройки; минус охрана и башни в risk_r (60 м); клетка пропускается,
 ##              если охраны больше skip_guard × волну. Ничья — меньший номер клетки.
 ##   STRIKE   — каждый отряд бьёт ближайшего работника (по одному на отряд), иначе идёт к отаре/табуну
-##              (угон — ECON, по близости налётчиков), иначе ломает постройки (поля первыми, ставка — последней);
+##              (угон — ECON, по близости налётчиков; охраняемое 20 с — бросает), иначе ломает постройки:
+##              поля, склады и тўғон, прочие, укрепления, ставка — последней;
 ##              целей рядом нет — новая цель по карте ценности.
 ##   RETREAT  — потери ≥ retreat.losses, охраны в 1,5 раза больше, предел времени набега или угнанное стадо:
 ##              назад к краю; дошедшие уходят из мира (NOTE_REMOVE; ECON зачитывает угнанное), RAID_ENDED.
@@ -641,7 +642,8 @@ func _herds_near(gq: GameQueryImpl, c: Vector2) -> PackedInt32Array:
 	return out
 
 
-## Постройки врага в STRIKE_R: поля первыми, ставка последней, дальше — ближние
+## Постройки врага в STRIKE_R: поля, потом склады и тўғон, потом прочие, укрепления, ставка — последней;
+## внутри разряда — ближние
 func _buildings_near(gq: GameQueryImpl, c: Vector2) -> PackedInt32Array:
 	var defs := gq.defs()
 	var B := gq.buildings()
@@ -660,7 +662,16 @@ func _buildings_near(gq: GameQueryImpl, c: Vector2) -> PackedInt32Array:
 		var k := defs.b_kind[bt]
 		if k == Defs.BKind.LINK:
 			continue
-		var rank := 0.0 if k == Defs.BKind.FIELD else (2.0e6 if defs.b_flags[bt] & Defs.BF_HQ else 1.0e6)
+		var fl := defs.b_flags[bt]
+		var rank := 1.0e6
+		if k == Defs.BKind.FIELD:
+			rank = 0.0
+		elif fl & Defs.BF_HQ:
+			rank = 3.0e6
+		elif fl & Defs.BF_DROP or k == Defs.BKind.DAM:
+			rank = 0.5e6
+		elif k == Defs.BKind.TOWER or k == Defs.BKind.WALL or k == Defs.BKind.GATE:
+			rank = 2.0e6
 		_insert_sorted(out, ds, B.handle(b), rank + d)
 	return out
 
