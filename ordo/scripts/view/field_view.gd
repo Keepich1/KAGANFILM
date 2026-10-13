@@ -48,7 +48,7 @@ func _process(delta: float) -> void:
 	if _t < period:
 		return
 	_t = 0.0
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	refresh()
 	CityView.mark(&"view_fields", t0)
 

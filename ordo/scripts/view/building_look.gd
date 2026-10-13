@@ -38,11 +38,13 @@ const R := {
 	"koshma": Rect2(1560, 696, 256, 224), "wattle": Rect2(1032, 696, 512, 224), "iron": Rect2(1080, 1464, 256, 256),
 	"saddlecloth": Rect2(536, 1736, 256, 256), "eave": Rect2(1032, 408, 1008, 128), "rope": Rect2(1832, 696, 64, 224),
 	"tile": Rect2(0, 0, 0, 0),
+	"adobe": Rect2(1512, 1736, 256, 256), "rough": Rect2(808, 1464, 256, 256),
 }
 ## Сколько метров на один повтор области
 const M := {"earth": 3.0, "stones": 2.0, "planks": 2.0, "lattice": 1.6, "wood": 2.0, "walnut": 2.0, "pole": 1.0,
 	"bark": 1.5, "logend": 0.6, "felt": 2.5, "felt_grey": 2.5, "wall_boz": 8.0, "dome": 8.0, "door": 2.0, "hay": 2.0,
-	"koshma": 3.0, "wattle": 3.0, "iron": 1.0, "saddlecloth": 2.0, "eave": 8.0, "rope": 1.0, "tile": 1.0}
+	"koshma": 3.0, "wattle": 3.0, "iron": 1.0, "saddlecloth": 2.0, "eave": 8.0, "rope": 1.0, "tile": 1.0,
+	"adobe": 2.8, "rough": 2.2}
 
 ## Тон глины, извести, дерева (Коканд), войлока (кыпчаки)
 const ADOBE := Color(1.22, 1.08, 0.88)
@@ -372,6 +374,7 @@ static func scaffold_mesh(defs: Defs, btype: int, height: float) -> ArrayMesh:
 		return _mesh_cache[key]
 	var k := Kit.new()
 	k.scaffold = true
+	var wood := Color(0.62, 0.52, 0.44)
 	var sz := defs.b_size[btype]
 	var hx := sz.x * 0.5 + 0.6
 	var hz := sz.y * 0.5 + 0.6
@@ -381,7 +384,7 @@ static func scaffold_mesh(defs: Defs, btype: int, height: float) -> ArrayMesh:
 		# поле: колышки и шнур по краю
 		for i in 4:
 			var c := Vector3(hx if i % 2 == 0 else -hx, 0.4, hz if i < 2 else -hz)
-			k.box(c, Vector3(0.06, 0.4, 0.06), "pole", WOOD)
+			k.box(c, Vector3(0.06, 0.4, 0.06), "pole", wood)
 		k.box(Vector3(0, 0.6, hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.2, 1.1, 0.9))
 		k.box(Vector3(0, 0.6, -hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.2, 1.1, 0.9))
 	else:
@@ -391,21 +394,21 @@ static func scaffold_mesh(defs: Defs, btype: int, height: float) -> ArrayMesh:
 		for i in nx:
 			var x := lerpf(-hx, hx, float(i) / (nx - 1))
 			for zz: float in [-hz, hz]:
-				k.box(Vector3(x, h * 0.5, zz), Vector3(0.08, h * 0.5, 0.08), "pole", WOOD)
+				k.box(Vector3(x, h * 0.5, zz), Vector3(0.08, h * 0.5, 0.08), "pole", wood)
 		for j in nz:
 			var z := lerpf(-hz, hz, float(j) / (nz - 1))
 			for xx: float in [-hx, hx]:
-				k.box(Vector3(xx, h * 0.5, z), Vector3(0.08, h * 0.5, 0.08), "pole", WOOD)
+				k.box(Vector3(xx, h * 0.5, z), Vector3(0.08, h * 0.5, 0.08), "pole", wood)
 		var levels := maxi(1, int(h / 2.2))
 		for lv in levels:
 			var y := (lv + 1) * h / (levels + 0.4)
-			k.box(Vector3(0, y, hz), Vector3(hx, 0.05, 0.35), "planks", WOOD)
-			k.box(Vector3(0, y, -hz), Vector3(hx, 0.05, 0.35), "planks", WOOD)
-			k.box(Vector3(hx, y, 0), Vector3(0.35, 0.05, hz), "planks", WOOD)
-			k.box(Vector3(-hx, y, 0), Vector3(0.35, 0.05, hz), "planks", WOOD)
+			k.box(Vector3(0, y, hz), Vector3(hx, 0.05, 0.35), "planks", wood)
+			k.box(Vector3(0, y, -hz), Vector3(hx, 0.05, 0.35), "planks", wood)
+			k.box(Vector3(hx, y, 0), Vector3(0.35, 0.05, hz), "planks", wood)
+			k.box(Vector3(-hx, y, 0), Vector3(0.35, 0.05, hz), "planks", wood)
 		# кучи кирпича/брёвен у стройки
-		k.box(Vector3(hx + 1.2, 0.35, hz * 0.4), Vector3(0.7, 0.35, 0.5), "earth", ADOBE_DARK)
-		k.box(Vector3(-hx - 1.0, 0.2, -hz * 0.3), Vector3(0.25, 0.2, 1.1), "bark", WOOD)
+		k.box(Vector3(hx + 1.2, 0.35, hz * 0.4), Vector3(0.7, 0.35, 0.5), "rough", ADOBE_DARK)
+		k.box(Vector3(-hx - 1.0, 0.2, -hz * 0.3), Vector3(0.25, 0.2, 1.1), "bark", wood)
 	var m := k.commit()
 	_mesh_cache[key] = m
 	return m
@@ -425,7 +428,7 @@ static func rubble_mesh(defs: Defs, btype: int) -> ArrayMesh:
 		var c := Vector3(rng.range_f(-0.45, 0.45) * sz.x, 0.0, rng.range_f(-0.45, 0.45) * sz.y)
 		var s := Vector3(rng.range_f(0.5, 1.4), rng.range_f(0.2, 0.6), rng.range_f(0.5, 1.2))
 		c.y = s.y
-		k.box(c, s, "earth" if defs.b_faction[btype] == "kokand" else "felt_grey", ADOBE_DARK)
+		k.box(c, s, "rough" if defs.b_faction[btype] == "kokand" else "felt_grey", ADOBE_DARK)
 	for i in 3:
 		var c := Vector3(rng.range_f(-0.4, 0.4) * sz.x, 0.25, rng.range_f(-0.4, 0.4) * sz.y)
 		k.box(c, Vector3(rng.range_f(1.0, 2.2), 0.09, 0.09), "bark", Color(0.4, 0.33, 0.28), rng.range_f(-1.5, 1.5))
@@ -443,10 +446,10 @@ static func _house(k: Kit, sz: Vector2, h: float, aivan: bool, tiles: bool) -> v
 	var porch := 1.8 if aivan else 0.0
 	var body_hz := hz - porch * 0.5
 	var cz := -porch * 0.5
-	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.25, 0.2, hz + 0.25), "earth", ADOBE_DARK)          # цоколь
-	k.box(Vector3(0, h * 0.5, cz), Vector3(hx, h * 0.5, body_hz), "earth", ADOBE)               # стены
-	k.box(Vector3(0, h + 0.12, cz), Vector3(hx + 0.35, 0.14, body_hz + 0.35), "earth", ADOBE_DARK)  # кровля
-	k.box(Vector3(0, h + 0.38, cz), Vector3(hx + 0.2, 0.12, body_hz + 0.2), "earth", Color(0.95, 0.82, 0.62))
+	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.25, 0.2, hz + 0.25), "rough", ADOBE_DARK)          # цоколь
+	k.box(Vector3(0, h * 0.5, cz), Vector3(hx, h * 0.5, body_hz), "adobe", ADOBE)               # стены
+	k.box(Vector3(0, h + 0.12, cz), Vector3(hx + 0.35, 0.14, body_hz + 0.35), "rough", ADOBE_DARK)  # кровля
+	k.box(Vector3(0, h + 0.38, cz), Vector3(hx + 0.2, 0.12, body_hz + 0.2), "rough", Color(0.95, 0.82, 0.62))
 	# торцы балок под кровлей
 	var nb := maxi(2, int(sz.x / 1.2))
 	for i in nb:
@@ -454,7 +457,7 @@ static func _house(k: Kit, sz: Vector2, h: float, aivan: bool, tiles: bool) -> v
 		k.box(Vector3(x, h - 0.1, cz + body_hz + 0.3), Vector3(0.09, 0.09, 0.3), "logend", WOOD)
 	# дверь и окна-решётки (панджара) на фасаде
 	var fz := cz + body_hz + 0.02
-	k.box(Vector3(0, 1.05, fz), Vector3(0.6, 1.05, 0.04), "door", Color(0.85, 0.75, 0.65))
+	k.box(Vector3(0, 1.05, fz), Vector3(0.6, 1.05, 0.04), "walnut", Color(0.85, 0.75, 0.65))
 	if sz.x > 7.0:
 		for sx: float in [-1.0, 1.0]:
 			k.box(Vector3(sx * hx * 0.55, h * 0.55, fz), Vector3(0.45, 0.45, 0.04), "lattice", WOOD)
@@ -476,38 +479,38 @@ static func _urda(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5
 	var hz := sz.y * 0.5
 	var wh := 4.2
-	k.box(Vector3(0, 0.15, 0), Vector3(hx + 0.3, 0.15, hz + 0.3), "earth", ADOBE_DARK)
+	k.box(Vector3(0, 0.15, 0), Vector3(hx + 0.3, 0.15, hz + 0.3), "rough", ADOBE_DARK)
 	# ограда (передняя стена — с проёмом под портал)
-	k.box(Vector3(0, wh * 0.5, -hz + 0.4), Vector3(hx, wh * 0.5, 0.4), "earth", ADOBE)
-	k.box(Vector3(-hx + 0.4, wh * 0.5, 0), Vector3(0.4, wh * 0.5, hz), "earth", ADOBE)
-	k.box(Vector3(hx - 0.4, wh * 0.5, 0), Vector3(0.4, wh * 0.5, hz), "earth", ADOBE)
+	k.box(Vector3(0, wh * 0.5, -hz + 0.4), Vector3(hx, wh * 0.5, 0.4), "adobe", ADOBE)
+	k.box(Vector3(-hx + 0.4, wh * 0.5, 0), Vector3(0.4, wh * 0.5, hz), "adobe", ADOBE)
+	k.box(Vector3(hx - 0.4, wh * 0.5, 0), Vector3(0.4, wh * 0.5, hz), "adobe", ADOBE)
 	for sx: float in [-1.0, 1.0]:
-		k.box(Vector3(sx * (hx * 0.5 + 1.6), wh * 0.5, hz - 0.4), Vector3(hx * 0.5 - 1.6, wh * 0.5, 0.4), "earth", ADOBE)
+		k.box(Vector3(sx * (hx * 0.5 + 1.6), wh * 0.5, hz - 0.4), Vector3(hx * 0.5 - 1.6, wh * 0.5, 0.4), "adobe", ADOBE)
 	# зубцы
 	var nm := int(sz.x / 1.4)
 	for i in nm:
 		var x := lerpf(-hx + 0.6, hx - 0.6, float(i) / (nm - 1))
-		k.box(Vector3(x, wh + 0.3, -hz + 0.4), Vector3(0.32, 0.3, 0.42), "earth", ADOBE)
-		k.box(Vector3(x * 0.98, wh + 0.3, hz - 0.4), Vector3(0.32, 0.3, 0.42), "earth", ADOBE)
+		k.box(Vector3(x, wh + 0.3, -hz + 0.4), Vector3(0.32, 0.3, 0.42), "adobe", ADOBE)
+		k.box(Vector3(x * 0.98, wh + 0.3, hz - 0.4), Vector3(0.32, 0.3, 0.42), "adobe", ADOBE)
 	# угловые башни-гульдаста
 	for sx: float in [-1.0, 1.0]:
 		for sz2: float in [-1.0, 1.0]:
-			k.cyl(Vector3(sx * (hx - 0.6), 0, sz2 * (hz - 0.6)), 1.25, 1.0, wh + 1.6, 12, "earth", ADOBE)
-			k.cone(Vector3(sx * (hx - 0.6), wh + 1.6, sz2 * (hz - 0.6)), 1.15, 0.9, 12, "earth", ADOBE_DARK)
+			k.cyl(Vector3(sx * (hx - 0.6), 0, sz2 * (hz - 0.6)), 1.25, 1.0, wh + 1.6, 12, "adobe", ADOBE)
+			k.cone(Vector3(sx * (hx - 0.6), wh + 1.6, sz2 * (hz - 0.6)), 1.15, 0.9, 12, "rough", ADOBE_DARK)
 	# портал-пештак: высокий, рама из изразцов, тёмная ниша, дверь
 	var pz := hz - 0.6
-	k.box(Vector3(0, 4.6, pz), Vector3(3.2, 4.6, 0.9), "earth", PLASTER)
+	k.box(Vector3(0, 4.6, pz), Vector3(3.2, 4.6, 0.9), "adobe", PLASTER)
 	k.box(Vector3(0, 4.9, pz + 0.92), Vector3(2.9, 4.0, 0.03), "tile", Color(1, 1, 1))
-	k.box(Vector3(0, 3.4, pz + 0.96), Vector3(1.7, 3.2, 0.03), "earth", SHADE)
-	k.box(Vector3(0, 1.35, pz + 0.99), Vector3(0.95, 1.35, 0.03), "door", Color(0.9, 0.78, 0.62))
+	k.box(Vector3(0, 3.4, pz + 0.96), Vector3(1.7, 3.2, 0.03), "rough", SHADE)
+	k.box(Vector3(0, 1.35, pz + 0.99), Vector3(0.95, 1.35, 0.03), "walnut", Color(0.9, 0.78, 0.62))
 	for sx: float in [-1.0, 1.0]:
 		k.cyl(Vector3(sx * 3.3, 0, pz + 0.7), 0.42, 0.36, 10.2, 10, "tile", Color(1, 1, 1))
 	# внутренний дом и купол
-	k.box(Vector3(0, 3.2, -1.8), Vector3(4.2, 3.2, 3.6), "earth", ADOBE)
+	k.box(Vector3(0, 3.2, -1.8), Vector3(4.2, 3.2, 3.6), "adobe", ADOBE)
 	k.cyl(Vector3(0, 6.4, -1.8), 3.0, 3.0, 1.2, 16, "tile", Color(1, 1, 1))
 	k.dome(Vector3(0, 7.6, -1.8), 3.0, 2.6, 16, "tile", Color(0.95, 1.05, 1.05))
 	# айван во дворе и дерево-шест флага
-	k.box(Vector3(-hx + 3.5, 1.6, 2.5), Vector3(2.4, 1.6, 2.2), "earth", ADOBE)
+	k.box(Vector3(-hx + 3.5, 1.6, 2.5), Vector3(2.4, 1.6, 2.2), "adobe", ADOBE)
 	k.box(Vector3(-hx + 3.5, 3.3, 2.5), Vector3(2.7, 0.12, 2.5), "planks", WOOD)
 	k.cyl(Vector3(hx - 3.0, 0, 3.0), 0.08, 0.06, 9.5, 6, "pole", WOOD)
 	k.box(Vector3(hx - 2.2, 8.6, 3.0), Vector3(0.8, 0.5, 0.03), "tile", Color(1, 1, 1))
@@ -524,32 +527,32 @@ static func _mill_wheel(k: Kit, sz: Vector2) -> void:
 static func _kiln(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5 - 0.3
 	var hz := sz.y * 0.5 - 0.3
-	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.2, 0.2, hz + 0.2), "earth", ADOBE_DARK)
-	k.cyl(Vector3(-hx * 0.35, 0, -hz * 0.2), hz * 0.75, hz * 0.7, 2.4, 14, "earth", Color(1.1, 0.8, 0.62))
-	k.dome(Vector3(-hx * 0.35, 2.4, -hz * 0.2), hz * 0.7, 1.9, 14, "earth", Color(1.05, 0.76, 0.6))
-	k.cyl(Vector3(-hx * 0.35, 3.6, -hz * 0.2), 0.55, 0.45, 3.4, 8, "earth", Color(0.9, 0.66, 0.52))
-	k.box(Vector3(-hx * 0.35, 0.8, -hz * 0.2 + hz * 0.72), Vector3(0.5, 0.6, 0.05), "earth", SHADE)
+	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.2, 0.2, hz + 0.2), "rough", ADOBE_DARK)
+	k.cyl(Vector3(-hx * 0.35, 0, -hz * 0.2), hz * 0.75, hz * 0.7, 2.4, 14, "adobe", Color(1.1, 0.8, 0.62))
+	k.dome(Vector3(-hx * 0.35, 2.4, -hz * 0.2), hz * 0.7, 1.9, 14, "adobe", Color(1.05, 0.76, 0.6))
+	k.cyl(Vector3(-hx * 0.35, 3.6, -hz * 0.2), 0.55, 0.45, 3.4, 8, "rough", Color(0.9, 0.66, 0.52))
+	k.box(Vector3(-hx * 0.35, 0.8, -hz * 0.2 + hz * 0.72), Vector3(0.5, 0.6, 0.05), "rough", SHADE)
 	# навес и штабели кирпича
 	for i in 4:
 		k.cyl(Vector3(hx * 0.4 + (i % 2) * hx * 0.5, 0, (i / 2) * hz * 1.2 - hz * 0.6), 0.1, 0.09, 2.8, 6, "pole", WOOD)
 	k.box(Vector3(hx * 0.65, 2.85, 0), Vector3(hx * 0.42, 0.08, hz * 0.85), "planks", WOOD)
 	for i in 3:
-		k.box(Vector3(hx * 0.65, 0.3 + i * 0.32, -hz * 0.3 + i * 0.4), Vector3(0.7, 0.16, 0.45), "earth", Color(1.15, 0.72, 0.55))
+		k.box(Vector3(hx * 0.65, 0.3 + i * 0.32, -hz * 0.3 + i * 0.4), Vector3(0.7, 0.16, 0.45), "rough", Color(1.15, 0.72, 0.55))
 
 
 ## Бозор: ряды лавок с навесами
 static func _bazaar(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5
 	var hz := sz.y * 0.5
-	k.box(Vector3(0, 0.1, 0), Vector3(hx, 0.1, hz), "earth", ADOBE_DARK)
+	k.box(Vector3(0, 0.1, 0), Vector3(hx, 0.1, hz), "rough", ADOBE_DARK)
 	for row: float in [-1.0, 1.0]:
 		for i in 4:
 			var x := lerpf(-hx + 2.0, hx - 2.0, i / 3.0)
 			var z := row * hz * 0.55
-			k.box(Vector3(x, 1.1, z - row * 0.9), Vector3(1.6, 1.1, 0.5), "earth", ADOBE)
+			k.box(Vector3(x, 1.1, z - row * 0.9), Vector3(1.6, 1.1, 0.5), "adobe", ADOBE)
 			k.box(Vector3(x, 2.35, z), Vector3(1.8, 0.06, 1.3), "koshma" if i % 2 == 0 else "saddlecloth", Color(1, 0.95, 0.9))
 			k.box(Vector3(x, 0.45, z + row * 0.3), Vector3(1.2, 0.45, 0.45), "planks", WOOD)
-	k.box(Vector3(0, 3.0, 0), Vector3(1.3, 3.0, 1.3), "earth", PLASTER)
+	k.box(Vector3(0, 3.0, 0), Vector3(1.3, 3.0, 1.3), "adobe", PLASTER)
 	k.dome(Vector3(0, 6.0, 0), 1.3, 1.4, 12, "tile", Color(1, 1, 1))
 
 
@@ -557,14 +560,14 @@ static func _bazaar(k: Kit, sz: Vector2) -> void:
 static func _field(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5
 	var hz := sz.y * 0.5
-	k.box(Vector3(0, 0.04, 0), Vector3(hx, 0.04, hz), "earth", Color(0.8, 0.66, 0.5))
+	k.box(Vector3(0, 0.04, 0), Vector3(hx, 0.04, hz), "rough", Color(0.62, 0.48, 0.36))
 	var rows := int(sz.y / 1.1)
 	for i in rows:
 		var z := lerpf(-hz + 0.5, hz - 0.5, float(i) / (rows - 1))
 		k.box(Vector3(0, 0.14, z), Vector3(hx - 0.5, 0.1, 0.22), "hay", Color(0.62, 0.95, 0.42))
 	for sx: float in [-1.0, 1.0]:
-		k.box(Vector3(sx * hx, 0.18, 0), Vector3(0.25, 0.18, hz), "earth", ADOBE_DARK)
-		k.box(Vector3(0, 0.18, sx * hz), Vector3(hx, 0.18, 0.25), "earth", ADOBE_DARK)
+		k.box(Vector3(sx * hx, 0.18, 0), Vector3(0.25, 0.18, hz), "rough", ADOBE_DARK)
+		k.box(Vector3(0, 0.18, sx * hz), Vector3(hx, 0.18, 0.25), "rough", ADOBE_DARK)
 
 
 ## Звено арыка: два вала и вода
@@ -572,7 +575,7 @@ static func _aryk(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5 + 0.1
 	k.box(Vector3(0, 0.02, 0), Vector3(hx, 0.03, 0.42), "stones", Color(0.42, 0.62, 0.72))
 	for s: float in [-1.0, 1.0]:
-		k.box(Vector3(0, 0.12, s * 0.62), Vector3(hx, 0.12, 0.22), "earth", ADOBE_DARK)
+		k.box(Vector3(0, 0.12, s * 0.62), Vector3(hx, 0.12, 0.22), "rough", ADOBE_DARK)
 
 
 ## Тўғон: каменная плотина с затвором
@@ -592,7 +595,7 @@ static func _wall_link(k: Kit, sz: Vector2, kokand: bool, stone: bool) -> void:
 	var hz := sz.y * 0.5
 	if kokand:
 		var h := 4.2
-		var reg := "stones" if stone else "earth"
+		var reg := "stones" if stone else "adobe"
 		var tint := Color(0.95, 0.92, 0.88) if stone else ADOBE
 		k.box(Vector3(0, h * 0.5, 0), Vector3(hx, h * 0.5, hz), reg, tint)
 		k.box(Vector3(0, h + 0.08, 0), Vector3(hx, 0.08, hz + 0.08), reg, tint * 0.9)
@@ -614,9 +617,9 @@ static func _gate(k: Kit, sz: Vector2, kokand: bool) -> void:
 	var hz := sz.y * 0.5
 	if kokand:
 		for s: float in [-1.0, 1.0]:
-			k.box(Vector3(s * (hx - 0.9), 3.0, 0), Vector3(0.9, 3.0, hz + 0.3), "earth", ADOBE)
-			k.cyl(Vector3(s * (hx - 0.9), 6.0, 0), 0.9, 0.8, 0.9, 10, "earth", ADOBE_DARK)
-		k.box(Vector3(0, 5.2, 0), Vector3(hx - 1.6, 0.9, hz), "earth", ADOBE)
+			k.box(Vector3(s * (hx - 0.9), 3.0, 0), Vector3(0.9, 3.0, hz + 0.3), "adobe", ADOBE)
+			k.cyl(Vector3(s * (hx - 0.9), 6.0, 0), 0.9, 0.8, 0.9, 10, "rough", ADOBE_DARK)
+		k.box(Vector3(0, 5.2, 0), Vector3(hx - 1.6, 0.9, hz), "adobe", ADOBE)
 		k.box(Vector3(0, 5.3, hz + 0.02), Vector3(hx - 1.8, 0.45, 0.03), "tile", Color(1, 1, 1))
 		k.box(Vector3(0, 2.15, 0), Vector3(hx - 1.85, 2.15, 0.12), "planks", Color(0.8, 0.62, 0.45))
 	else:
@@ -630,14 +633,14 @@ static func _gate(k: Kit, sz: Vector2, kokand: bool) -> void:
 static func _tower(k: Kit, sz: Vector2, kokand: bool) -> void:
 	var r := minf(sz.x, sz.y) * 0.5
 	if kokand:
-		k.cyl(Vector3(0, 0, 0), r, r * 0.82, 8.4, 16, "earth", ADOBE)
-		k.cyl(Vector3(0, 8.4, 0), r * 0.9, r * 0.9, 0.3, 16, "earth", ADOBE_DARK)
+		k.cyl(Vector3(0, 0, 0), r, r * 0.82, 8.4, 16, "adobe", ADOBE)
+		k.cyl(Vector3(0, 8.4, 0), r * 0.9, r * 0.9, 0.3, 16, "rough", ADOBE_DARK)
 		var n := 10
 		for i in n:
 			var a := TAU * i / n
-			k.box(Vector3(sin(a) * r * 0.78, 9.15, cos(a) * r * 0.78), Vector3(0.38, 0.45, 0.3), "earth", ADOBE, a)
+			k.box(Vector3(sin(a) * r * 0.78, 9.15, cos(a) * r * 0.78), Vector3(0.38, 0.45, 0.3), "adobe", ADOBE, a)
 		k.box(Vector3(0, 7.0, r * 0.84), Vector3(0.5, 0.22, 0.05), "tile", Color(1, 1, 1))
-		k.box(Vector3(0, 1.2, r * 0.97), Vector3(0.6, 1.2, 0.05), "door", Color(0.85, 0.72, 0.6))
+		k.box(Vector3(0, 1.2, r * 0.97), Vector3(0.6, 1.2, 0.05), "walnut", Color(0.85, 0.72, 0.6))
 	else:
 		var h := 7.0
 		for i in 4:
@@ -710,12 +713,12 @@ class Kit:
 
 	func commit() -> ArrayMesh:
 		if _n == 0:
-			box(Vector3(0, 0.05, 0), Vector3(0.05, 0.05, 0.05), "earth", Color(1, 1, 1))
+			box(Vector3(0, 0.05, 0), Vector3(0.05, 0.05, 0.05), "rough", Color(1, 1, 1))
 		st.index()
 		return st.commit()
 
 	func _region(reg: String) -> Color:
-		var r: Rect2 = BuildingLook.R.get(reg, BuildingLook.R["earth"])
+		var r: Rect2 = BuildingLook.R.get(reg, BuildingLook.R["adobe"])
 		var inset := 2.0
 		return Color((r.position.x + inset) / BuildingLook.A, (r.position.y + inset) / BuildingLook.A,
 			maxf(r.size.x - inset * 2.0, 0.0) / BuildingLook.A, maxf(r.size.y - inset * 2.0, 0.0) / BuildingLook.A)

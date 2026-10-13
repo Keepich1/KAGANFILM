@@ -13,6 +13,7 @@ extends Node3D
 ##   --stress=N          нагрузка: довести юнитов до N и построек до 200 (замер вида)
 ##   --perf_log          раз в секунду в консоль: время вида по частям, вызовы отрисовки, кадр
 ##   --perf_frames=N     замер N кадров, итог в консоль и выход (с --stress)
+##   --perf_cpu          время вида — процессорное время потока (чужие процессы не мешают)
 
 signal series_done
 
@@ -52,6 +53,7 @@ func _ready() -> void:
 	if _ordo:
 		_perf_log = _ordo.has_arg("perf_log")
 		_perf_frames = int(_ordo.arg("perf_frames", "0"))
+		CityView.cpu_clock = _ordo.has_arg("perf_cpu")
 		if _perf_log or _perf_frames > 0:
 			RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	if _ordo and _ordo.has_arg("series"):
@@ -131,7 +133,7 @@ func _set_fast(on: bool) -> void:
 func _shoot(s: Array) -> void:
 	_busy = true
 	GorodShots.setup(self, s)
-	for i in 2:
+	for i in 1:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

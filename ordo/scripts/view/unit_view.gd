@@ -145,7 +145,7 @@ func _process(_delta: float) -> void:
 
 ## Кадр вида (замеры и тесты зовут его сами)
 func update_view() -> void:
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	if _sim and (scenario == null or scenario.sim == _sim):
 		frame += 1
 		var cam := get_viewport().get_camera_3d() if is_inside_tree() else null

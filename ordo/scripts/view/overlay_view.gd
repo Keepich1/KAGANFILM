@@ -71,7 +71,7 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if query == null:
 		return
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return

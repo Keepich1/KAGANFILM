@@ -30,6 +30,11 @@ void fragment() {
 	if (use_vertex_color) {
 		a.rgb *= COLOR.rgb;
 	}
+	if (!FRONT_FACING && clip_h < 1000.0) {
+		// изнанка сквозь срез — плоский срез стены (свежая глина / войлок)
+		a.rgb = mix(a.rgb, vec3(0.82, 0.7, 0.55), 0.6);
+		NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+	}
 	float n = paint_vnoise(v_world_pos.xz * 0.9 + v_world_pos.y * 0.6);
 	a.rgb = mix(a.rgb, a.rgb * vec3(0.3, 0.27, 0.25), clamp(scorch * (0.6 + 0.6 * n), 0.0, 1.0));
 	if (clip_h < 1000.0) {

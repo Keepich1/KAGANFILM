@@ -75,7 +75,7 @@ func set_query(q: GameQuery) -> void:
 func _process(_delta: float) -> void:
 	if query == null:
 		return
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	sync()
 	CityView.mark(&"view_buildings", t0)
 
@@ -253,6 +253,18 @@ func _rebuild_group(key: String, bt: BuildingTable) -> void:
 				mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			add_child(mi)
 			mmis.append(mi)
+	# дым из тюндюков у юрт MultiMesh (как у лагеря среза)
+	var model := defs.b_model[ty] if defs.b_model[ty] != "" else defs.b_ids[ty]
+	if BuildingLook.TUNDUK_HEIGHT.has(model) and BuildingLook.model_path(defs, ty, ACTIVE) != "":
+		for i in slots.size():
+			var s := BuildingLook.SMOKE.instantiate() as GPUParticles3D
+			s.name = "TundukSmoke_%d" % slots[i]
+			s.amount = 14
+			s.lifetime = 9.0
+			s.preprocess = 9.0
+			s.transform = Transform3D(Basis(), _xform(slots[i], bt) * Vector3(0, BuildingLook.TUNDUK_HEIGHT[model], 0))
+			add_child(s)
+			mmis.append(s)
 	g.mmis = mmis
 
 

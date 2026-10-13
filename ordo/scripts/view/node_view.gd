@@ -62,7 +62,7 @@ func set_query(q: GameQuery) -> void:
 func _process(_delta: float) -> void:
 	if query == null:
 		return
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	_frame += 1
 	var ev := query.events()
 	var r := ev.range_since(_cursor)

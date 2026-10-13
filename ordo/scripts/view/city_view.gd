@@ -59,10 +59,23 @@ static func camera_ground_rect(cam: Camera3D, pad: float) -> Rect2:
 
 ## Время частей вида за текущий кадр (сцена «Города» читает и очищает: замер --perf_log)
 static var frame_ms := {}
+## Замер по процессорному времени потока (Linux: /proc/thread-self/schedstat) — чужие процессы
+## на машине не портят числа (как tests/bench_battle.gd); включает сцена по ключу --perf_cpu
+static var cpu_clock := false
+
+
+## Метка времени для mark(): часы или процессорное время потока, мкс
+static func now_usec() -> int:
+	if cpu_clock:
+		var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+		if f:
+			return int(f.get_line().split(" ")[0]) / 1000
+		cpu_clock = false
+	return Time.get_ticks_usec()
 
 
 ## Записать время части вида с момента t0_usec (и в PerfMeter — экран F9)
 static func mark(key: StringName, t0_usec: int) -> void:
-	var ms := (Time.get_ticks_usec() - t0_usec) / 1000.0
+	var ms := (now_usec() - t0_usec) / 1000.0
 	frame_ms[key] = float(frame_ms.get(key, 0.0)) + ms
 	PerfMeter.add_frame(key, ms)

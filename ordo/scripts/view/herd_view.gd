@@ -39,6 +39,7 @@ var _phase := PackedFloat32Array()
 var _speed := PackedFloat32Array()
 var _var := PackedFloat32Array()
 var _inpen := PackedByteArray()
+var _members: Array[PackedInt32Array] = []   # стадо → его животные
 var _rng := BattleRng.new(77)
 
 
@@ -57,6 +58,7 @@ func set_query(q: GameQuery) -> void:
 	for a: Variant in [_herd, _kind, _state, _x, _z, _h, _tx, _tz, _timer, _phase, _speed, _var, _hgen, _hn]:
 		a.resize(0)
 	_inpen.resize(0)
+	_members.clear()
 	if _layers.is_empty():
 		for id: String in ["sheep", "horse"]:
 			var l: Node3D
@@ -77,7 +79,7 @@ func set_query(q: GameQuery) -> void:
 func _process(delta: float) -> void:
 	if query == null:
 		return
-	var t0 := Time.get_ticks_usec()
+	var t0 := CityView.now_usec()
 	var scale := 1.0
 	if _driver:
 		scale = 0.0 if _driver.paused else _driver.time_scale
@@ -116,7 +118,7 @@ func _sync() -> void:
 		while _hn[h] > want:
 			_remove_one(h)
 			changed = true
-	if changed:
+	if changed or _members.size() != ht.hw:
 		var n := [0, 0]
 		for k in _kind:
 			n[k] += 1
@@ -125,6 +127,13 @@ func _sync() -> void:
 			if n[i] > cap:
 				_layers[i].call("setup", ["sheep", "horse"][i], maxi(cap * 2, n[i]))
 			_layers[i].call("set_visible_count", n[i])
+		# животные по стадам — расталкивание только внутри своего стада
+		_members.clear()
+		for h in ht.hw:
+			_members.append(PackedInt32Array())
+		for j in count:
+			var m: PackedInt32Array = _members[_herd[j]]
+			m.append(j)
 
 
 func _add(h: int, ht: HerdTable) -> void:
@@ -307,10 +316,10 @@ func _separate() -> void:
 	if _steps % 2 != 0:
 		return
 	for a in count:
-		if _speed[a] <= 0.0:
+		if _speed[a] <= 0.0 or _herd[a] >= _members.size():
 			continue
-		for b in count:
-			if b == a or _herd[b] != _herd[a]:
+		for b in _members[_herd[a]]:
+			if b == a:
 				continue
 			var dx := _x[b] - _x[a]
 			var dz := _z[b] - _z[a]

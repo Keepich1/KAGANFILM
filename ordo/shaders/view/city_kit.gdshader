@@ -10,7 +10,7 @@
 // Стройка и руина (экземпляр): clip_h — выше этой высоты над основанием ничего нет (стройка растёт
 // снизу); scorch 0..1 — копоть и выгорание (руина, пожар).
 shader_type spatial;
-render_mode cull_back, depth_draw_opaque;
+render_mode cull_disabled, depth_draw_opaque;
 
 #include "res://shaders/include/painterly.gdshaderinc"
 
@@ -21,6 +21,7 @@ uniform vec3 tile_a : source_color = vec3(0.12, 0.62, 0.62);   // бирюза
 uniform vec3 tile_b : source_color = vec3(0.93, 0.9, 0.8);     // белый ганч
 uniform vec3 tile_c : source_color = vec3(0.12, 0.2, 0.52);    // кобальт
 uniform float tile_size = 0.9;                                  // м на звезду
+uniform vec3 cut_col : source_color = vec3(0.86, 0.7, 0.52);   // срез стройки: свежая глина / сруб
 
 instance uniform float clip_h = 100000.0;
 instance uniform float scorch = 0.0;
@@ -52,6 +53,16 @@ void fragment() {
 	if (v_local_y > clip_h || (v_kind < 0.5 && site < 0.5)) {
 		discard;
 	}
+	if (!FRONT_FACING) {
+		// изнанка видна только сквозь срез стройки или руины: рисуем её как плоский срез стены
+		if (clip_h > 1000.0) {
+			discard;
+		}
+		ALBEDO = cut_col * (0.9 + 0.2 * paint_vnoise(v_world_pos.xz * 1.7)) * mix(1.0, 0.35, scorch);
+		NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+		ROUGHNESS = 1.0;
+		paint_brush_v = paint_brush(v_world_pos, vec3(0.0, 1.0, 0.0));
+	} else {
 	vec3 a;
 	if (v_region.z > 0.0) {
 		vec2 uv = v_region.xy + fract(UV) * v_region.zw;
@@ -85,6 +96,7 @@ void fragment() {
 	ALBEDO = a;
 	ROUGHNESS = roughness;
 	paint_brush_v = paint_brush(v_world_pos, v_world_nrm);
+	}
 }
 
 void light() {

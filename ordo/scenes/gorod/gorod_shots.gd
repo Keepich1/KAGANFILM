@@ -3,27 +3,28 @@ extends RefCounted
 ## Серия кадров проверки вида «Города» (VIEW, ARCHITECTURE §19.5): стройки на разных стадиях, стена,
 ## призрак зелёный и красный, работники (рубят, копают, строят, несут), выделение, стада, лагерь.
 ##   tools/shot.sh res://scenes/gorod/gorod.tscn out.png -- --skip=6 --series=/abs/dir [--only=sites,ghost_bad]
-## Камера — RtsCamera.go_to(x, z, расстояние, азимут) или «на юнита за работой» (work = AnimSpec.WORK_*).
+## Камера — RtsCamera.go_to(x, z, расстояние, азимут) или «на юнита за работой» (work = AnimSpec.WORK_*);
+## с pitch (градусы) — своя камера CamShot с этим наклоном (крупные планы ниже, чем у стратегии).
 
 ## [имя, {view: Vector4 | work: aux, near: Vector2, dist, yaw, ghost: ..., select: ...}]
 const SHOTS := [
 	["town", {"view": Vector4(186, 52, 165, -58)}],
-	["sites", {"view": Vector4(222, 60, 95, -78)}],
-	["walls", {"view": Vector4(140, 30, 62, -96)}],
+	["sites", {"view": Vector4(222, 62, 88, -76), "pitch": 34.0}],
+	["walls", {"view": Vector4(140, 30, 58, -96), "pitch": 26.0}],
 	["ghost_ok", {"view": Vector4(166, 70, 48, -70), "ghost": ["uy", Vector2(163, 72), 0]}],
-	["ghost_bad", {"view": Vector4(170, 30, 50, -70), "ghost": ["kazarma", Vector2(172, 26), 1],
+	["ghost_bad", {"view": Vector4(172, 22, 56, -70), "ghost": ["kazarma", Vector2(172, 26), 1],
 		"wall": ["devor", [Vector2(150, -8), Vector2(204, -8)]]}],
-	["chop", {"work": 0.0, "near": Vector2(166, 30), "dist": 16.0, "yaw": -55.0}],
-	["dig", {"work": 0.25, "near": Vector2(266, -66), "dist": 18.0, "yaw": -60.0}],
-	["build", {"work": 0.5, "near": Vector2(214, 8), "dist": 17.0, "yaw": -50.0}],
-	["carry", {"work": 0.75, "near": Vector2(180, 20), "dist": 16.0, "yaw": -60.0}],
+	["chop", {"work": 0.0, "near": Vector2(166, 30), "dist": 13.0, "yaw": -55.0, "pitch": 20.0}],
+	["dig", {"work": 0.25, "near": Vector2(266, -66), "dist": 15.0, "yaw": -60.0, "pitch": 22.0}],
+	["build", {"work": 0.5, "near": Vector2(214, 8), "dist": 15.0, "yaw": -50.0, "pitch": 22.0}],
+	["carry", {"work": 0.75, "near": Vector2(180, 20), "dist": 13.0, "yaw": -60.0, "pitch": 20.0}],
 	["select", {"view": Vector4(150, 52, 78, -72), "select": ["drill", "urda"]}],
-	["fields", {"view": Vector4(168, -36, 72, -62)}],
-	["herd_sheep", {"view": Vector4(-112, 68, 44, -64)}],
-	["herd_horses", {"view": Vector4(-26, 90, 38, -70)}],
+	["fields", {"view": Vector4(168, -36, 72, -62), "pitch": 36.0}],
+	["herd_sheep", {"view": Vector4(-112, 68, 40, -64), "pitch": 28.0}],
+	["herd_horses", {"view": Vector4(-26, 90, 34, -70), "pitch": 26.0}],
 	["camp", {"view": Vector4(-72, 34, 150, -62)}],
-	["gold", {"work": 0.25, "near": Vector2(-56, 168), "dist": 20.0, "yaw": -70.0}],
-	["raid", {"view": Vector4(112, 132, 40, -60)}],
+	["gold", {"work": 0.25, "near": Vector2(-56, 168), "dist": 18.0, "yaw": -70.0, "pitch": 24.0}],
+	["raid", {"view": Vector4(112, 132, 40, -60), "pitch": 28.0}],
 ]
 
 
@@ -33,14 +34,27 @@ static func setup(scene: GorodScene, s: Array) -> void:
 	var cam := scene.camera
 	scene.ghost.hide_ghost()
 	scene.selection.set_selection(PackedInt32Array())
+	var view := Vector4.ZERO
 	if cfg.has("view"):
-		cam.go_to(cfg["view"], true)
+		view = cfg["view"]
 	elif cfg.has("work"):
 		var u := _worker(q, float(cfg["work"]), cfg.get("near", Vector2.ZERO))
 		var sim := q.battle()
 		var at: Vector2 = Vector2(sim.u_x[u], sim.u_z[u]) if u >= 0 else cfg.get("near", Vector2.ZERO)
-		cam.go_to(Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), float(cfg.get("yaw", -60.0))), true)
-	cam.make_current()
+		view = Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), float(cfg.get("yaw", -60.0)))
+	if cfg.has("pitch"):
+		var shot := scene.get_node("Cameras/CamShot") as Camera3D
+		var f := Vector3(view.x, Terrain.height_at(view.x, view.y), view.y)
+		var p := deg_to_rad(float(cfg["pitch"]))
+		var y := deg_to_rad(view.w)
+		var pos := f + Vector3(sin(y) * cos(p), sin(p), cos(y) * cos(p)) * view.z
+		pos.y = maxf(pos.y, Terrain.height_at(pos.x, pos.z) + 2.0)
+		shot.global_position = pos
+		shot.look_at(f + Vector3(0, 1.2, 0), Vector3.UP)
+		shot.make_current()
+	else:
+		cam.go_to(view, true)
+		cam.make_current()
 	if cfg.has("ghost"):
 		var g: Array = cfg["ghost"]
 		var defs := q.defs()
