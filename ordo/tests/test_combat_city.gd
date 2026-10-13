@@ -79,6 +79,7 @@ func _test_lifecycle() -> void:
 	var kills := 0
 	var spawned_since_step := 0
 	var spawned_max := 0
+	var bad_inv := ""
 	for op in 5000:
 		var r := rng.range_i(100)
 		if r < 35 or live.size() < 5:
@@ -111,6 +112,8 @@ func _test_lifecycle() -> void:
 			spawned_since_step = 0
 			_tick(port, 1 + rng.range_i(3))
 			deaths += port.take_deaths().size() / 2
+			if op % 50 == 0 and bad_inv == "":
+				bad_inv = _city_invariants(sim)
 		var used := 0
 		for u in sim.n:
 			if sim.u_life[u] != BattleSim.Life.FREE:
@@ -134,6 +137,73 @@ func _test_lifecycle() -> void:
 	for s in sim.squads:
 		used_squads += sim.sq_used[s]
 	SimHarness.check(sim.squads <= peak + spawned_max, "отрядов-слотов %d, занято %d" % [sim.squads, used_squads])
+	if bad_inv == "":
+		bad_inv = _city_invariants(sim)
+	SimHarness.check(bad_inv == "", "бодрые и хэш города сходятся с полным пересчётом %s" % bad_inv)
+
+
+## Списки города против пересчёта с нуля (после шага): бодрые (_aw) — по возрастанию, без повторов, все
+## бодрые живые и падающие в них (или в _aw_add); хэш — каждый живой в клетке своей позиции, списки
+## клеток целы, маски клеток, блоков и «рядом» (_bmask_n) равны пересчитанным; смешанные блоки — в _mixed.
+## Пусто — всё сходится, иначе — что не так.
+func _city_invariants(sim: BattleSim) -> String:
+	var aw := sim._aw
+	for i in aw.size():
+		if i > 0 and aw[i] <= aw[i - 1]:
+			return "(_aw не по возрастанию)"
+		if sim._aw_on[aw[i]] != 1:
+			return "(_aw_on)"
+	for u in sim.n:
+		var lf := sim.u_life[u]
+		var need := lf == BattleSim.Life.DYING or (lf == BattleSim.Life.ALIVE and sim.u_sleep[u] == 0)
+		if need and sim._aw_on[u] == 0 and not sim._aw_add.has(u):
+			return "(бодрый %d вне списков)" % u
+	var gn := sim._g_n
+	var go := sim._g_origin
+	var cm := PackedInt32Array()
+	cm.resize(gn * gn)
+	var seen := 0
+	for c in gn * gn:
+		var v := sim._head[c]
+		var p := -1
+		while v >= 0:
+			if sim._hprev[v] != p or sim._ucell[v] != c:
+				return "(список клетки %d)" % c
+			if sim.u_life[v] != BattleSim.Life.ALIVE:
+				return "(в хэше не живой %d)" % v
+			cm[c] |= 1 << sim.u_side[v]
+			seen += 1
+			p = v
+			v = sim._next[v]
+		if cm[c] != sim._cmask[c]:
+			return "(маска клетки %d)" % c
+	var alive := 0
+	for u in sim.n:
+		if sim.u_life[u] != BattleSim.Life.ALIVE:
+			continue
+		alive += 1
+		var c2 := clampi(int((sim.u_z[u] - go) / 4.0), 0, gn - 1) * gn + clampi(int((sim.u_x[u] - go) / 4.0), 0, gn - 1)
+		if sim._ucell[u] != c2:
+			return "(юнит %d не в своей клетке)" % u
+	if alive != seen:
+		return "(живых %d, в хэше %d)" % [alive, seen]
+	var bn := sim._b_n
+	var bm := PackedInt32Array()
+	bm.resize(bn * bn)
+	for c in gn * gn:
+		bm[((c / gn) >> 2) * bn + ((c % gn) >> 2)] |= cm[c]
+	for b in bn * bn:
+		if bm[b] != sim._bmask[b]:
+			return "(маска блока %d)" % b
+		var m := 0
+		for z in range(maxi(b / bn - 1, 0), mini(b / bn + 1, bn - 1) + 1):
+			for x in range(maxi(b % bn - 1, 0), mini(b % bn + 1, bn - 1) + 1):
+				m |= bm[z * bn + x]
+		if m != sim._bmask_n[b]:
+			return "(«рядом» блока %d)" % b
+		if m & (m - 1) != 0 and sim._mx_on[b] != 1:
+			return "(смешанный блок %d не в _mixed)" % b
+	return ""
 
 
 # ================================================================= отряд из одиночек

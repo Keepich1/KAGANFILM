@@ -45,6 +45,8 @@ var _o_ticket := PackedInt32Array()    # ждём этот билет (0 — н�
 var _o_res: Array = []                 # PathResult последнего пути (для nav.stale) или null
 # билеты: [ticket, squads, goals, gens, to]
 var _req: Array = []
+# отряды с приказами AMOVE / ATTACK / FIRE (по возрастанию; погасшие выпадают при обходе)
+var _watch := PackedInt32Array()
 
 var _deaths := PackedInt32Array()
 var _hits := PackedInt32Array()
@@ -82,6 +84,7 @@ func setup(p_defs: Defs, p_nav: NavApi, p_cfg: Dictionary) -> void:
 	sim.reserve(int(cfg.get("reserve_units", RESERVE)), int(cfg.get("reserve_squads", RESERVE)))
 	_o_kind.clear()
 	_req.clear()
+	_watch.clear()
 
 
 func battle() -> BattleSim:
@@ -450,8 +453,8 @@ func deliver_paths() -> void:
 func step() -> void:
 	tick += 1
 	_ensure()
-	_amove_scan()
-	_track_targets()
+	if not _watch.is_empty():
+		_scan_orders()
 	sim.step()
 	_ensure()
 	for s in sim.take_repath():
@@ -533,6 +536,10 @@ func load_from(d: Dictionary) -> void:
 	_o_res.resize(_o_kind.size())
 	_o_res.fill(null)
 	_ensure()
+	_watch.clear()
+	for s in _o_kind.size():
+		if _o_kind[s] == K.AMOVE or _o_kind[s] == K.ATTACK or _o_kind[s] == K.FIRE:
+			_watch.append(s)
 	# пути ядра сохранены; пропали только билеты в очереди — кто ждал путь, просит заново
 	for s in sim.squads:
 		if sim.sq_used[s] == 1 and _o_kind[s] != K.NONE and sim.sq_wp[s] < 0:
@@ -603,6 +610,10 @@ func _reset_order(s: int) -> void:
 
 func _set_order(s: int, kind: int, goal: Vector2, gait: int, facing: float, target_h := 0) -> void:
 	_o_kind[s] = kind
+	if kind == K.AMOVE or kind == K.ATTACK or kind == K.FIRE:
+		var i := _watch.bsearch(s)
+		if i >= _watch.size() or _watch[i] != s:
+			_watch.insert(i, s)
 	_o_gen[s] = sim.sq_gen[s]
 	_o_goal[s] = goal
 	_o_gait[s] = gait
@@ -732,9 +743,24 @@ func _repath(s: int) -> void:
 	_request(PackedInt32Array([s]), PackedVector2Array([goal]), goal)
 
 
+## Приказы, за которыми смотрит порт: погасшие — вон из списка; потом attack_move, потом цели атаки
+func _scan_orders() -> void:
+	var keep := 0
+	for i in _watch.size():
+		var s := _watch[i]
+		var k := _o_kind[s]
+		if k == K.AMOVE or k == K.ATTACK or k == K.FIRE:
+			_watch[keep] = s
+			keep += 1
+	_watch.resize(keep)
+	var w := _watch.duplicate()  # обработчики могут добавить отряды в _watch
+	_amove_scan(w)
+	_track_targets(w)
+
+
 ## attack_move: стоит или идёт — ищет врага рядом и бьёт; цель пала — снова к своей цели
-func _amove_scan() -> void:
-	for s in _o_kind.size():
+func _amove_scan(w: PackedInt32Array) -> void:
+	for s: int in w:
 		if _o_kind[s] != K.AMOVE or (s + tick) % AMOVE_PERIOD != 0:
 			continue
 		if sim.sq_used[s] == 0 or sim.sq_gen[s] != _o_gen[s] or sim.sq_alive[s] == 0:
@@ -758,8 +784,8 @@ func _amove_scan() -> void:
 
 
 ## Цель атаки ушла дальше 8 м от того места, куда просили путь — путь заново; стрелки — новое место
-func _track_targets() -> void:
-	for s in _o_kind.size():
+func _track_targets(w: PackedInt32Array) -> void:
+	for s: int in w:
 		if _o_kind[s] == K.FIRE and (s + tick) % TRACK_PERIOD == 0 and _o_ticket[s] == 0:
 			var th := _o_target[s]
 			var ts := _squad_index(th)

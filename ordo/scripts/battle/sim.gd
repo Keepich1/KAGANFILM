@@ -225,7 +225,16 @@ var victory_mode := Victory.BATTLE
 var flee_mode := FleeMode.DIR
 var corpse_steps := -1                  # −1 — тела не исчезают (срез); город: 30 с × 30
 var team_home := PackedVector2Array()   # цели бегства FleeMode.HOME
-var sleep_enabled := false              # сон (R12): город — да; срез — нет (бит в бит)
+var sleep_enabled := false:             # сон (R12): город — да; срез — нет (бит в бит). Ставить до юнитов
+	set(v):
+		if v and not sleep_enabled:
+			# включили при живых юнитах: все — в бодрые, хэш города — заново
+			for u in n:
+				if u_life[u] == Life.ALIVE or u_life[u] == Life.DYING:
+					_aw_join(u)
+			_hash_full = true
+			_hash_dirty = true
+		sleep_enabled = v
 var collect_events := false             # буферы ev_* (R10): город — да (их забирает порт)
 
 # юниты: новые массивы (растут в _new_unit со значениями по умолчанию)
@@ -325,6 +334,23 @@ var _so_key := PackedInt64Array()
 # суша в клетке хэша: 0 — не проверено, 1 — точно суша (вода не ближе 0,05 м по высоте), 2 — может быть вода
 var _dry := PackedByteArray()
 
+# --- город (сон включён, R12): шаг идёт только по бодрым, хэш правится на месте (спящие в нём лежат)
+var _aw := PackedInt32Array()           # бодрые (ALIVE без сна) и падающие (DYING), по возрастанию номера
+var _aw_on := PackedByteArray()         # 1 — юнит в _aw
+var _aw_add := PackedInt32Array()       # проснулись или родились после сборки _aw: войдут в начале шага
+var _aw_q := PackedByteArray()          # 1 — уже в _aw_add
+var _all := PackedInt32Array()          # 0..n−1: обход «всех» тем же кодом (срез, город без сна)
+var _sq_list := PackedInt32Array()      # отряды шага: одиночки бодрых и все настоящие, по возрастанию
+var _sq_act := PackedByteArray()        # у настоящего отряда есть бодрые на этом шаге (временная отметка)
+var _sq_still := PackedByteArray()      # настоящий отряд: все спят, центр уже посчитан
+var _hprev := PackedInt32Array()        # хэш города: предыдущий в списке клетки (−1 — голова)
+var _hq := PackedInt32Array()           # юниты, которых переложить в хэше (родились, убиты вне шага)
+var _hash_full := true                  # хэш города собрать целиком (границы, первый шаг)
+var _mixed := PackedInt32Array()        # блоки 16 м, где рядом две команды и больше (будят спящих)
+var _mx_on := PackedByteArray()         # 1 — блок в _mixed
+var _corpse := PackedInt32Array()       # тела по порядку смерти парами [юнит, поколение] (corpse_steps)
+var _corpse_h := 0                      # голова очереди тел
+
 
 func _init(p_seed := 1) -> void:
 	rng = BattleRng.new(p_seed)
@@ -341,9 +367,13 @@ func _alloc_grid() -> void:
 	_bmask.fill(0)
 	_bmask_n.resize(_b_n * _b_n)
 	_bmask_n.fill(0)
+	_mx_on.resize(_b_n * _b_n)
+	_mx_on.fill(0)
+	_mixed.clear()
 	_dry.resize(_g_n * _g_n)
 	_dry.fill(0)
 	_hash_dirty = true
+	_hash_full = true
 
 
 # ================================================================= «Город»: настройка
@@ -698,6 +728,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float, owner := -
 	sq_used[s] = 1
 	sq_stuck[s] = 0
 	sq_dorm[s] = 0
+	_sq_still[s] = 0
 	_rs_dirty = true
 	return s
 
@@ -743,6 +774,10 @@ func _new_unit(s: int, type_i: int, role: int, slot: int) -> int:
 	u_work[u] = -1.0
 	u_garrison[u] = -1
 	_hash_dirty = true
+	if sleep_enabled:
+		# город: в хэш — при ближайшей сборке (позицию ставит вызывающий), в бодрые — с начала шага
+		_hq.append(u)
+		_aw_join(u)
 	return u
 
 
@@ -757,11 +792,17 @@ func _take_free(list: PackedInt32Array, at: PackedInt32Array) -> int:
 
 
 func _grow_units(cap: int) -> void:
+	var old := _ucell.size()
 	for a: Variant in [u_x, u_z, u_px, u_pz, u_vx, u_vz, u_dvx, u_dvz, u_kx, u_kz, u_h, u_ph, u_hp,
 			u_type, u_squad, u_side, u_role, u_slot, u_life, u_act, u_act_t, u_fire_t, u_aim, u_reload_t,
 			u_ammo, u_cool_t, u_hit_t, u_target, u_couched, u_charged, u_rams, u_death_t, u_fall, u_var,
-			_so_x, _so_y, u_gen, u_owner, u_killer, u_hurt_step, u_sleep, u_work, u_garrison]:
+			_so_x, _so_y, u_gen, u_owner, u_killer, u_hurt_step, u_sleep, u_work, u_garrison,
+			_ucell, _ublk, _hprev, _aw_on, _aw_q]:
 		a.resize(cap)
+	if _next.size() < cap:
+		_next.resize(cap)
+	for u in range(old, cap):
+		_ucell[u] = -1  # не в хэше
 
 
 func _grow_squads(cap: int) -> void:
@@ -771,7 +812,7 @@ func _grow_squads(cap: int) -> void:
 			sq_init, sq_alive, sq_cx, sq_cz, sq_speed, sq_lag, sq_melee, sq_charge_ok, sq_couched, sq_impacted,
 			sq_fire_target, sq_fire_dist, sq_volley_rank, sq_volley_t, sq_volley_seen, sq_cry_t, sq_single,
 			_so_key, sq_gen, sq_owner, sq_stance, sq_wp, sq_breach_st, sq_breach_wp, sq_st_target, sq_enemy,
-			sq_used, sq_stuck, sq_dorm]:
+			sq_used, sq_stuck, sq_dorm, _sq_act, _sq_still]:
 		a.resize(cap)
 	sq_members.resize(cap)
 	sq_path.resize(cap)
@@ -822,6 +863,8 @@ func _free_unit(u: int) -> void:
 	u_kx[u] = 0.0
 	u_kz[u] = 0.0
 	u_garrison[u] = -1
+	if sleep_enabled and _ucell[u] >= 0:
+		_hash_unlink(u)
 	_u_free.append(u)
 	_u_free_at.append(steps)
 	_hash_dirty = true
@@ -908,6 +951,7 @@ func _reslot(s: int) -> void:
 		u_slot[u] = k
 		k += 1
 	_so_key[s] = -1
+	_wake_squad(s)  # места сменились: спящие идут на новые
 
 
 # ================================================================= приказы (ИИ, игрок)
@@ -1056,16 +1100,26 @@ func _clear_route(s: int) -> void:
 
 func _wake_squad(s: int) -> void:
 	for u in sq_members[s]:
-		u_sleep[u] = 0
+		if u_sleep[u] == 1:
+			_wake(u)
 	sq_dorm[s] = 0
 
 
-## Разбудить юнита (R12): и его отряд-одиночку
+## Разбудить юнита (R12): и его отряд-одиночку; город — в бодрые с начала следующего шага
 func _wake(u: int) -> void:
 	u_sleep[u] = 0
 	var s := u_squad[u]
 	if s >= 0:
 		sq_dorm[s] = 0
+	if sleep_enabled:
+		_aw_join(u)
+
+
+## В бодрые (город): войдёт в _aw в начале шага, если жив и не спит (или падает)
+func _aw_join(u: int) -> void:
+	if _aw_on[u] == 0 and _aw_q[u] == 0:
+		_aw_q[u] = 1
+		_aw_add.append(u)
 
 
 ## Конница: разрешить натиск (копья наперевес на CHARGE_COUCH_DIST от цели)
@@ -1554,28 +1608,19 @@ func step() -> void:
 	time += DT
 	steps += 1
 	if sleep_enabled:
-		# спящие стоят: их прошлый шаг уже равен этому (_try_sleep)
-		for u in n:
-			if u_sleep[u] == 1:
-				continue
-			u_px[u] = u_x[u]
-			u_pz[u] = u_z[u]
-			u_ph[u] = u_h[u]
-	else:
-		for u in n:
-			u_px[u] = u_x[u]
-			u_pz[u] = u_z[u]
-			u_ph[u] = u_h[u]
+		_step_city()
+		return
+	for u in n:
+		u_px[u] = u_x[u]
+		u_pz[u] = u_z[u]
+		u_ph[u] = u_h[u]
 	# хэш собран в конце прошлого шага; заново — только если снаружи что-то менялось (тот же результат)
 	if _hash_dirty:
 		_rebuild_hash()
-	if sleep_enabled:
-		_squads_city()
-	else:
-		for s in squads:
-			_update_centroid(s)
-		for s in squads:
-			_squad_step(s)
+	for s in squads:
+		_update_centroid(s)
+	for s in squads:
+		_squad_step(s)
 	_units_think()
 	_resolve_actions()
 	_integrate()
@@ -1584,28 +1629,152 @@ func step() -> void:
 	_rebuild_hash()
 
 
-## Отряды города: свободные слоты и спящие одиночки пропускаются (R1, R12)
+## Шаг города (сон, R12): только бодрые и падающие (_aw); спящие лежат в хэше и будятся
+## врагом рядом (блоки _mixed), толчком, приказом, уроном, сменой мест в отряде
+func _step_city() -> void:
+	if _hash_dirty:
+		_rebuild_hash()
+	_wake_pass()
+	_aw_merge()
+	# спящие стоят: их прошлый шаг уже равен этому (_try_sleep)
+	for u: int in _aw:
+		u_px[u] = u_x[u]
+		u_pz[u] = u_z[u]
+		u_ph[u] = u_h[u]
+	_squads_city()
+	_units_think()
+	_resolve_actions()
+	_integrate()
+	_victory_check()
+	# хэш: переложить тех, кто мог сдвинуться (бодрые, разбуженные на шаге, родившиеся и убитые)
+	_hash_dirty = false
+	_hash_relink_list(_aw)
+	_hash_relink_list(_aw_add)
+	_hash_relink_list(_hq)
+	_hq.clear()
+
+
+## Бодрые на этот шаг: из прошлых — кто не уснул, не умер и не освобождён; плюс проснувшиеся (по номеру)
+func _aw_merge() -> void:
+	var keep := 0
+	for i in _aw.size():
+		var u := _aw[i]
+		var lf := u_life[u]
+		if lf == Life.DYING or (lf == Life.ALIVE and u_sleep[u] == 0):
+			_aw[keep] = u
+			keep += 1
+		else:
+			_aw_on[u] = 0
+	_aw.resize(keep)
+	if _aw_add.is_empty():
+		return
+	var grew := false
+	for u: int in _aw_add:
+		_aw_q[u] = 0
+		if _aw_on[u] == 1:
+			continue
+		var lf := u_life[u]
+		if lf == Life.DYING or (lf == Life.ALIVE and u_sleep[u] == 0):
+			_aw_on[u] = 1
+			_aw.append(u)
+			grew = true
+	_aw_add.clear()
+	if grew:
+		_aw.sort()
+
+
+## Будильник города (R12): спящие в блоках, где рядом враг (≈16 м), и каждый 15-й по номеру —
+## сдвинут ли с места больше чем на 0,5 м (2 раза в с, вразнобой)
+func _wake_pass() -> void:
+	if not _mixed.is_empty():
+		var keep := 0
+		for i in _mixed.size():
+			var b := _mixed[i]
+			var m := _bmask_n[b]
+			if m & (m - 1) == 0:
+				_mx_on[b] = 0
+				continue
+			_mixed[keep] = b
+			keep += 1
+			if _bmask[b] != 0:
+				_wake_block(b)
+		_mixed.resize(keep)
+	var u := (WAKE_CHECK_STEPS - steps % WAKE_CHECK_STEPS) % WAKE_CHECK_STEPS
+	while u < n:
+		if u_sleep[u] == 1 and u_life[u] == Life.ALIVE and _pushed_off(u):
+			_wake(u)
+		u += WAKE_CHECK_STEPS
+
+
+## Разбудить всех спящих в клетках блока b
+func _wake_block(b: int) -> void:
+	var bn := _b_n
+	var gn := _g_n
+	var cx0 := (b % bn) << _BLK_SHIFT
+	var cz0 := (b / bn) << _BLK_SHIFT
+	for gz in range(cz0, mini(cz0 + (1 << _BLK_SHIFT), gn)):
+		for gx in range(cx0, mini(cx0 + (1 << _BLK_SHIFT), gn)):
+			var v := _head[gz * gn + gx]
+			while v >= 0:
+				if u_sleep[v] == 1:
+					_wake(v)
+				v = _next[v]
+
+
+## Отряды города: одиночки бодрых и все настоящие (R1, R12). Настоящий отряд, где все спят,
+## центр не пересчитывает (никто не сдвинулся) — один раз после засыпания, потом пропуск.
 func _squads_city() -> void:
-	for s in squads:
-		if sq_used[s] == 0 or sq_dorm[s] == 1:
+	if _rs_dirty:
+		_real_sq_rebuild()
+	var list := _sq_list
+	list.clear()
+	for u: int in _aw:
+		var s := u_squad[u]
+		if s < 0 or sq_used[s] == 0:
 			continue
-		_update_centroid(s)
-	for s in squads:
-		if sq_used[s] == 0 or sq_dorm[s] == 1:
-			continue
+		if sq_single[s] == 1:
+			list.append(s)
+		else:
+			_sq_act[s] = 1
+	list.append_array(_real_sq)
+	list.sort()
+	# список отрядов шага не меняется в шаге (form/disband — только снаружи)
+	for s: int in list:
+		if sq_single[s] == 1 or _sq_act[s] == 1:
+			_update_centroid(s)
+			_sq_still[s] = 0
+		elif _sq_still[s] == 0:
+			_update_centroid(s)
+			_sq_still[s] = 1
+	for s: int in list:
 		_squad_step(s)
+		_sq_act[s] = 0
 
 
+func _real_sq_rebuild() -> void:
+	_rs_dirty = false
+	_real_sq.clear()
+	for t in squads:
+		if sq_used[t] == 1 and sq_single[t] == 0:
+			_real_sq.append(t)
+
+
+## Хэш: полная сборка (срез, город без сна — каждый шаг; город — при смене границ).
+## Город между шагами: переложить только родившихся и убитых (_hq).
 func _rebuild_hash() -> void:
 	_hash_dirty = false
+	if sleep_enabled:
+		if _hash_full:
+			_hash_build_city()
+		else:
+			_hash_relink_list(_hq)
+			_hq.clear()
+		return
 	_head.fill(-1)
 	_cmask.fill(0)
 	_bmask.fill(0)
 	if _next.size() < n:
 		_next.resize(n)
-	if sleep_enabled:
-		_rebuild_hash_city()
-		return
 	var go := _g_origin
 	var gn := _g_n
 	var bn := _b_n
@@ -1624,48 +1793,123 @@ func _rebuild_hash() -> void:
 		_bmask[(cz >> _BLK_SHIFT) * bn + (cx >> _BLK_SHIFT)] |= bit
 
 
-## Хэш города: спящие берут клетку и блок из прошлой сборки (они не двигались); блоки с соседями (сон)
-func _rebuild_hash_city() -> void:
+## Хэш города целиком: все живые по номеру (списки клеток — по убыванию, как в срезе); маски клеток
+## и блоков, блоки «рядом враг» (_bmask_n: блок и 8 соседей) и список смешанных (_mixed)
+func _hash_build_city() -> void:
+	_hash_full = false
+	_head.fill(-1)
+	_cmask.fill(0)
+	_bmask.fill(0)
 	_bmask_n.fill(0)
-	if _ublk.size() < n:
-		var old := _ucell.size()
-		_ublk.resize(n)
-		_ucell.resize(n)
-		for u in range(old, n):
-			_ucell[u] = -1
+	_mx_on.fill(0)
+	_mixed.clear()
+	_ucell.fill(-1)
+	for u in n:
+		if u_life[u] == Life.ALIVE:
+			_hash_link(u, _cell(u_x[u], u_z[u]))
+	_hq.clear()
+
+
+## Переложить юнитов списка в хэше (город): живой — в клетку своей позиции, остальные — вон
+func _hash_relink_list(list: PackedInt32Array) -> void:
 	var go := _g_origin
 	var gn := _g_n
-	var bn := _b_n
 	var gmax := gn - 1
-	for u in n:
-		if u_life[u] != Life.ALIVE:
-			continue
+	for u: int in list:
 		var c := _ucell[u]
-		var b := _ublk[u]
-		if u_sleep[u] == 0 or c < 0:
-			var cx := clampi(int((u_x[u] - go) / _CELL), 0, gmax)
-			var cz := clampi(int((u_z[u] - go) / _CELL), 0, gmax)
-			c = cz * gn + cx
-			b = (cz >> _BLK_SHIFT) * bn + (cx >> _BLK_SHIFT)
-			_ucell[u] = c
-			_ublk[u] = b
-		_next[u] = _head[c]
-		_head[c] = u
-		var bit := 1 << u_side[u]
+		if u_life[u] != Life.ALIVE:
+			if c >= 0:
+				_hash_unlink(u)
+			continue
+		var nc := clampi(int((u_z[u] - go) / _CELL), 0, gmax) * gn + clampi(int((u_x[u] - go) / _CELL), 0, gmax)
+		if nc == c:
+			continue
+		if c >= 0:
+			_hash_unlink(u)
+		_hash_link(u, nc)
+
+
+## В голову списка клетки c; бит команды — в клетку, блок и блоки вокруг
+func _hash_link(u: int, c: int) -> void:
+	var h := _head[c]
+	_next[u] = h
+	_hprev[u] = -1
+	if h >= 0:
+		_hprev[h] = u
+	_head[c] = u
+	_ucell[u] = c
+	var gn := _g_n
+	var b := ((c / gn) >> _BLK_SHIFT) * _b_n + ((c % gn) >> _BLK_SHIFT)
+	_ublk[u] = b
+	var bit := 1 << u_side[u]
+	if _cmask[c] & bit == 0:
 		_cmask[c] |= bit
 		if _bmask[b] & bit == 0:
 			_bmask[b] |= bit
-			_dilate(b, bit)
+			_bn_add(b, bit)
 
 
-## Блок и 8 соседей получают бит стороны (сон: враг ближе ~16 м будит)
-func _dilate(b: int, bit: int) -> void:
+## Из списка клетки; последний своей команды в клетке (блоке) снимает её бит
+func _hash_unlink(u: int) -> void:
+	var c := _ucell[u]
+	var p := _hprev[u]
+	var nx := _next[u]
+	if p >= 0:
+		_next[p] = nx
+	else:
+		_head[c] = nx
+	if nx >= 0:
+		_hprev[nx] = p
+	_ucell[u] = -1
+	var side := u_side[u]
+	var v := _head[c]
+	while v >= 0:
+		if u_side[v] == side:
+			return
+		v = _next[v]
+	var bit := 1 << side
+	_cmask[c] &= ~bit
+	var gn := _g_n
+	var cx0 := ((c % gn) >> _BLK_SHIFT) << _BLK_SHIFT
+	var cz0 := ((c / gn) >> _BLK_SHIFT) << _BLK_SHIFT
+	for gz in range(cz0, mini(cz0 + (1 << _BLK_SHIFT), gn)):
+		for gx in range(cx0, mini(cx0 + (1 << _BLK_SHIFT), gn)):
+			if _cmask[gz * gn + gx] & bit != 0:
+				return
+	var b := _ublk[u]
+	_bmask[b] &= ~bit
+	_bn_remove(b, bit)
+
+
+## Бит команды пришёл в блок b: блоки вокруг (3 × 3) знают «рядом команда»; две и больше — смешанный
+func _bn_add(b: int, bit: int) -> void:
 	var bn := _b_n
 	var bx := b % bn
 	var bz := b / bn
 	for z in range(maxi(bz - 1, 0), mini(bz + 1, bn - 1) + 1):
 		for x in range(maxi(bx - 1, 0), mini(bx + 1, bn - 1) + 1):
-			_bmask_n[z * bn + x] |= bit
+			var nb := z * bn + x
+			var m := _bmask_n[nb] | bit
+			_bmask_n[nb] = m
+			if m & (m - 1) != 0 and _mx_on[nb] == 0:
+				_mx_on[nb] = 1
+				_mixed.append(nb)
+
+
+## Бит команды ушёл из блока b: у блоков вокруг он остаётся, только если есть ещё в их 3 × 3
+func _bn_remove(b: int, bit: int) -> void:
+	var bn := _b_n
+	var bx := b % bn
+	var bz := b / bn
+	for z in range(maxi(bz - 1, 0), mini(bz + 1, bn - 1) + 1):
+		for x in range(maxi(bx - 1, 0), mini(bx + 1, bn - 1) + 1):
+			var keep := false
+			for z2 in range(maxi(z - 1, 0), mini(z + 1, bn - 1) + 1):
+				for x2 in range(maxi(x - 1, 0), mini(x + 1, bn - 1) + 1):
+					if _bmask[z2 * bn + x2] & bit != 0:
+						keep = true
+			if not keep:
+				_bmask_n[z * bn + x] &= ~bit
 
 
 func _cell(x: float, z: float) -> int:
@@ -1865,11 +2109,7 @@ func _nearest_enemy_squad(s: int) -> int:
 ## (хэш); одиночки дальше 50 м не в счёт (их сотни — работники)
 func _nearest_enemy_squad_city(s: int) -> int:
 	if _rs_dirty:
-		_rs_dirty = false
-		_real_sq.clear()
-		for t in squads:
-			if sq_used[t] == 1 and sq_single[t] == 0:
-				_real_sq.append(t)
+		_real_sq_rebuild()
 	var best := -1
 	var bd := INF
 	var side := sq_side[s]
@@ -2014,7 +2254,8 @@ func _squad_step(s: int) -> void:
 			u_couched[u] = 0
 			u_target[u] = -1
 			u_fire_t[u] = -1.0
-			u_sleep[u] = 0
+			if u_sleep[u] == 1:
+				_wake(u)
 			if u_act[u] == Act.AIM:
 				u_act[u] = Act.NONE
 		sq_dorm[s] = 0
@@ -2023,8 +2264,9 @@ func _squad_step(s: int) -> void:
 	# --- движение якоря строя
 	var spd := squad_speed(s)
 	if not single:
-		# отставание бойцов от мест в строю (раз в 3 шага — дорого); у одиночки его нет (R2)
-		if (steps + s) % 3 == 0:
+		# отставание бойцов от мест в строю (раз в 3 шага — дорого); у одиночки его нет (R2);
+		# город: отряд, где все спят и стоят (центр не менялся), не пересчитывает — никто не сдвинулся
+		if (steps + s) % 3 == 0 and (_sq_still[s] == 0 or sq_order[s] != Order.HOLD):
 			var lag_sum := 0.0
 			var cnt := 0
 			for u in sq_members[s]:
@@ -2180,7 +2422,8 @@ func _squad_step(s: int) -> void:
 	if collect_events and not single and (sq_vx[s] != 0.0 or sq_vz[s] != 0.0):
 		_trail_push(s)
 	# --- огонь шеренгами
-	_fire_control(s)
+	if sq_fire_target[s] >= 0:
+		_fire_control(s)
 	if ranged_st:
 		_fire_control_st(s, st)
 
@@ -2321,16 +2564,14 @@ func _units_think() -> void:
 	var has_mods := own_mods.size() > 0
 	var has_spd := _spd.size() > 0
 	var obstacles := _st_live > 0 or _blk_static.size() > 0
-	for u in n:
+	# город — только бодрые (спящих будит _wake_pass), срез — все по номеру
+	for u: int in (_aw if sleep_on else _all_units()):
 		if u_life[u] != Life.ALIVE:
 			u_dvx[u] = 0.0
 			u_dvz[u] = 0.0
 			continue
 		if sleep_on and u_sleep[u] == 1:
-			# спит (R12): будит приказ, урон (сразу), враг рядом (блок 16 м и соседи), толчок с места (2 раза в с)
-			if _bmask_n[_ublk[u]] & ~(1 << u_side[u]) == 0 and ((u + steps) % WAKE_CHECK_STEPS != 0 or not _pushed_off(u)):
-				continue
-			_wake(u)
+			continue
 		var s := u_squad[u]
 		var ti := u_type[u]
 		var mounted := t_flags[ti] & UnitStats.MOUNTED != 0
@@ -2565,11 +2806,18 @@ func _spd_at(x: float, z: float) -> float:
 	return _spd[gz * _grid_w + gx] / 16.0
 
 
-## Спящего сдвинули с места больше чем на 0,5 м
+## Спящего сдвинули с места больше чем на 0,5 м (место одиночки — якорь)
 func _pushed_off(u: int) -> bool:
-	var p := slot_point(u_squad[u], u)
-	var dx := p.x - u_x[u]
-	var dz := p.y - u_z[u]
+	var s := u_squad[u]
+	var dx := 0.0
+	var dz := 0.0
+	if sq_single[s] == 1:
+		dx = sq_x[s] - u_x[u]
+		dz = sq_z[s] - u_z[u]
+	else:
+		var p := slot_point(s, u)
+		dx = p.x - u_x[u]
+		dz = p.y - u_z[u]
 	return dx * dx + dz * dz > 0.25
 
 
@@ -2659,11 +2907,46 @@ func _charge_hit(u: int, tg: int, speed_frac: float) -> void:
 		_damage(u, maxf(1.0, counter - t_armour[ti]), tg)
 
 
+## 0..n−1 одним массивом (обход «всех» тем же кодом, что и обход бодрых)
+func _all_units() -> PackedInt32Array:
+	var old := _all.size()
+	if old != n:
+		_all.resize(n)
+		for u in range(old, n):
+			_all[u] = u
+	return _all
+
+
+## Город: тела по очереди смертей — слот свободен через corpse_t после смерти (ещё падает — ждём)
+func _corpse_pass(corpse_t: float) -> void:
+	var q := _corpse
+	var h := _corpse_h
+	while h < q.size():
+		var u := q[h]
+		var life := u_life[u]
+		if u_gen[u] != q[h + 1] or (life != Life.DEAD and life != Life.DYING):
+			h += 2  # слот уже свободен (убран) или занят новым
+			continue
+		if time - u_death_t[u] < corpse_t or life == Life.DYING:
+			break
+		h += 2
+		_free_unit(u)
+	if h >= _corpse.size():
+		_corpse.clear()
+		h = 0
+	elif h >= 512 and h * 2 >= _corpse.size():
+		_corpse = _corpse.slice(h)  # голова ушла далеко: сжать (массив свой, вид его не читает)
+		h = 0
+	_corpse_h = h
+
+
 func _resolve_actions() -> void:
 	var sleep_on := sleep_enabled
 	var recycle := corpse_steps >= 0
 	var corpse_t := corpse_steps * DT
-	for u in n:
+	if sleep_on and recycle:
+		_corpse_pass(corpse_t)
+	for u: int in (_aw if sleep_on else _all_units()):
 		var life := u_life[u]
 		if life == Life.DYING:
 			var dur := DEATH_DURATION_HORSE if t_flags[u_type[u]] & UnitStats.MOUNTED != 0 else DEATH_DURATION_HUMAN
@@ -2671,8 +2954,8 @@ func _resolve_actions() -> void:
 				u_life[u] = Life.DEAD
 			continue
 		if life != Life.ALIVE:
-			# тело лежит corpse_steps шагов, потом слот свободен (R1)
-			if recycle and life == Life.DEAD and time - u_death_t[u] >= corpse_t:
+			# тело лежит corpse_steps шагов, потом слот свободен (R1; город — очередью тел)
+			if recycle and not sleep_on and life == Life.DEAD and time - u_death_t[u] >= corpse_t:
 				_free_unit(u)
 			continue
 		if sleep_on and u_sleep[u] == 1:
@@ -2858,6 +3141,11 @@ func _kill(u: int, attacker: int) -> void:
 		_wake(u)
 	u_killer[u] = attacker
 	_hash_dirty = true
+	if sleep_enabled:
+		_hq.append(u)  # вон из хэша при ближайшей сборке
+		if corpse_steps >= 0:
+			_corpse.append(u)
+			_corpse.append(u_gen[u])
 	if collect_events:
 		ev_dead.append(u)
 		ev_dead.append(attacker)
@@ -2885,7 +3173,7 @@ func _kill(u: int, attacker: int) -> void:
 func _integrate() -> void:
 	var decay := exp(-6.0 * DT)
 	var sleep_on := sleep_enabled
-	for u in n:
+	for u: int in (_aw if sleep_on else _all_units()):
 		var life := u_life[u]
 		if life == Life.DEAD or life == Life.FREE:
 			continue
@@ -2955,12 +3243,15 @@ func _try_sleep(u: int) -> void:
 		return
 	if absf(angle_difference(u_h[u], sq_h[s])) > 0.02:
 		return
+	# враг рядом (блок 16 м и соседи) — не спит: иначе будильник поднимет его на следующем шаге
+	if _ucell[u] >= 0 and _bmask_n[_ublk[u]] & ~(1 << u_side[u]) != 0:
+		return
 	u_vx[u] = 0.0
 	u_vz[u] = 0.0
 	u_sleep[u] = 1
 	if sq_single[s] == 1:
 		sq_dorm[s] = 1
-	_ucell[u] = -1  # сдвинулся на этом шаге — клетку при сборке хэша посчитать заново
+	# в хэш его переложит сборка конца шага (он ещё в _aw)
 	# спит на месте: прошлый шаг = этот (вид не качает его между ними; шаг начала его пропускает)
 	u_px[u] = u_x[u]
 	u_pz[u] = u_z[u]
@@ -3023,8 +3314,8 @@ func _separate() -> void:
 					v = _next[v]
 
 
-## Расталкивание города (сон включён): пары «бодрый — бодрый» один раз (у меньшего номера),
-## «бодрый — спящий» — у бодрого; спящие между собой не толкаются (уже стоят по местам)
+## Расталкивание города (сон включён): пары бодрых из _aw — один раз (у меньшего номера),
+## «бодрый — прочий» (спящий, разбуженный на этом шаге) — у бодрого; спящие между собой не толкаются
 func _separate_city() -> void:
 	var rmax := 0.0
 	for r in t_radius:
@@ -3032,7 +3323,7 @@ func _separate_city() -> void:
 	var gn := _g_n
 	var go := _g_origin
 	var gmax := gn - 1
-	for u in n:
+	for u: int in _aw:
 		if u_life[u] != Life.ALIVE or u_sleep[u] == 1:
 			continue
 		var ru := t_radius[u_type[u]]
@@ -3046,7 +3337,7 @@ func _separate_city() -> void:
 			for gx in range(maxi(cx - 1, 0), mini(cx + 1, gmax) + 1):
 				var v := _head[gz * gn + gx]
 				while v >= 0:
-					if v == u or (v < u and u_sleep[v] == 0):
+					if v == u or (v < u and _aw_on[v] == 1 and u_sleep[v] == 0):
 						v = _next[v]
 						continue
 					var dx := u_x[v] - xu
@@ -3091,7 +3382,7 @@ func _collide() -> void:
 	var gro := _grid_origin
 	var gw := _grid_w
 	var gh := _grid_h
-	for u in n:
+	for u: int in (_aw if sleep_enabled else _all_units()):
 		if u_life[u] != Life.ALIVE or u_sleep[u] == 1:
 			continue
 		var x := u_x[u]
