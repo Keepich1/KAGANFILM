@@ -517,6 +517,11 @@ func _test_side(p: int) -> void:
 	sel.set_selection(PackedInt32Array([hq]))
 	var panel := city.building_panel(hq)
 	SimHarness.check(hud.bottom.building.visible, "выбрана ставка — панель здания")
+	var medal: CityRoundel = null
+	for ch in hud.bottom.building.get_children():
+		if ch is CityRoundel:
+			medal = ch
+	SimHarness.check(medal != null and medal.portrait != null, "в медальоне ставки — портрет из модели (assets/ui/portraits/bld_*.png)")
 	var trains := 0
 	for ch in hud.bottom.building.get_children():
 		if ch is Button and ch.size.x >= CityBuildingPanel.TRAIN and ch.name != "Ability":

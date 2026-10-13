@@ -204,6 +204,13 @@ static func unit_portrait(type_id: String) -> Texture2D:
 	return _load_tex(DIR + "portraits/" + vid + ".png")
 
 
+## Портрет постройки из её модели (assets/ui/portraits/bld_<id>.png, сцена ui_portraits); null — нет
+static func building_portrait(defs: Defs, btype: int) -> Texture2D:
+	if btype < 0 or btype >= defs.b_ids.size():
+		return null
+	return _load_tex(DIR + "portraits/bld_" + defs.b_ids[btype] + ".png")
+
+
 ## Портрет, если есть, иначе эмблема рода
 static func unit_face(type_id: String) -> Texture2D:
 	var t := unit_portrait(type_id)

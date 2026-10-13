@@ -57,6 +57,7 @@ func _rebuild(d: Dictionary) -> void:
 	var roundel := CityRoundel.new()
 	roundel.color = UiTheme.TEAM[hud.team_of_building(_handle) % 4]
 	roundel.icon = UiTheme.building_icon(defs, bt)
+	roundel.portrait = UiTheme.building_portrait(defs, bt)     # модель постройки, если снята; иначе значок
 	roundel.position = Vector2(4, 6)
 	roundel.size = Vector2(96, 96)
 	add_child(roundel)
