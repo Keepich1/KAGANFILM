@@ -25,7 +25,10 @@ extends Node
 ##   --upscale=fsr1|fsr2|bilinear — способ увеличения; --post=full|half|off — живописный фильтр;
 ##   --post_cap=0 — фильтр «Высокого» в полном кадре на любом мониторе (как было), --post_cap=1440 — до 1440p;
 ##   --aa=msaa|msaa2|smaa|fxaa|off — сглаживание (msaa — 4×, как было);
-##   --shadow_atlas=8192 — карта теней (размытие подстраивается); --fog_grid=128 --fog_depth=128 — сетка тумана.
+##   --shadow_atlas=8192 — карта теней (размытие подстраивается); --fog_grid=128 --fog_depth=128 — сетка тумана;
+##   --shadow_soft=medium — мягкая тень дешевле (вдвое меньше выборок; «Высокое» — high);
+##   --crowd_cascades=all — тени юнитов во всех каскадах солнца, как было; --crowd_shadow=700 — дальность
+##   теней юнитов, м (CrowdLayer).
 
 const HIGH := "high"
 const MEDIUM := "medium"
@@ -67,6 +70,7 @@ const PRESETS := {
 
 ## Что применено последним apply() (экран F9: pixel_summary)
 static var applied_atlas := 0
+static var applied_soft := ""
 static var applied_fog := Vector3i.ZERO
 
 
@@ -219,7 +223,11 @@ func apply(level: String) -> void:
 	RenderingServer.environment_set_volumetric_fog_volume_size(fog_grid, fog_depth)
 	applied_fog = Vector3i(fog_grid, fog_grid, fog_depth) if we and we.environment.volumetric_fog_enabled else Vector3i.ZERO
 	var soft := RenderingServer.SHADOW_QUALITY_SOFT_HIGH
-	match String(p.shadow_soft):
+	# --shadow_soft=medium|low|… подменяет фильтр мягкой тени уровня (сравнение на F9: выборок на точку кадра)
+	applied_soft = _arg("shadow_soft", String(p.shadow_soft))
+	match applied_soft:
+		"medium":
+			soft = RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM
 		"low":
 			soft = RenderingServer.SHADOW_QUALITY_SOFT_LOW
 		"very_low":
@@ -313,7 +321,7 @@ static func pixel_summary(vp: Viewport, post: PainterlyPost) -> String:
 		paint = "фильтр %d×%d" % [w.x, w.y]
 	var fog := "туман %d×%d×%d" % [applied_fog.x, applied_fog.y, applied_fog.z] if applied_fog != Vector3i.ZERO \
 		else "без объёмного тумана"
-	return "%s · %s · тени %d · %s" % [aa, paint, applied_atlas, fog]
+	return "%s · %s · тени %d (%s) · %s" % [aa, paint, applied_atlas, applied_soft, fog]
 
 
 ## Название способа увеличения для экрана F9
