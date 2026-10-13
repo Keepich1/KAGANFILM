@@ -18,6 +18,7 @@ func _init() -> void:
 	_test_gates()
 	_test_enclosed_400()
 	_test_detour_400()
+	_test_breach_ratio()
 	_test_random_walls()
 	_test_stale()
 	_test_budget()
@@ -343,6 +344,27 @@ func _test_detour_400() -> void:
 		"обход на 400²: %.3f мс часы (лучший), %.3f мс проц. ≤ 3 (A* без коридора: %.1f мс часы)" % [ms, cpu, direct])
 
 
+## rules.breach_ratio: обход через дальнюю щель дороже ratio × октиль — враг ломает стену
+func _test_breach_ratio() -> void:
+	print("[breach_ratio: обход против пролома]")
+	var k := make(MAP_400)
+	var nav: NavGrid = k["nav"]
+	wall(k, 0, &"devor", PackedVector2Array([Vector2(2, -799), Vector2(2, 600)]))    # щель у края
+	nav.sync_for_paths()
+	var a := Vector2(-40, 0)
+	var b := Vector2(40, 0)
+	var r0 := nav.find_now(1, a, b)
+	nav.paths.breach_ratio = 1.5
+	var r1 := nav.find_now(1, a, b)
+	nav.paths.breach_ratio = 40.0
+	var r2 := nav.find_now(1, a, b)
+	SimHarness.check(r0.breach_b == 0 and not r0.no_route and r0.cost > 1000.0,
+		"ratio 0 (выкл.): враг обходит через щель (%.0f м)" % r0.cost)
+	SimHarness.check(r1.breach_b != 0 and r1.cost < 200.0, "ratio 1,5: обход в %.0f раз длиннее — пролом (%.0f м)" % [
+		r0.cost / maxf(a.distance_to(b), 1.0), r1.cost])
+	SimHarness.check(r2.breach_b == 0, "ratio 40: обход дешевле порога — без пролома")
+
+
 ## 1000 случайных диагональных стен поперёк карты: ни одной щели
 func _test_random_walls() -> void:
 	print("[1000 диагональных стен: без щелей]")
@@ -464,7 +486,8 @@ func _test_budget() -> void:
 			sums.append(nav.checksum())
 			SimHarness.check(served.size() == 64, "бюджет %d клеток: все 64 обслужены за %d тактов" % [cells_budget, tick])
 		SimHarness.check(logs[0] == logs[1] and sums[0] == sums[1] and logs[0].length() > 100,
-			"бюджет %d: порядок обслуживания и пути совпали в двух прогонах (сумма %d)" % [cells_budget, sums[0]])
+			"бюджет %d: порядок обслуживания и пути совпали в двух прогонах (сумма %d, журнал %d)" % [
+			cells_budget, sums[0], hash(logs[0])])
 		SimHarness.check(max_req <= 16 and over == 0, "за такт ≤ 16 запросов (макс. %d) и ≤ %d клеток" % [max_req, cells_budget])
 
 
