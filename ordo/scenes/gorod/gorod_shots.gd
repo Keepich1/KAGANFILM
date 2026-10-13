@@ -166,8 +166,18 @@ static func setup(scene: GorodScene, s: Array) -> void:
 		var yaw := _clear_yaw(q, at, float(cfg.get("yaw", -60.0)))
 		var tgt := _work_target(q, aux, at)
 		if tgt.is_finite():
-			# камера со стороны работника, цель (дерево, жила) — за ним и чуть в стороне
 			var away := at - tgt
+			if aux < AnimSpec.WORK_DIG - 0.01 and u >= 0 and away.length() < 0.9:
+				# FakeCity ставит рубящего в точку дерева (в ствол): для кадра — в 1,3 м от ствола, лицом к нему
+				var dir := away.normalized() if away.length() > 0.05 else Vector2(sin(deg_to_rad(yaw)), cos(deg_to_rad(yaw)))
+				at = tgt + dir * 1.3
+				sim.u_x[u] = at.x
+				sim.u_px[u] = at.x
+				sim.u_z[u] = at.y
+				sim.u_pz[u] = at.y
+				sim.u_h[u] = atan2(-dir.x, -dir.y)
+				away = at - tgt
+			# камера со стороны работника, цель (дерево, жила) — за ним и чуть в стороне
 			yaw = rad_to_deg(atan2(away.x, away.y)) + 35.0
 		view = Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), yaw)
 	if pitch >= 0.0:
