@@ -78,7 +78,7 @@ func unpack(e: EconomySim, p: int, arbas: PackedInt32Array, center: Vector2) -> 
 		e.b_dest[b] = dest
 		e.b_mode[b] = EconomySim.Mode.UNPACK
 		var mine := arbas_of(e, b)
-		e.port.move(mine, dest, false)
+		e.port.move(mine, dest, true)          # арбы — 3,4 м/с (ECONOMY §3.6)
 	return EconApi.Err.OK
 
 

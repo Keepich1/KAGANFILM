@@ -9,11 +9,15 @@ extends RefCounted
 ##     одно здание — не чаще раза в 90 с;
 ##   • вытоптать поле: от 5 всадников, круг 5 с — поле не родит 45 с.
 ## Круг замирает, если в 30 м есть боевой юнит хозяина; срывается, если налётчиков ранили (рукопашная)
-## или их стало меньше 80% от начала. Прогресс — EconomySim.b_act (вид и панель: raid_progress).
+## или их стало меньше 80% от начала. Пока угнанное отсюда не уведено (банк или возврат) — новой барымты нет. Прогресс — EconomySim.b_act (вид и панель: raid_progress).
 
 enum Act { NONE, HERD, TALOO, TRAMPLE }
 
 var _buf := PackedInt32Array()
+var _all := PackedInt32Array()
+var _rx := PackedFloat32Array()
+var _rz := PackedFloat32Array()
+var _rt := PackedInt32Array()
 var _guard := PackedInt32Array()
 # тюки талоо на налётчиках
 var l_unit := PackedInt32Array()
@@ -76,6 +80,20 @@ func slow_step(e: EconomySim) -> void:
 	var B := e.buildings
 	var guard_r := float(e.rule("herd_theft", "guard_r", 30.0))
 	var abort := roundi(float(e.rule("herd_theft", "abort_loss", 0.2)) * 1000.0)
+	# все всадники карты — одним запросом в секунду (дальше — только квадраты расстояний)
+	e.port.units_near(-1, e.origin + e.extent * 0.5, e.extent.length(), true, UnitStats.MOUNTED, _all)
+	if _all.is_empty():
+		for b in B.hw:
+			e.b_act[b] = 0
+		return
+	_rx.resize(_all.size())
+	_rz.resize(_all.size())
+	_rt.resize(_all.size())
+	for i in _all.size():
+		var q := e.port.pos(_all[i])
+		_rx[i] = q.x
+		_rz[i] = q.y
+		_rt[i] = e.port.team(_all[i])
 	for b in B.hw:
 		if not e.active(b):
 			continue
@@ -91,7 +109,7 @@ func slow_step(e: EconomySim) -> void:
 		var c := Vector2(B.x[b], B.z[b])
 		var r := e.half_of(b).length() + 12.0
 		var team := B.team[b]
-		if not e.port.enemy_near(team, c, r):
+		if not _rider_near(team, c, r):
 			e.b_act[b] = 0
 			continue
 		e.port.units_near(team, c, r, true, UnitStats.MOUNTED, _buf)
@@ -109,6 +127,8 @@ func slow_step(e: EconomySim) -> void:
 					hurt = true
 		if act == Act.TALOO and not e.faction_has(rp, "loot"):
 			continue
+		if act == Act.HERD and _carrying_from(e, b, rp):
+			continue                # сперва увести угнанное отсюда
 		if n < _min_riders(e, act):
 			e.b_act[b] = 0
 			continue
@@ -123,6 +143,27 @@ func slow_step(e: EconomySim) -> void:
 		if e.b_act[b] >= need:
 			e.b_act[b] = 0
 			_execute(e, b, act, raider, rp, n)
+
+
+func _rider_near(team: int, c: Vector2, r: float) -> bool:
+	var r2 := r * r
+	for i in _rx.size():
+		if _rt[i] != team:
+			var dx := _rx[i] - c.x
+			var dz := _rz[i] - c.y
+			if dx * dx + dz * dz <= r2:
+				return true
+	return false
+
+
+## Налётчики игрока rp ещё ведут стадо, угнанное из b
+func _carrying_from(e: EconomySim, b: int, rp: int) -> bool:
+	var H := e.herds
+	var bh := e.buildings.handle(b)
+	for h in H.hw:
+		if H.state[h] == HerdTable.State.CAPTURED and H.pen_b[h] == bh and e.hd._captor_owner(e, h) == rp:
+			return true
+	return false
 
 
 ## Боевой юнит хозяина (не работник, не арба) в радиусе

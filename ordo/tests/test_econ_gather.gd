@@ -120,8 +120,8 @@ func _ken() -> void:
 				if e.rect_dist2(b, spot) < e.rect_dist2(drop, spot):
 					drop = b
 			var d := spot.distance_to(e.edge_point(drop, spot, 1.0))
-			model += EconWorkers.trip_model(k.defs.u_carry_milli[ui], e.wk.raw[ui * e.R + k.r(&"gold")] * (1500 if with_ken else 1000) / 1000,
-				e.wk.speed[ui], d) / 1000.0
+			var eff := k.defs.u_gather[ui * e.R + k.r(&"gold")] * 60 * (1500 if with_ken else 1000) / 1000
+			model += EconWorkers.trip_model(k.defs.u_carry_milli[ui], e.wk.rate_for(ui, k.defs.u_carry_milli[ui], eff), e.wk.speed[ui], d) / 1000.0
 		print("  %s: %.1f в минуту, модель %.1f" % ["с Кеном" if with_ken else "без Кена", got, model])
 		SimHarness.check_range(got / model, 0.9, 1.1, "золото %s: доход / модель" % ("у Кена" if with_ken else "без Кена"))
 		rates.append(got)
@@ -190,21 +190,21 @@ func _perf() -> void:
 	for i in steps:
 		k.tick += 1
 		k.events.tick = k.tick
-		var t0 := Time.get_ticks_usec()
+		var t0 := _now_us()
 		e.pre_step(k.tick)
-		var t1 := Time.get_ticks_usec()
+		var t1 := _now_us()
 		k.nav.service(k.tick)
 		k.port.step()
 		var deaths := k.port.take_deaths()
 		var hits := k.port.take_structure_hits()
 		var arr := k.port.take_arrivals()
-		var t2 := Time.get_ticks_usec()
+		var t2 := _now_us()
 		e.post_step(k.tick, deaths, hits, arr)
 		if k.tick % 30 == 0:
 			e.slow_step(k.tick)
 		if k.tick % 150 == 75:
 			e.fields_step(k.tick)
-		var t3 := Time.get_ticks_usec()
+		var t3 := _now_us()
 		var dt := (t1 - t0) + (t3 - t2)
 		t_econ += dt
 		worst = maxi(worst, dt)
@@ -213,3 +213,17 @@ func _perf() -> void:
 		k.res(p, "stone"), k.res(p, "gold")])
 	SimHarness.check(avg <= 1.0, "500 работников: ≤ 1 мс на такт в среднем (%.3f)" % avg)
 	SimHarness.check(k.res(p, "stone") > 250.0 + 1000.0, "добыча идёт")
+
+
+## Процессорное время этого потока, мкс (/proc/thread-self/schedstat, как bench_battle) — чужие процессы
+## на машине не портят замер; без него — часы
+var _cpu_file := true
+
+
+func _now_us() -> int:
+	if _cpu_file:
+		var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+		if f:
+			return int(f.get_line().split(" ")[0]) / 1000
+		_cpu_file = false
+	return Time.get_ticks_usec()

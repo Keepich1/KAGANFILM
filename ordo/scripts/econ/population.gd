@@ -5,7 +5,7 @@ extends RefCounted
 ##   • содержание — Σ UnitEcon.upkeep живых бойцов, списывается раз в upkeep_every_s (остаток копится);
 ##   • голод: еды не хватило на списание → еда 0, famine = 1, FAMINE(1), множители голода в ядро;
 ##     через desert_after_s — дезертирство: каждые desert_every_s каждый отряд теряет 3% (не меньше 1),
-##     первыми — дальние от ставки; конец — когда еды снова end_food (50) и больше: FAMINE(0);
+##     первыми — дальние от ставки; одиночки считаются одним отрядом (иначе ушли бы все разом); конец — когда еды снова end_food (50) и больше: FAMINE(0);
 ##   • подать: пока есть Бозор, раз в tax.every_s — tax_min целых (HP ≥ 50%) Уй и Урды; в голод — нет.
 
 var upk_acc := PackedInt64Array()        # остаток содержания (милли·с/мин)
@@ -115,14 +115,26 @@ func _desert(e: EconomySim, p: int) -> void:
 			var td := dist[j]; dist[j] = dist[j - 1]; dist[j - 1] = td
 			var ts := squads[j]; squads[j] = squads[j - 1]; squads[j - 1] = ts
 			j -= 1
+	# одиночки (нанятые по одному) — одной группой: 3% от всех, не меньше 1, дальние первыми
+	var singles := PackedInt32Array()
 	for sq in squads:
 		var m := e.port.members(sq)
+		if m.size() == 1:
+			singles.append(m[0])
+			continue
 		var k := maxi(1, m.size() * frac / 1000)
-		for i in k:
-			var u_h := m[m.size() - 1 - i]
-			e.unregister_unit(u_h)
-			e.events.push(SimEvents.Ev.UNIT_DIED, p, u_h, 0, -1, e.port.pos(u_h))
-			e.port.remove(u_h)
+		for i in mini(k, m.size()):
+			_leave_army(e, p, m[m.size() - 1 - i])
+	if not singles.is_empty():
+		for i in maxi(1, singles.size() * frac / 1000):
+			_leave_army(e, p, singles[i])
+
+
+func _leave_army(e: EconomySim, p: int, u_h: int) -> void:
+	var pos := e.port.pos(u_h)
+	e.unregister_unit(u_h)
+	e.events.push(SimEvents.Ev.UNIT_DIED, p, u_h, 0, -1, pos)
+	e.port.remove(u_h)
 
 
 ## Подать: пока у игрока есть Бозор (флаг market) и нет голода

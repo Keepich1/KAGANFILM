@@ -8,7 +8,7 @@ extends RefCounted
 ##   • тўғон разрушен — сеть сохнет через dry_s (20 с): поля 25%, Хумдон 50%; восстановлен — вода сразу.
 ## Пересчёт — только когда что-то изменилось (постройка, разрушение, срок засухи).
 
-const SNAP := 4.0
+const SNAP := 6.0
 
 var ww := 0
 var wh := 0
@@ -157,6 +157,22 @@ func recompute(e: EconomySim) -> void:
 			if w != was_wet[d]:
 				e.events.push(SimEvents.Ev.IRRIGATION_CHANGED, B.owner[d], B.handle(d), cells, w, Vector2(B.x[d], B.z[d]))
 			was_wet[d] = w
+
+
+## Точка в зоне воды своей сети с водой (точно, не по сетке 8 м) — для расстановки Хумдона
+func in_any_zone(e: EconomySim, p: int, pos: Vector2) -> bool:
+	var B := e.buildings
+	var links := PackedInt32Array()
+	for l in link_net.size():
+		if l < B.hw and link_net[l] >= 0 and B.state[l] == BuildingTable.State.ACTIVE:
+			links.append(l)
+	for d in mini(B.hw, dry_at.size()):
+		var nw: Dictionary = e.defs.b_network[B.btype[d]] if B.state[d] != BuildingTable.State.FREE else {}
+		if not bool(nw.get("source", false)) or B.owner[d] != p or not dam_wet(e, d):
+			continue
+		if _in_zone(e, d, pos, links):
+			return true
+	return false
 
 
 func _link_zone(e: EconomySim, l: int) -> float:

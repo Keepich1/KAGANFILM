@@ -75,7 +75,7 @@ func train(e: EconomySim, p: int, b_h: int, utype: int, count: int) -> int:
 	for i in maxi(count, 1):
 		if B.q_n[b] >= BuildingTable.QMAX:
 			break
-		if e.defs.u_unique[utype] == 1 and _alive_or_queued(e, p, utype) > 0:
+		if e.defs.u_unique[utype] == 1 and (added > 0 or _alive_or_queued(e, p, utype) > 0):
 			break
 		var disc := _otlar_discount(e, p, utype)
 		var cost := cost_of(e, p, utype)

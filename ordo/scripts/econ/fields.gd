@@ -116,12 +116,12 @@ func _pens(e: EconomySim, pas: Dictionary) -> void:
 		if e.defs.h_ids[H.htype[h]] != "sheep":
 			continue
 		var gr := avg_under(e, Vector2(H.x[h], H.z[h]), H.graze_r[h])
-		if gr < warn and e.b_flag[b] & EconomySim.BFL_PASTURE_WARNED == 0:
+		if gr <= warn and e.b_flag[b] & EconomySim.BFL_PASTURE_WARNED == 0:
 			e.b_flag[b] |= EconomySim.BFL_PASTURE_WARNED
 			e.events.push(SimEvents.Ev.PASTURE_LOW, B.owner[b], H.handle(h), gr, 0, Vector2(B.x[b], B.z[b]))
 		elif gr >= warn + 100:
 			e.b_flag[b] &= ~EconomySim.BFL_PASTURE_WARNED
-		if gr < below and e.b_auto[b] == 1:
+		if gr <= below and e.b_auto[b] == 1:
 			_auto_move(e, b, h, gr, pas)
 
 

@@ -19,7 +19,9 @@ enum Job { IDLE, TO_NODE, GATHER, TO_DROP, TO_SITE, BUILD, FARM, IN_ARBA, TO_FIE
 	REPAIR, SHELTER }
 
 const REF_M := 25.0                      # склад «рядом» (ECONOMY §1.1)
-const OVERHEAD := 6                      # тактов на ходку сверх пути (такт мысли, прибытие)
+const JITTER := 31                       # разброс конца работы по номеру работника: одинаковые ходки
+                                         # не сходятся в один такт (пик p99); в среднем 15 тактов
+const OVERHEAD := 6 + 15                 # тактов на ходку сверх пути (такт мысли, прибытие, разброс)
 const NEXT_NODE_R := 40.0                # узел выработан — следующий того же вида в 40 м
 const AUTO_GATHER_R := 30.0              # построил склад — берётся за ближний узел в 30 м
 const ARRIVE_R := 2.5
@@ -35,6 +37,7 @@ const FIELD_SLOTS := [Vector2(-4, -4), Vector2(4, -4), Vector2(-4, 4), Vector2(4
 	Vector2(0, 4), Vector2(-4, 0)]
 
 var hw := 0
+var thinks := 0                          # счётчик мыслей (замеры: пик работы за такт)
 var w_unit := PackedInt32Array()         # описатель юнита, 0 — свободно
 var w_owner := PackedInt32Array()
 var w_utype := PackedInt32Array()
@@ -60,6 +63,7 @@ var _free := PackedInt32Array()
 var raw := PackedInt32Array()            # [u * R + r]
 var farm_raw := PackedInt32Array()       # [u * NB + bt] — поле
 var speed := PackedFloat32Array()        # [u] м/с
+var walk_ticks := PackedInt32Array()     # [u] тактов на 2 × 25 м пути + накладные (модель ходки)
 
 # узлы: корзины 32 м и занятые места
 var nb_w := 0
@@ -75,9 +79,11 @@ func setup(e: EconomySim) -> void:
 	raw.resize(U * e.R)
 	farm_raw.resize(U * NB)
 	speed.resize(U)
+	walk_ticks.resize(U)
 	for u in U:
 		var st := UnitStats.get_stats(D.unit_ids[u])
 		speed[u] = float(st.get("speed", 3.5)) * (1.0 if RUN else float(st.get("walk", 0.62)))
+		walk_ticks[u] = int(2.0 * REF_M / speed[u] * 30.0) + OVERHEAD
 		var carry := D.u_carry_milli[u]
 		if carry <= 0:
 			continue
@@ -102,6 +108,16 @@ static func trip_raw(carry_milli: int, eff_milli_s: int, v: float) -> int:
 	var walk := 2.0 * REF_M / v * 30.0
 	var work := maxf(cycle - walk - OVERHEAD, cycle * 0.2)
 	return roundi(float(carry_milli) * 1000.0 / work)
+
+
+## Сырая скорость (микро за такт) для эффективной eff_milli_min при складе в 25 м — целочисленно.
+## Множители (Кен, поле без воды, Ҳашар) масштабируют ЭФФЕКТИВНУЮ скорость (ECONOMY: лалми — 7,5 из 30).
+func rate_for(utype: int, carry_milli: int, eff_milli_min: int) -> int:
+	if eff_milli_min <= 0 or carry_milli <= 0:
+		return 0
+	var cycle := carry_milli * 1800 / eff_milli_min
+	var work := maxi(cycle - walk_ticks[utype], cycle / 5)
+	return carry_milli * 1000 / maxi(work, 1)
 
 
 ## Ожидаемая выработка (милли в минуту) при пути d м до склада — для тестов и подсказок
@@ -396,6 +412,7 @@ func step(e: EconomySim) -> void:
 	var w := t % 3
 	while w < hw:
 		if w_wake[w] <= t and w_unit[w] != 0:
+			thinks += 1
 			_think(e, w)
 		w += 3
 
@@ -526,14 +543,20 @@ func _start_gather(e: EconomySim, w: int) -> void:
 
 ## Сырая скорость работника у узла с множителем, микро за такт
 func _gather_rate(e: EconomySim, w: int, r: int) -> int:
-	return raw[w_utype[w] * e.R + r] * w_mult[w] / 1000
+	var u := w_utype[w]
+	if w_mult[w] == 1000:
+		return raw[u * e.R + r]
+	return rate_for(u, w_cap[w], e.defs.u_gather[u * e.R + r] * 60 * w_mult[w] / 1000)
 
 
 func _farm_rate(e: EconomySim, w: int) -> int:
 	if not e.buildings.valid(w_target[w]):
 		return 0
-	var NB := e.defs.b_ids.size()
-	return farm_raw[w_utype[w] * NB + e.buildings.btype[e.buildings.slot(w_target[w])]] * w_mult[w] / 1000
+	var u := w_utype[w]
+	var bt := e.buildings.btype[e.buildings.slot(w_target[w])]
+	if w_mult[w] == 1000:
+		return farm_raw[u * e.defs.b_ids.size() + bt]
+	return rate_for(u, w_cap[w], int(e.defs.b_work[bt].get("per_worker_min_milli", 0)) * w_mult[w] / 1000)
 
 
 ## Разбудить, когда ноша наполнится (скорость 0 — проверить через 3 с)
@@ -542,7 +565,7 @@ func _wake_full(e: EconomySim, w: int, rate: int) -> void:
 		w_wake[w] = e.tick + 90
 		return
 	var need := (w_cap[w] - w_carry[w]) * 1000 - w_frac[w]
-	w_wake[w] = e.tick + maxi(1, (need + rate - 1) / rate)
+	w_wake[w] = e.tick + maxi(1, (need + rate - 1) / rate) + (w * 13) % JITTER
 
 
 ## Учёт добычи с w_t по сей такт: ноша растёт, запас узла убывает (поле — бесконечно)

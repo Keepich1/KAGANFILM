@@ -109,7 +109,8 @@ func _pen_second(e: EconomySim, h: int) -> void:
 		_flow(e, p, r, rate)
 	# приплод
 	var period := maxi(D.h_growth_ticks[ht], 30)
-	if D.b_herd_breed[bt] == 1 and e.tick % period == 0 and heads < cap and gr >= D.h_min_grass[ht]:
+	var crossed := e.tick / period != (e.tick - 30) / period      # раз в период (зовётся раз в секунду)
+	if D.b_herd_breed[bt] == 1 and crossed and heads < cap and gr >= D.h_min_grass[ht]:
 		var per_min := 0
 		var steps := D.h_growth_steps[ht]
 		var i := 0

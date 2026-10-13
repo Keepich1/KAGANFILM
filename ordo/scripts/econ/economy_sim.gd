@@ -324,7 +324,7 @@ func econ_place_why(p: int, btype: int, center: Vector2, rot_q: int) -> int:
 				mask |= 1 << defs.n_res[nt]
 		if node_near(mask, center, float(near.get("r", 26.0))) == 0:
 			return NavApi.Why.NOT_NEAR
-	if bool(place.get("water_zone", false)) and net.water_at(self, center) < 500:
+	if bool(place.get("water_zone", false)) and not net.in_any_zone(self, p, center):
 		return NavApi.Why.NOT_NEAR
 	if defs.b_herd[btype] >= 0 and defs.b_herd_breed[btype] == 1 and defs.b_flags[btype] & Defs.BF_PEN:
 		if not fld.pen_spot_ok(self, btype, center, -1):
@@ -541,6 +541,13 @@ func pre_step(p_tick: int) -> void:
 	prod.step(self)
 	if _net_dirty or net.due(self):
 		net.recompute(self)
+	# секундные системы — в своих фазах такта, чтобы не копились в один (ARCHITECTURE §16, p99)
+	match p_tick % 30:
+		10:
+			hd.slow_step(self)
+		20:
+			raid.slow_step(self)
+			nomad.slow_step(self)
 
 
 func post_step(p_tick: int, deaths: PackedInt32Array, hits: PackedInt32Array, arrivals: PackedInt32Array) -> void:
@@ -564,9 +571,6 @@ func slow_step(p_tick: int) -> void:
 	tick = p_tick
 	popn.slow_step(self)
 	prod.recipes_step(self)
-	hd.slow_step(self)
-	raid.slow_step(self)
-	nomad.slow_step(self)
 	mods.slow_step(self)
 	cal.slow_step(self)
 	_ruins_step()
@@ -1090,7 +1094,7 @@ func _on_hit(b_h: int, dmg_c: int, att_h: int) -> void:
 		var fl := int(UnitStats.get_stats(String(port.type_id(att_h))).get("flags", 0))
 		if fl & (UnitStats.BOW | UnitStats.MUSKET | UnitStats.CANNON) == 0:
 			var dm: Dictionary = rules.get("bld_dmg", {})
-			if fl & UnitStats.RAIDER and B.flags[b] & (Defs.BF_HQ | Defs.BF_PEN) == 0 and defs.b_kind[B.btype[b]] == Defs.BKind.BUILDING:
+			if fl & UnitStats.RAIDER and is_economic(b):
 				mul = roundi(float(dm.get("raider_econ", 0.4)) * 1000.0)
 			elif fl & UnitStats.MOUNTED:
 				mul = roundi(float(dm.get("melee_cav", 0.3)) * 1000.0)
@@ -1105,6 +1109,19 @@ func _on_hit(b_h: int, dmg_c: int, att_h: int) -> void:
 
 
 # ================================================================= служебное
+
+## Хозяйственное здание (ECONOMY §1.6): дома, юрты, склады, мельница, тўғон, хумдон, базар, короо, кен —
+## не ставка, не укрепление и не место найма бойцов
+func is_economic(b: int) -> bool:
+	var bt := buildings.btype[b]
+	var kind := defs.b_kind[bt]
+	if buildings.flags[b] & Defs.BF_HQ or (kind != Defs.BKind.BUILDING and kind != Defs.BKind.DAM):
+		return false
+	for u in defs.b_trains[bt]:
+		if defs.u_flags[u] & UnitStats.WORKER == 0:
+			return false
+	return true
+
 
 ## Слот своего живого здания или −Err
 func _own(p: int, b_h: int) -> int:
