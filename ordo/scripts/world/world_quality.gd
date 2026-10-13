@@ -12,7 +12,7 @@ extends Node
 ## Узел ищет соседей по именам в сцене мира: Environment, Sun, Terrain, Grass, Scatter.
 ##
 ## Для других областей: WorldQuality.preset(уровень) — числа уровня (толпа: crowd_lod,
-## crowd_lod1_shadow; эффекты: fx), WorldQuality.level_name(), next_level() (F2),
+## crowd_lod1_shadow, crowd_shadow — дальность теней юнитов, м; эффекты: fx), WorldQuality.level_name(), next_level() (F2),
 ## auto_level() — выбор по видеокарте при первом запуске (Ordo запоминает выбор игрока).
 ## Ключ --upscale=fsr1|fsr2|bilinear подменяет способ увеличения (для сравнения).
 
@@ -31,21 +31,21 @@ const PRESETS := {
 		"post": "full", "volfog": true, "fog_grid": 128, "ssao": true, "ssao_low": false,
 		"shadow_splits": 4, "shadow_dist": 700.0, "shadow_atlas": 8192, "shadow_soft": "high",
 		"grass_density": 1.0, "grass_range": 1.0, "terrain_lod": 1.0, "scatter_lod": 1.0,
-		"crowd_lod": 1.0, "crowd_lod1_shadow": true, "fx": 1.0,
+		"crowd_lod": 1.0, "crowd_lod1_shadow": true, "crowd_shadow": 126.0, "fx": 1.0,
 	},
 	MEDIUM: {
 		"scale": 0.77, "upscale": "fsr1", "msaa": true,
 		"post": "half", "volfog": true, "fog_grid": 96, "ssao": true, "ssao_low": true,
 		"shadow_splits": 4, "shadow_dist": 500.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.6, "grass_range": 0.85, "terrain_lod": 0.8, "scatter_lod": 0.8,
-		"crowd_lod": 0.75, "crowd_lod1_shadow": true, "fx": 0.75,
+		"crowd_lod": 0.75, "crowd_lod1_shadow": true, "crowd_shadow": 90.0, "fx": 0.75,
 	},
 	LOW: {
 		"scale": 0.67, "upscale": "fsr1", "msaa": false,
 		"post": "half", "volfog": false, "fog_grid": 64, "ssao": false, "ssao_low": true,
 		"shadow_splits": 2, "shadow_dist": 320.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.33, "grass_range": 0.6, "terrain_lod": 0.6, "scatter_lod": 0.6,
-		"crowd_lod": 0.5, "crowd_lod1_shadow": false, "fx": 0.5,
+		"crowd_lod": 0.5, "crowd_lod1_shadow": false, "crowd_shadow": 60.0, "fx": 0.5,
 	},
 }
 

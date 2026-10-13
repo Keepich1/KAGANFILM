@@ -2,7 +2,14 @@ class_name CrowdLayer
 extends Node3D
 ## Слой толпы: один вид юнита, анимация целиком на видеокарте (CONTRACT §7, ТЗ 11.5).
 ##
-## Два MultiMeshInstance3D — LOD0 вблизи и LOD1 вдали (visibility range по lod_distance).
+## LOD — по каждому юниту, а не по всему слою: ближе lod_distance — подробная модель (LOD0),
+## дальше — облегчённая (LOD1). Тени отбрасывают только юниты ближе дальности теней толпы
+## (WorldQuality «crowd_shadow»: на «Высоком» — первые два каскада солнца, 126 м).
+## Три MultiMeshInstance3D: LOD0, LOD1 с тенью и LOD1 без тени. Буфер экземпляров делится на
+## блоки по BLOCK мест; каждый кадр блок по своим границам и камере уходит в те MultiMesh,
+## чьей полосе дальности он может принадлежать (на границе — в оба). Точный выбор по юниту —
+## в шейдере (shaders/crowd.gdshader, crowd_lod): лишние там сжимаются в точку до расчёта позы,
+## так же — юниты вне кадра (и вне каскада тени) и дальние в проходе теней.
 ## Данные экземпляров копятся в одном буфере и уходят на видеокарту раз за кадр.
 ##
 ##   var layer := CrowdLayer.new()
@@ -20,6 +27,15 @@ extends Node3D
 
 const SHADER := preload("res://shaders/crowd.gdshader")
 const STRIDE := 16  # 12 чисел трансформа + 4 числа INSTANCE_CUSTOM
+## Мест в блоке (места одного отряда идут подряд — блок компактен на поле)
+const BLOCK := 32
+## Границы всех блоков пересчитываются точно за столько отправок (каждый кадр — своя доля)
+const SCAN_FRAMES := 8
+## Запас границ блока на движение юнитов с его пересчёта, м/с (галоп с натиском — до 12)
+const DRIFT_SPEED := 15.0
+const FAR := 1.0e9
+## Части слоя: подробная модель, облегчённая с тенью, облегчённая без тени
+enum Part { LOD0, LOD1, LOD1_NO_SHADOW }
 
 ## Дальность смены LOD0 → LOD1, м
 var lod_distance: float = 90.0:
@@ -35,9 +51,19 @@ var _mmi: Array[MultiMeshInstance3D] = []
 var _buf := PackedFloat32Array()
 var _visible := 0
 var _dirty := false
-var _lo := Vector3(INF, INF, INF)   # границы видимых экземпляров (для отсечения и выбора LOD)
-var _hi := Vector3(-INF, -INF, -INF)
-var _flushes := 0
+var _lod_d := 90.0          # дальность LOD с учётом уровня качества
+var _shadow_d := 126.0      # дальше юниты теней не отбрасывают
+var _far_shadow := true     # облегчённые юниты отбрасывают тень («Низкое» — нет)
+# границы блоков (ступни юнитов), сколько «пути» набежало к их пересчёту
+var _blo := PackedVector3Array()
+var _bhi := PackedVector3Array()
+var _bdrift := PackedFloat32Array()
+var _drift := 0.0
+var _drift_t := -1.0
+var _scan := 0
+var _full_scan := true
+var _cam := Vector3(INF, INF, INF)  # камера последнего деления
+var _counts := PackedInt32Array([0, 0, 0])
 
 ## Запас границ: копья, знамёна, лежащие тела выходят за ступни
 const AABB_PAD_LO := Vector3(3.0, 1.0, 3.0)
@@ -47,7 +73,7 @@ static var _mesh_cache := {}
 static var _material_cache := {}
 
 
-## Создаёт оба MultiMeshInstance3D с материалом толпы. Можно звать повторно (пересоздаёт).
+## Создаёт MultiMeshInstance3D слоя с материалом толпы. Можно звать повторно (пересоздаёт).
 func setup(p_unit_id: String, p_capacity: int) -> void:
 	_clear()
 	unit_id = p_unit_id
@@ -62,8 +88,9 @@ func setup(p_unit_id: String, p_capacity: int) -> void:
 		_buf[i * STRIDE] = 1.0
 		_buf[i * STRIDE + 5] = 1.0
 		_buf[i * STRIDE + 10] = 1.0
-	for lod in 2:
-		var data := _load(UnitRegistry.mesh_path(unit_id, lod))
+	var names := ["LOD0", "LOD1", "LOD1_NoShadow"]
+	for part in 3:
+		var data := _load(UnitRegistry.mesh_path(unit_id, 0 if part == Part.LOD0 else 1))
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
@@ -71,13 +98,15 @@ func setup(p_unit_id: String, p_capacity: int) -> void:
 		mm.instance_count = capacity
 		mm.visible_instance_count = 0
 		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "LOD%d" % lod
+		mmi.name = names[part]
 		mmi.multimesh = mm
 		mmi.material_override = _material(unit_id, data["texture"])
 		mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		add_child(mmi)
 		_mm.append(mm)
 		_mmi.append(mmi)
+	_counts = PackedInt32Array([0, 0, 0])
+	_full_scan = true
 	_apply_lod()
 	_dirty = true
 
@@ -101,9 +130,10 @@ func set_instance(i: int, xform: Transform3D, custom: Color) -> void:
 	_buf[o + 9] = b.y.z
 	_buf[o + 10] = b.z.z
 	_buf[o + 11] = xform.origin.z
-	if i < _visible:
-		_lo = _lo.min(xform.origin)
-		_hi = _hi.max(xform.origin)
+	var k := i / BLOCK
+	if i < _visible and k < _blo.size():
+		_blo[k] = _blo[k].min(xform.origin)
+		_bhi[k] = _bhi[k].max(xform.origin)
 	_buf[o + 12] = custom.r
 	_buf[o + 13] = custom.g
 	_buf[o + 14] = custom.b
@@ -126,14 +156,18 @@ func set_custom(i: int, custom: Color) -> void:
 ## Сколько экземпляров видно (0..n-1)
 func set_visible_count(n: int) -> void:
 	_visible = clampi(n, 0, capacity)
-	for mm in _mm:
-		mm.visible_instance_count = _visible
-	_flushes = 0  # границы пересчитать при следующей отправке
+	_full_scan = true  # границы блоков пересчитать целиком при следующей отправке
 	_dirty = true
 
 
 func get_visible_count() -> int:
 	return _visible
+
+
+## Сколько юнитов слоя в последнем кадре ушло в LOD0, в LOD1 с тенью и в LOD1 без тени
+## (по блокам: юнит на границе полос может быть в двух — шейдер оставит один)
+func lod_counts() -> PackedInt32Array:
+	return _counts
 
 
 ## Самый быстрый путь (бой на тысячи юнитов): сам буфер слоя, по 16 чисел на экземпляр —
@@ -144,11 +178,9 @@ func buffer() -> PackedFloat32Array:
 	return _buf
 
 
-## Границы записанных напрямую экземпляров (ступни) — расширяют границы слоя, буфер уйдёт
-## на видеокарту перед кадром. Точный пересчёт по всем видимым — как обычно, раз в 15 отправок.
-func expand_bounds(lo: Vector3, hi: Vector3) -> void:
-	_lo = _lo.min(lo)
-	_hi = _hi.max(hi)
+## Границы записанных напрямую экземпляров (ступни): буфер уйдёт на видеокарту перед кадром.
+## Границы блоков слой пересчитывает сам (по частям, с запасом на движение юнитов).
+func expand_bounds(_lo: Vector3, _hi: Vector3) -> void:
 	_dirty = true
 
 
@@ -159,7 +191,7 @@ func set_raw_buffer(data: PackedFloat32Array) -> void:
 		push_error("CrowdLayer.set_raw_buffer: нужно %d чисел" % _buf.size())
 		return
 	_buf = data
-	_flushes = 0
+	_full_scan = true
 	_dirty = true
 
 
@@ -185,63 +217,168 @@ func _on_quality(_level: String) -> void:
 	_apply_lod()
 
 
-## Буфер уходит на видеокарту один раз перед отрисовкой кадра
+## Буфер уходит на видеокарту один раз перед отрисовкой кадра (и при сдвиге камеры —
+## деление на LOD зависит от неё)
 func _flush() -> void:
-	if not _dirty or _mm.is_empty():
+	if _mm.is_empty():
 		return
+	var cam := _camera_pos()
+	if not _dirty and cam.distance_squared_to(_cam) < 0.25:
+		return
+	if _dirty:
+		# сколько юниты могли пройти с прошлой отправки (для запаса границ блоков)
+		var now := Time.get_ticks_usec() * 1.0e-6
+		if _drift_t >= 0.0:
+			_drift += minf(now - _drift_t, 0.25) * DRIFT_SPEED
+		_drift_t = now
+		_scan_blocks()
 	_dirty = false
-	# границы: точный пересчёт по видимым экземплярам раз в 15 отправок, между ними — расширение
-	if _flushes % 15 == 0:
-		_recompute_bounds()
-	_flushes += 1
-	var box := AABB()
-	if _visible > 0 and _lo.x <= _hi.x:
-		box = AABB(_lo - AABB_PAD_LO, (_hi - _lo) + AABB_PAD_LO + AABB_PAD_HI)
-	for mm in _mm:
-		RenderingServer.multimesh_set_buffer(mm.get_rid(), _buf)
-		mm.custom_aabb = box
+	_cam = cam
+	_partition(cam)
 
 
-func _recompute_bounds() -> void:
+## Точные границы части блоков (за SCAN_FRAMES отправок — всех); после set_visible_count — всех сразу
+func _scan_blocks() -> void:
+	var nb := (_visible + BLOCK - 1) / BLOCK
+	if _blo.size() != nb:
+		_blo.resize(nb)
+		_bhi.resize(nb)
+		_bdrift.resize(nb)
+		_full_scan = true
+	if nb == 0:
+		return
+	var count := nb if _full_scan else mini(nb, (nb + SCAN_FRAMES - 1) / SCAN_FRAMES)
+	var start := 0 if _full_scan else _scan
+	_full_scan = false
 	var buf := _buf
-	var x0 := INF
-	var y0 := INF
-	var z0 := INF
-	var x1 := -INF
-	var y1 := -INF
-	var z1 := -INF
-	for i in _visible:
-		var o := i * STRIDE
-		var x := buf[o + 3]
-		var y := buf[o + 7]
-		var z := buf[o + 11]
-		x0 = minf(x0, x)
-		x1 = maxf(x1, x)
-		y0 = minf(y0, y)
-		y1 = maxf(y1, y)
-		z0 = minf(z0, z)
-		z1 = maxf(z1, z)
-	_lo = Vector3(x0, y0, z0)
-	_hi = Vector3(x1, y1, z1)
+	for k in count:
+		var b := (start + k) % nb
+		var i0 := b * BLOCK
+		var i1 := mini(i0 + BLOCK, _visible)
+		var x0 := INF
+		var y0 := INF
+		var z0 := INF
+		var x1 := -INF
+		var y1 := -INF
+		var z1 := -INF
+		for i in range(i0, i1):
+			var o := i * STRIDE
+			var x := buf[o + 3]
+			var y := buf[o + 7]
+			var z := buf[o + 11]
+			x0 = minf(x0, x)
+			x1 = maxf(x1, x)
+			y0 = minf(y0, y)
+			y1 = maxf(y1, y)
+			z0 = minf(z0, z)
+			z1 = maxf(z1, z)
+		_blo[b] = Vector3(x0, y0, z0)
+		_bhi[b] = Vector3(x1, y1, z1)
+		_bdrift[b] = _drift
+	_scan = (start + count) % nb
+
+
+## Деление блоков по LOD: блок идёт в каждую часть, в полосу дальности которой может попасть
+## хоть один его юнит; подряд идущие блоки одной части копируются одним куском
+func _partition(cam: Vector3) -> void:
+	var nb := mini((_visible + BLOCK - 1) / BLOCK, _blo.size())
+	# дальность до блока: ближайшая и самая дальняя точка его границ (с запасом на движение)
+	var dmin := PackedFloat32Array()
+	var dmax := PackedFloat32Array()
+	var blo := PackedVector3Array()
+	var bhi := PackedVector3Array()
+	dmin.resize(nb)
+	dmax.resize(nb)
+	blo.resize(nb)
+	bhi.resize(nb)
+	for b in nb:
+		var pad := 0.5 + (_drift - _bdrift[b])
+		var lo := _blo[b] - Vector3(pad, pad, pad)
+		var hi := _bhi[b] + Vector3(pad, pad, pad)
+		blo[b] = lo
+		bhi[b] = hi
+		dmin[b] = cam.distance_to(cam.clamp(lo, hi))
+		dmax[b] = cam.distance_to(Vector3(lo.x if cam.x > (lo.x + hi.x) * 0.5 else hi.x,
+			lo.y if cam.y > (lo.y + hi.y) * 0.5 else hi.y, lo.z if cam.z > (lo.z + hi.z) * 0.5 else hi.z))
+	var sd := _shadow_d if _far_shadow else -1.0
+	for part in 3:
+		var out := PackedFloat32Array()
+		var run0 := -1
+		var run1 := -1
+		var runs := 0
+		var n := 0
+		var lo3 := Vector3(INF, INF, INF)
+		var hi3 := -Vector3(INF, INF, INF)
+		for b in nb:
+			var take := false
+			if part == Part.LOD0:
+				take = dmin[b] < _lod_d
+			elif part == Part.LOD1:
+				take = dmax[b] >= _lod_d and dmin[b] < sd
+			else:
+				take = dmax[b] >= _lod_d and dmin[b] >= sd
+			if not take:
+				continue
+			var i0 := b * BLOCK
+			var i1 := mini(i0 + BLOCK, _visible)
+			n += i1 - i0
+			lo3 = lo3.min(blo[b])
+			hi3 = hi3.max(bhi[b])
+			if run1 == i0:
+				run1 = i1
+				continue
+			if run0 >= 0:
+				out.append_array(_buf.slice(run0 * STRIDE, run1 * STRIDE))
+			run0 = i0
+			run1 = i1
+			runs += 1
+		# на видеокарту: весь слой в одной части — сам буфер без копии, иначе собранные куски
+		var mm := _mm[part]
+		if n == 0:
+			if _counts[part] != 0:
+				mm.visible_instance_count = 0
+			_counts[part] = 0
+			continue
+		if runs == 1 and run0 == 0 and run1 == _visible:
+			RenderingServer.multimesh_set_buffer(mm.get_rid(), _buf)
+		else:
+			out.append_array(_buf.slice(run0 * STRIDE, run1 * STRIDE))
+			out.resize(capacity * STRIDE)
+			RenderingServer.multimesh_set_buffer(mm.get_rid(), out)
+		if _counts[part] != n:
+			mm.visible_instance_count = n
+		_counts[part] = n
+		var a := lo3 - AABB_PAD_LO
+		mm.custom_aabb = AABB(a, (hi3 + AABB_PAD_HI) - a)
+
+
+## Камера, для которой делим на LOD (та же, что рисует кадр); без камеры — точка над серединой карты
+func _camera_pos() -> Vector3:
+	var vp := get_viewport() if is_inside_tree() else null
+	var cam := vp.get_camera_3d() if vp else null
+	return cam.global_position if cam else Vector3(0.0, 60.0, 0.0)
 
 
 func _apply_lod() -> void:
-	if _mmi.size() < 2:
+	if _mmi.size() < 3:
 		return
-	# уровень качества (WorldQuality): «Высокое» — 90 м, «Среднее» — ×0,75, «Низкое» — ×0,5 и
-	# дальние юниты без теней
+	# уровень качества (WorldQuality): «Высокое» — LOD 90 м, тени юнитов до 126 м; «Среднее» —
+	# ×0,75 и тени до 90 м; «Низкое» — ×0,5, тени до 60 м и облегчённые юниты без теней
 	var p := WorldQuality.preset(_quality())
-	var d := lod_distance * float(p.get("crowd_lod", 1.0))
-	var far_shadow := bool(p.get("crowd_lod1_shadow", true))
-	# плавная смена LOD (дизеринг на полосе 4 м): без «щели», где не видно ни одного LOD
-	# (с запасом-гистерезисом слой на границе мог пропасть целиком в начале боя)
-	_mmi[0].visibility_range_end = d
-	_mmi[0].visibility_range_end_margin = 4.0
-	_mmi[0].visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-	_mmi[1].visibility_range_begin = d
-	_mmi[1].visibility_range_begin_margin = 4.0
-	_mmi[1].visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-	_mmi[1].cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if far_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_lod_d = lod_distance * float(p.get("crowd_lod", 1.0))
+	_shadow_d = float(p.get("crowd_shadow", 126.0))
+	_far_shadow = bool(p.get("crowd_lod1_shadow", true))
+	var bands := [Vector4(0.0, _lod_d, _shadow_d, 0.0), Vector4(_lod_d, FAR, _shadow_d if _far_shadow else 0.0, 0.0),
+		Vector4(_lod_d, FAR, 0.0, 0.0)]
+	for part in 3:
+		var mmi := _mmi[part]
+		mmi.visibility_range_begin = 0.0
+		mmi.visibility_range_end = 0.0
+		mmi.set_instance_shader_parameter("crowd_lod", bands[part])
+		var shadow := part == Part.LOD0 or (part == Part.LOD1 and _far_shadow)
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_cam = Vector3(INF, INF, INF)  # поделить заново
+	_dirty = true
 
 
 func _quality() -> String:
@@ -256,6 +393,9 @@ func _clear() -> void:
 		mmi.queue_free()
 	_mmi.clear()
 	_mm.clear()
+	_blo.clear()
+	_bhi.clear()
+	_bdrift.clear()
 
 
 ## Меш и атлас из glb (кэш на все слои)
@@ -282,7 +422,7 @@ static func _load(path: String) -> Dictionary:
 	return out
 
 
-## Общий материал вида юнита (один на LOD0 и LOD1 и на все слои этого вида)
+## Общий материал вида юнита (один на все части и на все слои этого вида)
 static func _material(id: String, tex: Texture2D) -> ShaderMaterial:
 	if _material_cache.has(id):
 		return _material_cache[id]
