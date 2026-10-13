@@ -193,13 +193,13 @@ func _factions(defs: Defs) -> void:
 		"барымта: охрана 30 м, круг 6 с")
 
 
-## Сб. 1 (ECONOMY §12.1, решения ведущего 2026-10-13): башни — да, стены и ворота — этап 2, Сб. 2 — выключено
+## Сб. 1 (ECONOMY §12.1, решения ведущего 2026-10-13): башни, стены и ворота — да, Сб. 2 — выключено
 func _sb1(defs: Defs) -> void:
 	print("[Сб. 1: что включено]")
 	var on := func(id: String) -> bool: return defs.b_enabled[defs.building(id)] == 1
 	SimHarness.check(on.call("burj") and on.call("munara") and on.call("xumdon"), "башни и Хумдон — в Сб. 1")
-	SimHarness.check(not on.call("devor") and not on.call("tosh") and not on.call("darvoza") and not on.call("chep")
-		and not on.call("darbaza"), "стены и ворота — этап 2 (выключены)")
+	SimHarness.check(on.call("devor") and on.call("tosh") and on.call("darvoza") and on.call("chep")
+		and on.call("darbaza"), "стены и ворота — в Сб. 1 (автор просил стены у каждой стороны)")
 	SimHarness.check(not on.call("temirchixona") and not on.call("kiyiz") and not on.call("temirchi")
 		and defs.r_enabled[defs.res(&"felt")] == 0 and defs.r_enabled[defs.res(&"wool")] == 0, "кузницы и войлок — Сб. 2")
 	SimHarness.check(defs.u_carry_milli[defs.unit(&"dehqon")] == 30000 and defs.u_carry_milli[defs.unit(&"malchy")] == 30000,
