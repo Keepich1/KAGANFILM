@@ -18,7 +18,9 @@ class_name GameRules
 ##   loot_carry {speed, flee_home_speed, bank_r} — увод добычи;
 ##   alarm {r, fire_per, fire_every_s, fire_dmg, fire_range} — тревога (ECONOMY §1.7);
 ##   pack_r — радиус «свернуть весь лагерь», м; pack_s — сколько сворачивается лагерь;
-##   worker_resume_r — работа продолжается, когда врага нет ближе, м; seasons — сезоны (Сб. 2).
+##   worker_resume_r — работа продолжается, когда врага нет ближе, м; seasons — сезоны (Сб. 2);
+##   bld_dmg {melee_inf, melee_cav, raider_econ} — рукопашная по зданиям (ECONOMY §1.6; стрелы, пули и
+##   ядра умножает ядро по UnitStats.vs_building) — ключ ECON сверх схемы M0.
 ## Остальные (GAME):
 ##   corpse_s — тела исчезают через, с (−1 никогда); path_per_tick, path_cells_per_tick — бюджет путей;
 ##   breach_ratio — сравнивать путь с проломом, когда обход дороже ratio × прямой (0 — выкл);
@@ -53,6 +55,7 @@ const GOROD := {
 	"pack_s": 15,
 	"worker_resume_r": 12.0,
 	"seasons": false,
+	"bld_dmg": {"melee_inf": 0.5, "melee_cav": 0.3, "raider_econ": 0.4},
 	# --- GAME
 	"corpse_s": 30,
 	"path_per_tick": 16,
@@ -91,6 +94,7 @@ const BATTLE := {
 	"pack_s": 15,
 	"worker_resume_r": 12.0,
 	"seasons": false,
+	"bld_dmg": {"melee_inf": 1.0, "melee_cav": 1.0, "raider_econ": 1.0},
 	# --- GAME
 	"corpse_s": -1,
 	"path_per_tick": 16,
