@@ -53,10 +53,23 @@ func _test_big_city() -> void:
 	for i in 10:
 		hud.refresh_now()
 	var ui_ms := (Time.get_ticks_usec() - t0) / 10000.0
-	print("  замер: %d своих юнитов; рамка с отсечением %.2f мс (без него %.2f мс), рамка на всех %.1f мс (%d), панели с выделением всех %.2f мс" % [
-		n, box_cull, box_full, all_ms, all_n, ui_ms])
+	# курсор по смыслу (12 раз в секунду) и протяжка ПКМ при 1000 выделенных
+	inp.cursor_kind(Vector2(900, 500))
+	t0 = Time.get_ticks_usec()
+	for i in 100:
+		inp.cursor_kind(Vector2(900 + i, 500))
+	var cur_ms := (Time.get_ticks_usec() - t0) / 100000.0
+	# из них поиск цели под курсором — GameQuery.pick (FakeCity перебирает всех; у GAME — своя цена)
+	t0 = Time.get_ticks_usec()
+	for i in 100:
+		city.pick(0, Vector2(90.0 + i * 0.1, 50.0), 2.5)
+	var pick_ms := (Time.get_ticks_usec() - t0) / 100000.0
+	cur_ms = maxf(0.0, cur_ms - pick_ms)
+	print("  замер: %d своих юнитов; рамка с отсечением %.2f мс (без него %.2f мс), рамка на всех %.1f мс (%d), панели с выделением всех %.2f мс, курсор %.3f мс без pick (pick FakeCity %.3f мс)" % [
+		n, box_cull, box_full, all_ms, all_n, ui_ms, cur_ms, pick_ms])
 	SimHarness.check(n >= 1000 and same and box_cull < box_full, "рамка с отсечением выделяет то же (%d) и быстрее" % got)
-	SimHarness.check(box_cull < 4.0 and ui_ms < 8.0, "рамка %.2f мс, панели %.2f мс при %d юнитах" % [box_cull, ui_ms, n])
+	# пределы с запасом на загруженную машину (на свободной: рамка ~2 мс, панели ~0,4 мс, курсор ~0,1 мс)
+	SimHarness.check(box_cull < 20.0 and ui_ms < 8.0 and cur_ms < 2.0, "рамка %.2f мс, панели %.2f мс, курсор %.3f мс при %d юнитах" % [box_cull, ui_ms, cur_ms, n])
 	hud.queue_free()
 	inp.queue_free()
 

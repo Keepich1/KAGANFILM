@@ -78,6 +78,14 @@ var _melee := false
 var _mouse := Vector2.ZERO
 var _hover_t := 0.0
 var _muted := false
+var _rmb_line_ok := false
+var _cur_key := ""
+var _cur_t := -10.0
+## Своё выделение и флаги его родов (UnitStats) — пересчёт по SelectionModel.changed: курсор 12 раз в секунду
+## и протяжка ПКМ не перебирают 1000 описателей каждый раз
+var _own_cache := PackedInt32Array()
+var _own_flags := 0
+var _own_dirty := true
 
 
 func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, cam: Camera3D = null,
@@ -89,6 +97,9 @@ func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, 
 	camera = cam
 	driver = drv
 	sel = SelectionImpl.new(q, sel_model, p)
+	if not sel_model.changed.is_connected(_on_selection_changed):
+		sel_model.changed.connect(_on_selection_changed)
+	_own_dirty = true
 	groups = ControlGroups.new(sel_model)
 	placement = PlacementMode.new(q, p)
 	placement.ghost = ghost
@@ -197,6 +208,7 @@ func _mouse_button(mb: InputEventMouseButton) -> bool:
 				_rmb = true
 				_rmb_from = mb.position
 				_lining = false
+				_rmb_line_ok = not _own_units().is_empty()
 				return true
 			if not _rmb:
 				return false
@@ -236,7 +248,7 @@ func _mouse_motion(mm: InputEventMouseMotion) -> bool:
 		_boxing = true
 	if _boxing and hud:
 		hud.show_box(Rect2(_lmb_from, mm.position - _lmb_from))
-	if _rmb and not _lining and mm.position.distance_to(_rmb_from) > LINE_PX and not _own_units().is_empty():
+	if _rmb and not _lining and _rmb_line_ok and mm.position.distance_to(_rmb_from) > LINE_PX:
 		_lining = true
 	if _lining and hud:
 		hud.show_line(_rmb_from, mm.position)
@@ -813,11 +825,24 @@ func _general() -> int:
 
 # ================================================================= выборки
 
+func _on_selection_changed(_hs: PackedInt32Array) -> void:
+	_own_dirty = true
+
+
 ## Своё выделение (чужие юниты в выделении — только посмотреть, приказов нет)
 func _own_selection() -> PackedInt32Array:
 	if selection == null or selection.selected.is_empty():
 		return PackedInt32Array()
-	return selection.selected if owns_all(query, player, selection.selected) else PackedInt32Array()
+	if _own_dirty:
+		_own_dirty = false
+		_own_cache = selection.selected if owns_all(query, player, selection.selected) else PackedInt32Array()
+		_own_flags = 0
+		var bs := query.battle()
+		for h in _own_cache:
+			var u := query.unit_index(h) if Ids.kind(h) == Ids.Kind.UNIT else -1
+			if u >= 0 and bs:
+				_own_flags |= bs.t_flags[bs.u_type[u]]
+	return _own_cache
 
 
 func _own_units() -> PackedInt32Array:
@@ -999,7 +1024,16 @@ static func ground_point(cam: Camera3D, screen: Vector2, max_d := 900.0) -> Vect
 
 # ================================================================= курсор
 
+## Курсор по смыслу: GameQuery.pick стоит O(юнитов) — заново, только если мышь сдвинулась на 4 px, сменились
+## выделение, взведённый приказ или постройка, либо прошло 0,4 с (цель могла уйти из-под курсора)
 func _update_cursor() -> void:
+	var key := "%d|%d|%d|%d|%s" % [armed, selection.selected.size() if selection else 0, int(placement.active()),
+		placement.why, str(Vector2i(_mouse / 4.0))]
+	var now := _now()
+	if key == _cur_key and now - _cur_t < 0.4:
+		return
+	_cur_key = key
+	_cur_t = now
 	CityCursor.apply(cursor_kind(_mouse))
 
 
@@ -1029,9 +1063,9 @@ func cursor_kind(screen: Vector2) -> int:
 			return CityCursor.Kind.MOVE
 	if Ids.kind(own[0]) != Ids.Kind.UNIT or t == 0:
 		return CityCursor.Kind.DEFAULT
-	if is_enemy(t) or (has_builder("raid") and is_raid_target(t) and not _filter(_own_units(), UnitStats.MOUNTED, true).is_empty()):
+	if is_enemy(t) or (has_builder("raid") and is_raid_target(t) and _own_flags & UnitStats.MOUNTED):
 		return CityCursor.Kind.ATTACK
-	if not _own_workers().is_empty():
+	if _own_flags & UnitStats.WORKER:
 		if needs_hands(t):
 			return CityCursor.Kind.BUILD
 		if gatherable(t):
