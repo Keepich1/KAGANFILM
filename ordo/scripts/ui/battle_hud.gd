@@ -8,7 +8,7 @@ extends CanvasLayer
 ## Своя подсказка клавиш (выключается, когда подсказку показывает сборка среза)
 @export var show_help := true
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 var _bars: SquadBars
 var _status: Label
 var _help: Label
@@ -18,7 +18,7 @@ var _shot_mode := false
 
 func _ready() -> void:
 	layer = 5
-	scenario = get_node_or_null(scenario_path) as ScenarioClash
+	scenario = get_node_or_null(scenario_path) as SimDriver
 	var ordo := get_node_or_null("/root/Ordo")
 	_shot_mode = ordo != null and (ordo.has_arg("shot") or ordo.has_arg("movie"))
 	_bars = SquadBars.new()

@@ -6,7 +6,7 @@ extends Node3D
 ## Всё на GPUParticles3D; дым и пыль — рисованные клубы (shaders/fx/fx_puff.gdshader),
 ## освещены солнцем сцены (первый DirectionalLight3D): тёплая сторона к солнцу, бирюзовая тень,
 ## против солнца светятся края. Сносятся ветром ordo_wind, долго висят и тают с края.
-## События приходят от сценария (ScenarioClash): shot, volley, impact, charge_hit, melee_hit,
+## События приходят от сценария (SimDriver: ScenarioClash, GameDriver): shot, volley, impact, charge_hit, melee_hit,
 ## death, war_cry; пыль за скачущими конями — каждый кадр по скорости из симуляции.
 ## Скорость эффектов следует скорости боя (+/−, пауза). Частиц по уровню качества
 ## (WorldQuality.preset().fx): «Среднее» — ×0,75, «Низкое» — вдвое меньше. Время кадра — PerfMeter «fx».
@@ -38,7 +38,7 @@ const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELO
 @export var dust_rate := 0.6
 @export var fx_seed := 5
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 var smoke: GPUParticles3D
 var dust: GPUParticles3D
 var flash: GPUParticles3D
@@ -106,7 +106,7 @@ func _ready() -> void:
 		add_child(l)
 		_lights.append(l)
 		_light_t.append(-1.0)
-	scenario = get_node_or_null(scenario_path) as ScenarioClash
+	scenario = get_node_or_null(scenario_path) as SimDriver
 	if scenario:
 		scenario.started.connect(_on_started)
 		scenario.shot.connect(_on_shot)

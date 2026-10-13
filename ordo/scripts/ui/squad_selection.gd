@@ -17,7 +17,7 @@ const WOUNDED := Color(1.0, 0.25, 0.18)
 @export var scenario_path: NodePath = ^"../Scenario"
 @export var pick_radius := 3.0
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 var selected := PackedInt32Array()
 
 var _mm: MultiMesh
@@ -28,7 +28,7 @@ var _auto_at := 0.0
 
 
 func _ready() -> void:
-	scenario = get_node_or_null(scenario_path) as ScenarioClash
+	scenario = get_node_or_null(scenario_path) as SimDriver
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_colors = true
@@ -57,12 +57,14 @@ func _ready() -> void:
 
 
 func _auto_select(which: String) -> void:
-	if scenario.sim == null:
+	# отряды kok/kip есть только у сценария среза
+	var sc := scenario as ScenarioClash
+	if sc == null or sc.sim == null:
 		return
 	match which:
-		"kok": _select(PackedInt32Array([scenario.kok]))
-		"kip": _select(PackedInt32Array([scenario.kip]))
-		"all": _select(PackedInt32Array([scenario.kok, scenario.kip]))
+		"kok": _select(PackedInt32Array([sc.kok]))
+		"kip": _select(PackedInt32Array([sc.kip]))
+		"all": _select(PackedInt32Array([sc.kok, sc.kip]))
 
 
 func _unhandled_input(event: InputEvent) -> void:
