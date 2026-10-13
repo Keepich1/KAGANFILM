@@ -42,10 +42,11 @@ const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELO
 const NEAR := 50.0
 ## Дальше этого залп при нехватке запаса дыма идёт одной стеной (запас на ближние залпы растёт с дальностью)
 const MERGE_FROM := 50.0
-## Вспышки выстрелов, свет и искры — только ближе и в кадре
+## Вспышки выстрелов, свет и искры — только ближе и в кадре (случайные числа берутся всё равно —
+## остальные эффекты от этого не меняются)
 const FLASH_DIST := 260.0
-const LIGHT_DIST := 110.0
-const SPARK_DIST := 70.0
+const LIGHT_DIST := 200.0
+const SPARK_DIST := 120.0
 ## Пыль коней дальше этого не поднимается (с такой дали её не разглядеть)
 const DUST_FAR := 300.0
 ## Сколько дыма успевает рассеяться у залпа, слитого в стену: окно, в которое выстрелы шеренги без своих клубов, с
@@ -258,6 +259,19 @@ func puff(sys: GPUParticles3D, pos: Vector3, vel: Vector3, size: float, life: fl
 		_stat_acc.dust += 1
 
 
+## Нехватка запаса: дальнему (дальше NEAR) событию система отдаёт клубы по-старому, только пока
+## в ведре есть need и ещё доля для ближних (чем дальше событие, тем больше оставляем ближним).
+## Пока бой маленький (срез), запаса хватает всегда — эффекты те же, что раньше, клуб в клуб.
+func _tight(sys: GPUParticles3D, dist: float, need: float) -> bool:
+	if dist <= NEAR:
+		return false
+	var b: Array = _bucket.get(sys, [])
+	if b.is_empty():
+		return false
+	var keep := float(b[1]) * 0.6 * clampf((dist - NEAR) / 200.0, 0.0, 1.0)
+	return float(b[0]) < need + keep
+
+
 ## Сколько клубов система ещё может принять без вытеснения (запас ведра)
 func room(sys: GPUParticles3D) -> float:
 	var b: Array = _bucket.get(sys, [])
@@ -294,13 +308,13 @@ func _on_shot(u: int, muzzle: Vector3, dir: Vector3, _hit: bool, drv: SimDriver 
 	var t0 := Time.get_ticks_usec()
 	var d := dir.normalized()
 	var dist := _dist(muzzle)
-	var seen := dist < FLASH_DIST and (dist < 12.0 or _in_view(muzzle))
+	var seen := dist < 15.0 or (dist < FLASH_DIST and _in_view(muzzle))
+	# вспышка вдоль ствола
+	var x := d * _rng.range_f(0.9, 1.25)
+	var fa := _rng.range_f(0.7, 1.0)
 	if seen:
-		# вспышка вдоль ствола
-		var x := d * _rng.range_f(0.9, 1.25)
 		var b := Basis(x, Vector3.UP, x.cross(Vector3.UP).normalized())
-		flash.emit_particle(Transform3D(b, muzzle + d * 0.05), Vector3.ZERO, Color.WHITE,
-			Color(0, 0, 1, _rng.range_f(0.7, 1.0)), FLAGS)
+		flash.emit_particle(Transform3D(b, muzzle + d * 0.05), Vector3.ZERO, Color.WHITE, Color(0, 0, 1, fa), FLAGS)
 	# дым: крупный клуб у дула и тугая струя вперёд; иногда ленивый клуб над стрелком.
 	# Залп дальней шеренги при нехватке дыма уже лёг одной стеной (_on_volley) — своих клубов нет
 	if not _merged(drv, u):
@@ -311,11 +325,13 @@ func _on_shot(u: int, muzzle: Vector3, dir: Vector3, _hit: bool, drv: SimDriver 
 		if _rng.chance(0.3):
 			puff(smoke, muzzle + Vector3(0, 0.3, 0) - d * 0.2, d * 1.0 + Vector3(0, 0.6, 0), _rng.range_f(0.6, 0.85),
 				_rng.range_f(0.7, 1.0), Color(0.92, 0.92, 0.95, 0.9))
-	# тлеющий пыж и угольки
-	if seen and dist < SPARK_DIST:
-		for i in _rng.range_i(3):
-			var v := d * _rng.range_f(4.0, 9.0) + Vector3(_rng.range_f(-1, 1), _rng.range_f(0.5, 2.5), _rng.range_f(-1, 1))
-			sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, _rng.range_f(0.5, 1.0)), FLAGS)
+	# тлеющий пыж и угольки (дальше SPARK_DIST их не разглядеть)
+	var sparks_on := seen and dist < SPARK_DIST
+	for i in _rng.range_i(3):
+		var v := d * _rng.range_f(4.0, 9.0) + Vector3(_rng.range_f(-1, 1), _rng.range_f(0.5, 2.5), _rng.range_f(-1, 1))
+		var sa := _rng.range_f(0.5, 1.0)
+		if sparks_on:
+			sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, sa), FLAGS)
 	if seen and dist < LIGHT_DIST:
 		_pop_light(muzzle + d * 0.4)
 	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
@@ -358,9 +374,7 @@ func _on_volley(s: int, _rank: int, center: Vector3, count: int, drv: SimDriver 
 	var dist := _dist(center)
 	# по клубу на ружьё (2,3 клуба) — если запас дыма это позволяет; чем дальше залп, тем больше
 	# запаса оставляем ближним
-	var need := count * 2.3
-	var keep := float(smoke.amount) * 0.5 * clampf((dist - MERGE_FROM) / 200.0, 0.0, 1.0) * 0.6
-	if dist > MERGE_FROM and room(smoke) < need + keep:
+	if _tight(smoke, dist, count * 2.3):
 		_merge_volley(d, s, center, count, fw, side, half)
 	# лучи сквозь дым видны только против солнца: иначе 64 больших полотна рисуются впустую
 	var cam := _cam
@@ -424,16 +438,16 @@ func _pop_light(pos: Vector3) -> void:
 
 func _on_impact(_s: int, pos: Vector3, _strength: float, _drv: SimDriver = null) -> void:
 	var t0 := Time.get_ticks_usec()
-	# удар натиска: тяжёлая пыль низом во все стороны (дальний — меньше клубов, крупнее)
-	var near := _dist(pos) <= NEAR
-	var n := 26 if near else 12
-	var grow := 1.0 if near else 1.45
+	# удар натиска: тяжёлая пыль низом во все стороны (дальний при нехватке пыли — меньше клубов, крупнее)
+	var tight := _tight(dust, _dist(pos), 26.0)
+	var n := 12 if tight else 26
+	var grow := 1.45 if tight else 1.0
 	for i in n:
 		var a := _rng.range_f(-PI, PI)
 		var r := _rng.range_f(0.5, 5.0)
 		var p := pos + Vector3(cos(a) * r, 0.5, sin(a) * r * 1.6)
 		var v := Vector3(cos(a), 0.0, sin(a)) * _rng.range_f(2.0, 6.0) + Vector3(0, _rng.range_f(0.6, 2.0), 0)
-		if near or i < 4:
+		if not tight or i < 4:
 			puff(dust, p, v, _rng.range_f(1.0, 1.8) * grow, _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0))
 		elif not _far_puff(dust, p, v, _rng.range_f(1.0, 1.8) * grow, _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0)):
 			break
@@ -442,13 +456,13 @@ func _on_impact(_s: int, pos: Vector3, _strength: float, _drv: SimDriver = null)
 
 func _on_charge_hit(_u: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> void:
 	var t0 := Time.get_ticks_usec()
-	if _dist(pos) <= NEAR:
+	if not _tight(dust, _dist(pos), 3.0):
 		for i in 3:
 			var p := pos + Vector3(_rng.range_f(-1.0, 1.0), 0.4, _rng.range_f(-1.0, 1.0))
 			puff(dust, p, Vector3(_rng.range_f(-2, 2), _rng.range_f(0.8, 2.2), _rng.range_f(-2, 2)),
 				_rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
 	else:
-		# дальний удар: один клуб крупнее
+		# дальний удар при нехватке пыли: один клуб крупнее
 		_far_puff(dust, pos + Vector3(_rng.range_f(-1.0, 1.0), 0.5, _rng.range_f(-1.0, 1.0)),
 			Vector3(_rng.range_f(-2, 2), _rng.range_f(0.8, 2.2), _rng.range_f(-2, 2)), _rng.range_f(1.3, 1.9), _rng.range_f(0.6, 0.9))
 	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
@@ -457,14 +471,16 @@ func _on_charge_hit(_u: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> v
 func _on_melee_hit(_a: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> void:
 	if _spark_budget <= 0 or not _rng.chance(0.55):
 		return
-	if _dist(pos) > SPARK_DIST or not _in_view(pos):
-		return
 	var n := 2 + _rng.range_i(4)
 	_spark_budget -= n
+	# дальних и невидимых искр не рисуем (случайные числа — как раньше)
+	var on := _dist(pos) < SPARK_DIST and _in_view(pos)
 	for i in n:
 		var v := Vector3(_rng.range_f(-3.5, 3.5), _rng.range_f(0.5, 4.0), _rng.range_f(-3.5, 3.5))
-		sparks.emit_particle(Transform3D(Basis(), pos + Vector3(0, _rng.range_f(-0.2, 0.3), 0)), v, Color.WHITE,
-			Color(0, 0, 1, _rng.range_f(0.4, 1.0)), FLAGS)
+		var y := _rng.range_f(-0.2, 0.3)
+		var a := _rng.range_f(0.4, 1.0)
+		if on:
+			sparks.emit_particle(Transform3D(Basis(), pos + Vector3(0, y, 0)), v, Color.WHITE, Color(0, 0, 1, a), FLAGS)
 
 
 func _on_death(u: int, pos: Vector3, drv: SimDriver = null) -> void:
@@ -473,18 +489,19 @@ func _on_death(u: int, pos: Vector3, drv: SimDriver = null) -> void:
 	if sim == null:
 		return
 	var t0 := Time.get_ticks_usec()
-	var near := _dist(pos) <= NEAR
+	var dist := _dist(pos)
 	if sim.is_mounted(u):
 		# конь валится на бок: пыль низом
+		var tight := _tight(dust, dist, 5.0)
 		var v := Vector3(sim.u_vx[u], 0.0, sim.u_vz[u]) * 0.4
-		for i in (5 if near else 2):
+		for i in (2 if tight else 5):
 			var p := pos + Vector3(_rng.range_f(-1.4, 1.4), 0.35, _rng.range_f(-1.4, 1.4))
 			var w := v + Vector3(_rng.range_f(-1.5, 1.5), _rng.range_f(0.4, 1.2), _rng.range_f(-1.5, 1.5))
-			if near:
+			if not tight:
 				puff(dust, p, w, _rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
 			elif not _far_puff(dust, p, w, _rng.range_f(1.1, 1.7), _rng.range_f(0.6, 0.9)):
 				break
-	elif near:
+	elif not _tight(dust, dist, 1.0):
 		puff(dust, pos + Vector3(0, 0.3, 0), Vector3(_rng.range_f(-1, 1), 0.6, _rng.range_f(-1, 1)), 0.6, 0.5)
 	else:
 		_far_puff(dust, pos + Vector3(0, 0.3, 0), Vector3(_rng.range_f(-1, 1), 0.6, _rng.range_f(-1, 1)), 0.7, 0.5)
@@ -594,8 +611,9 @@ func _follow_camera() -> void:
 
 
 ## Пыль за скачущими конями одного боя. Большой бой (шаг в фоне) — по снимку SimStepper.
-## Ближние кони пылят как раньше; дальние — реже и крупнее, пока есть запас пыли; обход
-## каждый кадр начинается с другого коня, чтобы запаса хватало всем по очереди.
+## Пока запаса пыли хватает — как раньше (кони по порядку, клуб в клуб). При нехватке дальние кони
+## (дальше NEAR) пылят вдвое реже и крупнее и только из запаса, а обход начинается каждый кадр
+## с другого коня — запаса хватает всем по очереди. Дальше DUST_FAR пыли нет.
 func _gallop_dust(e: Dictionary, dt: float) -> void:
 	var drv: SimDriver = e.driver
 	var sim := drv.sim
@@ -619,20 +637,22 @@ func _gallop_dust(e: Dictionary, dt: float) -> void:
 			if sim.is_mounted(u):
 				m.append(u)
 		e.mounted = m
-		var acc := PackedFloat32Array()
-		acc.resize(n)
-		e.acc = acc
+		var fresh := PackedFloat32Array()
+		fresh.resize(n)
+		e.acc = fresh
 		e.merge_until = PackedFloat32Array()
+		e.start = 0
 	var mounted: PackedInt32Array = e.mounted
 	var acc: PackedFloat32Array = e.acc
 	var cnt := mounted.size()
 	if cnt == 0:
 		return
 	var start: int = int(e.start) % cnt
-	e.start = start + 7
 	var rate := dust_rate * dt * _fx_k
 	var cam := _cam_pos
 	var b: Array = _bucket[dust]
+	var cap := float(b[1]) * 0.6
+	var pressed := false
 	for k in cnt:
 		var u := mounted[(start + k) % cnt]
 		if u >= n or lifes[u] != BattleSim.Life.ALIVE:
@@ -650,12 +670,17 @@ func _gallop_dust(e: Dictionary, dt: float) -> void:
 		if d2 > DUST_FAR * DUST_FAR:
 			continue
 		var sp := sqrt(sp2)
-		var near := d2 <= NEAR * NEAR
-		# дальние: вдвое реже, клуб крупнее (та же пыльная полоса за отрядом)
-		acc[u] += (sp - 4.0) * rate * (1.0 if near else 0.5)
+		# дальний конь при нехватке пыли (как _tight, без лишнего корня для ближних)
+		var tight := false
+		if d2 > NEAR * NEAR:
+			var dd := sqrt(d2)
+			tight = float(b[0]) < 1.0 + cap * clampf((dd - NEAR) / 200.0, 0.0, 1.0)
+		if tight:
+			pressed = true
+		acc[u] += (sp - 4.0) * rate * (0.5 if tight else 1.0)
 		while acc[u] >= 1.0:
 			acc[u] -= 1.0
-			if not near and float(b[0]) < 1.0:
+			if tight and float(b[0]) < 1.0:
 				acc[u] = 0.0
 				break
 			var f := Vector3(vx, 0.0, vz) / sp
@@ -663,5 +688,7 @@ func _gallop_dust(e: Dictionary, dt: float) -> void:
 			var p := Vector3(x, 0.0, z) - f * _rng.range_f(0.3, 2.4) + side * _rng.range_f(-0.9, 0.9)
 			p.y = Terrain.height_at(p.x, p.z) + _rng.range_f(0.2, 0.5)
 			var v := -f * _rng.range_f(0.8, 2.2) + side * _rng.range_f(-0.8, 0.8) + Vector3(0, _rng.range_f(0.3, 0.9), 0)
-			puff(dust, p, v, _rng.range_f(0.7, 1.8) * (1.0 if near else 1.4), _rng.range_f(0.45, 0.95))
+			puff(dust, p, v, _rng.range_f(0.7, 1.8) * (1.4 if tight else 1.0), _rng.range_f(0.45, 0.95))
 	e.acc = acc
+	# по очереди — только когда запаса не хватает (иначе порядок как раньше)
+	e.start = start + 7 if pressed else 0
