@@ -314,6 +314,27 @@ func _test_real_game() -> void:
 		var pick_ms := (Time.get_ticks_usec() - t0) / 100000.0
 		print("  замер: панели %.3f мс, миникарта %.3f мс, pick %.3f мс (%d юнитов в игре)" % [ui_ms, map_ms, pick_ms, bs.n])
 		SimHarness.check(ui_ms < 4.0 and map_ms < 4.0, "обновления дешёвые и на настоящей игре")
+		if f == &"kokand":
+			# 1000+ своих в выделении: сводка и сетка — по сжатому выделению (отряд — один описатель)
+			var port: CombatPort = (drv.get("game") as Object).get("port")
+			for i in 34:
+				port.spawn_squad(0, q.players().team[0], &"sarboz", 30, hqp + Vector2(-150 + (i % 6) * 50, 60 + (i / 6) * 40), 0.0, &"")
+			drv.step()
+			sel.set_selection(q.units_of(0))
+			t0 = Time.get_ticks_usec()
+			hud.refresh_now(true)
+			var heavy_ms := (Time.get_ticks_usec() - t0) / 1000.0
+			t0 = Time.get_ticks_usec()
+			for i in 10:
+				hud.refresh_now()
+			var light_ms := (Time.get_ticks_usec() - t0) / 10000.0
+			var squads := 0
+			for c: Dictionary in hud.info.get("cards", []):
+				squads += 1 if int(c.get("squad", 0)) != 0 else 0
+			print("  замер: %d выделенных — обновление с пересчётом %.2f мс, обычное %.2f мс; карточек отрядов %d" % [
+				sel.selected.size(), heavy_ms, light_ms, squads])
+			SimHarness.check(sel.selected.size() >= 1000 and squads >= 34 and heavy_ms < 30.0 and light_ms < 4.0,
+				"1000+ выделенных на настоящей игре: %.1f мс с пересчётом (раз в секунду), %.2f мс обычно" % [heavy_ms, light_ms])
 	hud.queue_free()
 	inp.queue_free()
 	drv.queue_free()

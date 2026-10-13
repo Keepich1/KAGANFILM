@@ -20,6 +20,8 @@ extends Node
 ##
 ## Узел ставится в сцене ПОСЛЕ RtsCamera (свой _unhandled_input получает раньше камеры: колесо в режиме
 ## постройки поворачивает, а не приближает). Тесты подают события в handle() и задают to_world / to_screen.
+## Перед чтением GameQuery (щелчок, клавиша, курсор 12 Гц, кнопки) — driver.sync(), если он есть (GameDriver,
+## шаг в фоне). Новую партию (CityHud.rebind) ввод принимает через rebind().
 
 signal issued(cmd: PackedInt32Array)
 ## Взведён / снят приказ с кнопки (NONE — снят)
@@ -945,13 +947,19 @@ func _without(a: PackedInt32Array, b: PackedInt32Array) -> PackedInt32Array:
 ## Описатели для приказа: по одному живому бойцу на настоящий отряд (описатель юнита = его отряд) + все
 ## живые одиночки. Так приказ «всем 300» — несколько чисел, а не 300, и павший в выделении его не сорвёт.
 func compact(units: PackedInt32Array) -> PackedInt32Array:
-	var bs := query.battle()
+	return compact_of(query, units)
+
+
+## То же для любого окна чтения (CityHud: сводка выделения и сетка приказов спрашиваются по сжатому
+## выделению — ответ тот же, а GameQueryImpl считает отряд по бойцам каждого описателя)
+static func compact_of(q: GameQuery, units: PackedInt32Array) -> PackedInt32Array:
+	var bs := q.battle()
 	if bs == null:
 		return units
 	var out := PackedInt32Array()
 	var seen := {}
 	for h in units:
-		var u := query.unit_index(h)
+		var u := q.unit_index(h)
 		if u < 0 or bs.u_life[u] != BattleSim.Life.ALIVE:
 			continue
 		var s := bs.u_squad[u]

@@ -68,6 +68,10 @@ var _in_refresh := false
 var _sel_dirty := true
 ## Всё выделенное — своё (пересчёт при смене выделения)
 var _own := false
+## Выделение для selection_info / orders_for: по одному бойцу на отряд + одиночки (RtsInput.compact_of).
+## Ответ тот же (отряд считается по своим бойцам), а цена в GameQueryImpl растёт с числом описателей:
+## 1000 выделенных — десятки мс, 35 описателей — около миллисекунды. Пересчёт — при смене выделения.
+var _sel_q := PackedInt32Array()
 
 
 func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camera3D = null, inp: RtsInput = null) -> void:
@@ -217,12 +221,16 @@ func refresh_now(heavy := false) -> void:
 			selection.prune(query)            # кто-то погиб — сигнал поднимет _sel_dirty
 	var sel := selection.selected if selection else PackedInt32Array()
 	if _sel_dirty:
-		_own = not sel.is_empty() and RtsInput.owns_all(query, player, sel)
+		# сжатое выделение — при его смене (и после чистки от погибших: prune поднимает _sel_dirty)
+		_sel_q = sel
+		if sel.size() > 1 and Ids.kind(sel[0]) == Ids.Kind.UNIT:
+			_sel_q = RtsInput.compact_of(query, sel)
+		_own = not _sel_q.is_empty() and RtsInput.owns_all(query, player, _sel_q)
 	if _sel_dirty or sel.size() <= BIG_SEL or _t_info >= BIG_INFO_S:
 		_t_info = 0.0
-		info = query.selection_info(sel)
+		info = query.selection_info(_sel_q)
 	_sel_dirty = false
-	bottom.refresh(info, sel, heavy)
+	bottom.refresh(info, _sel_q, heavy)
 	top.refresh(heavy)
 	# на вкладке стройки буквы — постройки: WASD и Q/E камеры молчат
 	if camera and camera.get("pan_keys") != null:
