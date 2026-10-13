@@ -135,10 +135,10 @@ func _rebuild(d: Dictionary) -> void:
 			b.pressed.connect(func() -> void: hud.train(_handle, ut))
 			add_child(b)
 			var ic := TextureRect.new()
-			ic.texture = UiTheme.unit_icon(utype_id)
+			ic.texture = UiTheme.unit_face(utype_id)
 			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			ic.position = Vector2(8, 8)
-			ic.size = Vector2(TRAIN - 16, TRAIN - 16)
+			ic.position = Vector2(6, 6)
+			ic.size = Vector2(TRAIN - 12, TRAIN - 12)
 			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			if b.disabled:
 				ic.modulate = Color(0.55, 0.5, 0.45)
@@ -240,7 +240,7 @@ func _update(d: Dictionary) -> void:
 		if i < queue.size():
 			var qd: Dictionary = queue[i]
 			var ut := int(qd.get("utype", -1))
-			ic.texture = UiTheme.unit_icon(defs.unit_ids[ut] if ut >= 0 else "")
+			ic.texture = UiTheme.unit_face(defs.unit_ids[ut] if ut >= 0 else "")
 			(s["button"] as Button).tooltip_text = tr("%s — щелчок отменяет") % qd.get("name", "")
 			bar.value = float(qd.get("t", 0.0)) if i == 0 else 0.0
 		else:

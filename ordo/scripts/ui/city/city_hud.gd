@@ -118,6 +118,15 @@ func my_team() -> int:
 	return query.players().team[player]
 
 
+## Команда выделенного (чужие юниты тоже можно рассматривать)
+func selection_team() -> int:
+	if selection and not selection.selected.is_empty():
+		var t := RtsInput.team_of(query, selection.selected[0])
+		if t >= 0:
+			return t
+	return my_team()
+
+
 func team_of_building(h: int) -> int:
 	var bt := query.buildings()
 	return bt.team[bt.slot(h)] if bt.valid(h) else my_team()

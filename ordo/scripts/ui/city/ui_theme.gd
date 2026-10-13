@@ -191,7 +191,21 @@ static func res_icon(defs: Defs, r: int) -> Texture2D:
 	return icon("res", name if name != "" else defs.res_ids[r])
 
 
-## Эмблема рода войск по флагам UnitStats (до портретов из моделей)
+## Портрет рода войск из модели толпы (assets/ui/portraits/<вид>.png, сцена ui_portraits); null — нет вида
+static func unit_portrait(type_id: String) -> Texture2D:
+	var vid := UnitStats.visual_for(type_id)
+	if vid == "":
+		return null
+	return _load_tex(DIR + "portraits/" + vid + ".png")
+
+
+## Портрет, если есть, иначе эмблема рода
+static func unit_face(type_id: String) -> Texture2D:
+	var t := unit_portrait(type_id)
+	return t if t else unit_icon(type_id)
+
+
+## Эмблема рода войск по флагам UnitStats (если у рода нет портрета)
 static func unit_icon(type_id: String) -> Texture2D:
 	var st: Dictionary = UnitStats.get_stats(type_id)
 	var f := int(st.get("flags", 0))

@@ -136,10 +136,11 @@ func _card(c: Dictionary, at: Vector2) -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	bg.tooltip_text = "%s\n%s" % [c.get("name", ""), tr("Отряд со знаменем") if c.get("banner", false) else tr("Одиночки")]
 	add_child(bg)
-	var team := hud.my_team()
+	var team := hud.selection_team()
 	var roundel := CityRoundel.new()
 	roundel.color = UiTheme.TEAM[team % 4]
 	roundel.icon = UiTheme.unit_icon(String(c.get("type", "")))
+	roundel.portrait = UiTheme.unit_portrait(String(c.get("type", "")))
 	roundel.position = Vector2(CARD.x * 0.5 - 34, 8)
 	roundel.size = Vector2(68, 68)
 	bg.add_child(roundel)
@@ -180,10 +181,11 @@ func _card(c: Dictionary, at: Vector2) -> void:
 func _single(c: Dictionary) -> void:
 	var type_id := String(c.get("type", ""))
 	var st := UnitStats.get_stats(type_id)
-	var team := hud.my_team()
+	var team := hud.selection_team()
 	var roundel := CityRoundel.new()
 	roundel.color = UiTheme.TEAM[team % 4]
 	roundel.icon = UiTheme.unit_icon(type_id)
+	roundel.portrait = UiTheme.unit_portrait(type_id)
 	roundel.position = Vector2(6, 8)
 	roundel.size = Vector2(112, 112)
 	add_child(roundel)
