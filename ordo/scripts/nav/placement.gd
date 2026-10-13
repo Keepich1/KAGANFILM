@@ -13,6 +13,8 @@ extends RefCounted
 ## check_place = худшая причина по этому порядку; затем — NOT_ALLOWED (выключенная постройка или
 ## чужая сторона) и NO_RES (не по карману). Ворота (on_wall "align") — через WallTool.snap_on_wall;
 ## башня (on_wall "replace") может стоять на своих звеньях стены (они уходят).
+## Без EconApi (тесты, вид без экономики) территория, near, сторона и цена не проверяются; если же econ
+## был дан в setup и уже освобождён — NOT_ALLOWED на всё (NavGrid.econ_lost), а не молчаливое OK.
 
 const ORDER := [NavApi.Why.OUT_OF_MAP, NavApi.Why.OVERLAP, NavApi.Why.WATER, NavApi.Why.SLOPE,
 	NavApi.Why.NOT_ON_WALL, NavApi.Why.NOT_NEAR, NavApi.Why.NOT_ALLOWED, NavApi.Why.NO_TERRITORY,
@@ -33,7 +35,7 @@ var _units := PackedInt32Array()
 func check_place(g: NavGrid, player: int, btype: int, center: Vector2, rot_q: int) -> int:
 	g.sync_node_index()
 	var d := g.defs
-	if d == null or btype < 0 or btype >= d.b_ids.size() or d.b_enabled[btype] == 0:
+	if d == null or btype < 0 or btype >= d.b_ids.size() or d.b_enabled[btype] == 0 or g.econ_lost():
 		return NavApi.Why.NOT_ALLOWED
 	if not _faction_ok(g, player, btype):
 		return NavApi.Why.NOT_ALLOWED
@@ -67,9 +69,10 @@ func place_cells(g: NavGrid, player: int, btype: int, center: Vector2, rot_q: in
 	var place: Dictionary = d.b_place[btype]
 	var team := g.team_of_player(player)
 	var any_ok := false
+	var lost := g.econ_lost()
 	for row in range(r.position.y, r.end.y):
 		for col in range(r.position.x, r.end.x):
-			var why := cell_why(g, col, row, team, place, d.b_kind[btype])
+			var why := NavApi.Why.NOT_ALLOWED if lost else cell_why(g, col, row, team, place, d.b_kind[btype])
 			out.append(why)
 			any_ok = any_ok or why == NavApi.Why.OK
 	if any_ok:

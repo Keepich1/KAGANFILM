@@ -1,6 +1,8 @@
 extends SceneTree
-## Навигация «Города» (ARCHITECTURE §9, §15 NAV): сетка, слои команд, ворота, пролом, коридоры,
-## суперобложка стен, устаревание путей, бюджет и детерминизм службы путей, память 400².
+## Навигация «Города» (ARCHITECTURE §9, §15 NAV): сетка, слои команд, ворота (и через stamp_building),
+## пролом (не через статику), коридоры, суперобложка стен, связность по месту против полного пересчёта,
+## устаревание путей (и на углу секторов), прямая видимость у воды, кэш, бюджет и детерминизм службы
+## путей, неверные команды и потерянный EconApi, память 400².
 ##   godot --headless --path ordo --script res://tests/test_nav.gd
 ## Время: «проц.» — процессорное время потока (/proc/thread-self/schedstat; машину делят другие
 ## агенты, часы врут), «часы» — лучший из нескольких прогонов.
@@ -8,6 +10,7 @@ extends SceneTree
 
 const MAP_400 := {"size": 801, "spacing": 2.0, "origin": [-800.0, -800.0], "flat": true, "teams": 2}
 const MAP_64 := {"size": 129, "spacing": 2.0, "origin": [-128.0, -128.0], "flat": true, "teams": 2}
+const MAP_128 := {"size": 257, "spacing": 2.0, "origin": [-256.0, -256.0], "flat": true, "teams": 2}
 
 static var _cpu_ok := true
 
@@ -16,12 +19,18 @@ func _init() -> void:
 	_test_raster()
 	_test_terrain()
 	_test_gates()
+	_test_gate_stamp_building()
+	_test_breach_static()
+	_test_components_fuzz()
 	_test_enclosed_400()
 	_test_detour_400()
 	_test_breach_ratio()
 	_test_random_walls()
 	_test_stale()
+	_test_los_water()
+	_test_cache()
 	_test_budget()
+	_test_bad_inputs()
 	_test_memory()
 	SimHarness.finish(self)
 
@@ -133,6 +142,19 @@ static func cpu_us() -> int:
 	return Time.get_ticks_usec()
 
 
+## Часы потока без ожидания процессора, мкс: часы минус run_delay из /proc/thread-self/schedstat
+## (ядро дописывает его при каждом возвращении потока на процессор). Процессорное время там же
+## обновляется лишь на переключениях (шаг 1–4 мс) — для отдельного такта оно не годится, а это —
+## точно до мкс и не растёт, пока поток ждёт в очереди (машину делят другие агенты)
+static func net_us() -> int:
+	if _cpu_ok:
+		var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+		if f:
+			return Time.get_ticks_usec() - int(f.get_line().split(" ")[1]) / 1000
+		_cpu_ok = false
+	return Time.get_ticks_usec()
+
+
 ## Лучшее время (часы, мс) из reps прогонов f
 static func best_ms(f: Callable, reps: int) -> float:
 	var best := INF
@@ -171,6 +193,71 @@ static func path_cells(nav: NavGrid, start: Vector2, pts: PackedVector2Array) ->
 	for i in range(1, poly.size()):
 		out.append_array(nav.link_cells(poly[i - 1], poly[i]))
 	return out
+
+
+## Разбиение областей слоя по компонентам (правки по месту) — то же, что у полного пересчёта
+## (_components)? И счёт областей тот же. Состояние слоя после сравнения восстанавливается — цепочка
+## правок по месту продолжается
+static func comps_match_full(L: NavRegions) -> bool:
+	var ns := L.sw * L.sh
+	var inc := PackedInt32Array()
+	for s in ns:
+		for l in L.reg_n[s]:
+			inc.append(L._cfind(L.rcomp[s * NavRegions.RMAX + l]))
+	var rc := L.rcomp.duplicate()
+	var cp := L._cpar.duplicate()
+	var rg := L._regions
+	var fp := L.full_passes
+	L._components()
+	var ok := L._regions == rg
+	var f2i := {}
+	var i2f := {}
+	var j := 0
+	for s in ns:
+		for l in L.reg_n[s]:
+			var a := inc[j]
+			var b := L.rcomp[s * NavRegions.RMAX + l]
+			j += 1
+			if int(f2i.get(b, a)) != a or int(i2f.get(a, b)) != b:
+				ok = false
+			f2i[b] = a
+			i2f[a] = b
+	L.rcomp = rc
+	L._cpar = cp
+	L._regions = rg
+	L.full_passes = fp
+	return ok
+
+
+## Слой, построенный заново по тем же закрытым клеткам: метки, входы и граф входов те же?
+static func graph_matches_fresh(L: NavRegions) -> bool:
+	var F := NavRegions.new()
+	F.setup(L.w, L.h, L.portals)
+	for c in L.w * L.h:
+		if L.solid[c] != 0:
+			F.set_cell(c, true, 1.0, 0)
+	F.flush()
+	if F.lab != L.lab or F.reg_n != L.reg_n:
+		return false
+	for s in L.sw * L.sh:
+		if F._ent_e[s] != L._ent_e[s] or F._ent_s[s] != L._ent_s[s]:
+			return false
+	if not L.portals:
+		return true
+	var ids_l := L.graph.get_point_ids()
+	var ids_f := F.graph.get_point_ids()
+	ids_l.sort()
+	ids_f.sort()
+	if ids_l != ids_f:
+		return false
+	for id in ids_l:
+		var a := L.graph.get_point_connections(id)
+		var b := F.graph.get_point_connections(id)
+		a.sort()
+		b.sort()
+		if a != b:
+			return false
+	return true
 
 
 # ================================================================= тесты
@@ -435,6 +522,17 @@ func _test_stale() -> void:
 	SimHarness.check(not nav.stale(far), "путь в другом конце карты — не устарел")
 	var r2 := nav.find_now(0, a, b)
 	SimHarness.check(not nav.stale(r2) and r2.issued_ver == nav.version, "новый путь — свежий")
+	# путь ровно через угол секторов: в sectors оба боковых сектора (заслон в угловой клетке заметен)
+	var k3 := make(MAP_128)
+	var n3: NavGrid = k3["nav"]
+	var rc := n3.find_now(0, n3.cell_center(60 * n3.w + 60), n3.cell_center(68 * n3.w + 68))
+	var corner := 64 * n3.w + 63
+	var s_l := n3.walk_layer(0).sector_of(corner)
+	var s_u := n3.walk_layer(0).sector_of(63 * n3.w + 64)
+	SimHarness.check(rc.pts.size() == 1 and rc.sectors.has(s_l) and rc.sectors.has(s_u),
+		"путь через угол секторов: оба боковых сектора в %s" % str(rc.sectors))
+	n3.stamp_link(999999, 1, n3.cell_center(corner), n3.cell_center(corner), defs.building(&"uy"))
+	SimHarness.check(n3.stale(rc), "заслон в угловой клетке — путь устарел")
 
 
 ## Бюджет: 64 запроса за 4 такта — одинаковый порядок и результаты в двух прогонах
@@ -502,3 +600,302 @@ func _test_memory() -> void:
 	var m1 := Performance.get_monitor(Performance.MEMORY_STATIC)
 	var mb := (m1 - m0) / 1048576.0
 	SimHarness.check(mb <= 96.0, "NavGrid 400², 2 команды × (walk + breach): %.1f МБ ≤ 96 (setup %.0f мс проц.)" % [mb, setup_ms])
+
+
+## Ворота, поставленные через stamp_building, на косой стене 30–60° (обе стороны: Дарвоза на пахсе,
+## Дарбаза на чепе): NAV штампует их линией по стене — враг не проходит, свои проходят. Три способа:
+## как EconStub/ECON (концов в BuildingTable нет — линия по своей стене у центра), с концами ax…bz
+## из snap_on_wall, и ворота до снятия звеньев под ними
+func _test_gate_stamp_building() -> void:
+	print("[ворота через stamp_building на косой стене]")
+	var n := 0
+	var leaks := 0
+	var own_block := 0
+	var rect := 0
+	var bad_snap := 0
+	for ai in 13:
+		for mode in 3:
+			var p := (ai + mode) % 2
+			var ang := deg_to_rad(30.0 + ai * 2.5)
+			var dir := Vector2(cos(ang), sin(ang))
+			var nrm := dir.orthogonal()
+			var po := nrm * ((ai % 4) * 0.9)
+			var k := make(MAP_128)
+			var nav: NavGrid = k["nav"]
+			var econ: EconStub = k["econ"]
+			var d: Defs = k["defs"]
+			var B := econ.buildings
+			wall(k, p, &"devor" if p == 0 else &"chep", PackedVector2Array([po - dir * 420.0, po + dir * 420.0]))
+			var gt := d.building(&"darvoza" if p == 0 else &"darbaza")
+			var s := nav.snap_on_wall(p, gt, po + dir * (1.7 + 5.3 * mode))
+			if int(s["why"]) != NavApi.Why.OK:
+				bad_snap += 1
+				continue
+			var removes: PackedInt32Array = s["removes"]
+			if mode != 2:
+				for rh in removes:
+					nav.unstamp(rh)
+					B.release(B.slot(rh))
+			var rq := posmod(roundi(float(s["rot"]) / (PI / 2.0)), 4)
+			var center := nav.snap(gt, s["center"], rq)
+			var h: int
+			if mode == 1:
+				var b := B.alloc(BuildingTable.State.ACTIVE)
+				B.btype[b] = gt
+				B.owner[b] = p
+				B.team[b] = p
+				B.x[b] = center.x
+				B.z[b] = center.y
+				B.rot_q[b] = rq
+				var ga: Vector2 = s["a"]
+				var gb: Vector2 = s["b"]
+				B.ax[b] = ga.x
+				B.az[b] = ga.y
+				B.bx[b] = gb.x
+				B.bz[b] = gb.y
+				h = B.handle(b)
+				nav.stamp_building(h, p, center, gt, rq)
+			else:
+				h = econ.spawn_building(p, gt, center, rq)
+			if mode == 2:
+				for rh in removes:
+					nav.unstamp(rh)
+					B.release(B.slot(rh))
+			n += 1
+			if nav.link_ends(h).size() != 2:
+				rect += 1
+			var p1 := po + nrm * 20.0
+			var p2 := po - nrm * 20.0
+			if nav.reachable(1 - p, p1, p2):
+				leaks += 1
+			if not nav.reachable(p, p1, p2):
+				own_block += 1
+	SimHarness.check(n == 39 and bad_snap == 0 and rect == 0,
+		"ворота на стене (%d из 39) — штамп линией по стене, не прямоугольником (прямоугольников %d)" % [n, rect])
+	SimHarness.check(leaks == 0 and own_block == 0,
+		"30–60°, три способа: враг проходит %d раз, свои не проходят %d раз" % [leaks, own_block])
+
+
+## Чужая постройка на статике (глубокая вода, обрыв): в слое breach её клетки остаются сплошными
+## (§9.3) — пролома через непроходимое нет
+func _test_breach_static() -> void:
+	print("[пролом не открывает статику под чужой постройкой]")
+	var k := make()
+	var nav: NavGrid = k["nav"]
+	var econ: EconStub = k["econ"]
+	var d: Defs = k["defs"]
+	var dam := d.building(&"togon")
+	var at := nav.snap(dam, Vector2(160, -170.5), 0)
+	var h := econ.spawn_building(0, dam, at, 0)
+	var rec := nav.stamp_of(h)
+	var on_static := 0
+	var open := 0
+	for i in range(3, rec.size()):
+		var c := rec[i]
+		if nav.flags[c] & NavApi.F.STATIC:
+			on_static += 1
+			if nav.breach_layer(1).solid[c] == 0:
+				open += 1
+	SimHarness.check(on_static > 0 and open == 0,
+		"тўғон в глубокой воде: клеток на статике %d, открыто в breach врага %d" % [on_static, open])
+	# обрыв поперёк карты (статика вручную) и дом команды 0 на нём: враг не ломится через обрыв
+	var k2 := make(MAP_128)
+	var n2: NavGrid = k2["nav"]
+	var e2: EconStub = k2["econ"]
+	for row in n2.h:
+		for col in [63, 64]:
+			var c: int = row * n2.w + col
+			n2._static_f[c] = NavApi.F.STATIC
+			n2._static_cells.append(c)
+			n2._refresh_cell(c)
+	e2.spawn_building(0, d.building(&"uy"), n2.cell_center(32 * n2.w + 64) + Vector2(-2, -2), 0)
+	var r := n2.find_now(1, Vector2(-40, 0), Vector2(40, 0))
+	SimHarness.check(r.breach_b == 0 and r.no_route, "обрыв с чужим домом: пролома нет, no_route (%s)" % str(r.pts))
+
+
+## Связность по месту: 300 шагов случайных правок (кольца и отрезки стен, дома, ворота, снос) на 128²;
+## после каждого шага — разбиение областей walk и breach обеих команд как у полного пересчёта, каждые
+## 20 шагов — метки, входы и граф входов как у слоя, построенного заново
+func _test_components_fuzz() -> void:
+	print("[связность по месту против полного пересчёта: случайные правки]")
+	var k := make(MAP_128)
+	var nav: NavGrid = k["nav"]
+	var econ: EconStub = k["econ"]
+	var d: Defs = k["defs"]
+	var B := econ.buildings
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 23
+	nav.sync_for_paths()
+	var layers: Array[NavRegions] = [nav.walk_layer(0), nav.walk_layer(1), nav.breach_layer(0), nav.breach_layer(1)]
+	for L in layers:
+		L.comp_of(0)
+	var full0 := 0
+	var split0 := 0
+	for L in layers:
+		full0 += L.full_passes
+		split0 += L.split_visits
+	var live := PackedInt32Array()
+	var bad := 0
+	var bad_graph := 0
+	var checks := 0
+	var t0 := cpu_us()
+	for step in 300:
+		for o in 1 + rng.randi() % 3:
+			var p := rng.randi() % 2
+			var r := rng.randi() % 10
+			var at := Vector2(rng.randf_range(-200, 200), rng.randf_range(-200, 200))
+			var wid := &"devor" if p == 0 else &"chep"
+			if r < 3 and not live.is_empty():
+				var i := rng.randi() % live.size()
+				nav.unstamp(live[i])
+				B.release(B.slot(live[i]))
+				live.remove_at(i)
+			elif r < 5:
+				live.append_array(wall(k, p, wid, ring_pts(at, rng.randf_range(8.0, 40.0), 6 + rng.randi() % 6)))
+			elif r < 7:
+				var b2 := at + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
+				live.append_array(wall(k, p, wid, PackedVector2Array([at, b2])))
+			elif r < 9:
+				var bt := d.building(&"uy") if p == 0 else d.building(&"boz")
+				var rq := rng.randi() % 4
+				live.append(econ.spawn_building(p, bt, nav.snap(bt, at, rq), rq))
+			elif not live.is_empty():
+				var sl := B.slot(live[rng.randi() % live.size()])
+				var g := gate(k, B.owner[sl], &"darvoza" if B.owner[sl] == 0 else &"darbaza", Vector2(B.x[sl], B.z[sl]))
+				if g != 0:
+					live.append(g)
+		var keep := PackedInt32Array()                 # звенья, снятые воротами, — из списка
+		for h in live:
+			if not nav.stamp_of(h).is_empty():
+				keep.append(h)
+		live = keep
+		nav.sync_for_paths()
+		for L in layers:
+			L.comp_of(0)
+			checks += 1
+			if not comps_match_full(L):
+				bad += 1
+		if step % 20 == 19:
+			for L in layers:
+				if not graph_matches_fresh(L):
+					bad_graph += 1
+	var full := -full0
+	var split := -split0
+	for L in layers:
+		full += L.full_passes
+		split += L.split_visits
+	SimHarness.check(bad == 0 and bad_graph == 0,
+		"%d сверок компонент: расхождений %d; графа входов (60 сверок): %d — %.0f мс проц." % [
+		checks, bad, bad_graph, (cpu_us() - t0) / 1000.0])
+	SimHarness.check(full <= 4 and split > 0,
+		"полных пересчётов за 300 шагов: %d (по месту; областей в проверках разрыва %d)" % [full, split])
+
+
+## Прямая видимость у воды (§9.4e): путь из мелкой воды на сушу не срезается по воде мимо сухого
+## обхода, найденного A* (вода — вес 2); между двумя точками в воде — напрямик по воде можно.
+## Всё в одном секторе (путь — один A* по весам)
+func _test_los_water() -> void:
+	print("[прямая видимость: из воды на сушу — не напрямик по воде]")
+	var k := make(MAP_128)
+	var nav: NavGrid = k["nav"]
+	for row in range(70, 73):                          # полоса мелкой воды в секторе (4, 4)
+		for col in range(66, 78):
+			var c := row * nav.w + col
+			nav._static_f[c] = NavApi.F.WATER | NavApi.F.FORD
+			nav._static_cells.append(c)
+			nav._refresh_cell(c)
+	nav.sync_for_paths()
+	var a := nav.cell_center(71 * nav.w + 67)
+	var b := nav.cell_center(71 * nav.w + 79)
+	var r := nav.find_now(0, a, b)
+	var wet := 0
+	for c in path_cells(nav, a, r.pts):
+		if nav.flags[c] & NavApi.F.WATER:
+			wet += 1
+	SimHarness.check(not r.no_route and r.pts.size() >= 2 and wet <= 5,
+		"из воды на сушу: клеток воды на пути %d — выход A* из воды (напрямик — 11): %s" % [wet, str(r.pts)])
+	var r2 := nav.find_now(0, a, nav.cell_center(71 * nav.w + 76))
+	SimHarness.check(r2.pts.size() == 1, "оба конца в воде: напрямик (%s)" % str(r2.pts))
+
+
+## Кэш ходок: устаревшая запись уходит и из очереди вытеснения (ключи без повторов, по записи на ключ)
+func _test_cache() -> void:
+	print("[кэш путей: устаревшие записи]")
+	var k := make(MAP_128)
+	var nav: NavGrid = k["nav"]
+	var econ: EconStub = k["econ"]
+	var d: Defs = k["defs"]
+	var a := Vector2(-100, -3)
+	var b := Vector2(100, 5)
+	var hits0 := nav.paths.cache_hits
+	var uy := d.building(&"uy")
+	for i in 3:
+		nav.paths.solve(nav, 0, a, b, true)
+		nav.paths.solve(nav, 0, a, b, true)
+		econ.spawn_building(0, uy, nav.snap(uy, Vector2(-60 + 40 * i, 0), 0), 0)
+		nav.sync_for_paths()
+	nav.paths.solve(nav, 0, a, b, true)
+	var keys := nav.paths._cache_keys
+	var uniq := {}
+	for key in keys:
+		uniq[key] = true
+	SimHarness.check(nav.paths.cache_hits - hits0 == 3 and keys.size() == nav.paths._cache.size() and uniq.size() == keys.size(),
+		"3 попадания, 3 устаревания: ключей в очереди %d, записей %d, разных ключей %d" % [
+		keys.size(), nav.paths._cache.size(), uniq.size()])
+
+
+## Неверные команды: предупреждение и «нет пути», слоёв не прибавляется; ничья постройка (команда −1) —
+## чужая всем; звено без концов — не стена для ворот (без тригонометрии); потерянный EconApi —
+## расстановка NOT_ALLOWED
+func _test_bad_inputs() -> void:
+	print("[неверные команды, ничьи постройки, звено без концов, потерянный EconApi]")
+	var k := make(MAP_128)
+	var nav: NavGrid = k["nav"]
+	var econ: EconStub = k["econ"]
+	var d: Defs = k["defs"]
+	var uy := d.building(&"uy")
+	econ.spawn_building(-1, uy, nav.snap(uy, Vector2(0.5, 0.5), 0), 0)
+	var c := nav.cell_of(Vector2(0.5, 0.5))
+	SimHarness.check(nav.team_of[c] == NavGrid.NO_TEAM and nav.walk_layer(0).solid[c] == 1 and nav.walk_layer(1).solid[c] == 1 \
+		and nav.breach_layer(0).solid[c] == 0 and nav.breach_layer(1).solid[c] == 0 and nav.enemy_structs(0) and nav.enemy_structs(1),
+		"ничья постройка: team_of 255, сплошная в walk, ломается обеими командами")
+	var ok := true
+	for t in [-1, 2, 4, 255]:
+		var r := nav.find_now(t, Vector2(-100, -100), Vector2(100, 100))
+		ok = ok and r != null and r.no_route and r.pts.size() == 1
+		ok = ok and not nav.reachable(t, Vector2(-100, -100), Vector2(-90, -100)) and not nav.passable(t, 0)
+		var tk := nav.request(t, Vector2(-100, -100), Vector2(100, 100), 1)
+		nav.service(1)
+		var rr := nav.result(tk)
+		ok = ok and rr != null and rr.no_route
+		nav.release(tk)
+	SimHarness.check(ok and nav._walk.size() == 2 and nav._breach.size() == 2,
+		"команды −1, 2, 4, 255 при teams = 2: «нет пути», слоёв по-прежнему %d" % nav._walk.size())
+	# звено стены прямоугольником, без концов (ни в штампе, ни в BuildingTable): ворота на него не встают
+	var B := econ.buildings
+	var dv := d.building(&"devor")
+	var b := B.alloc(BuildingTable.State.ACTIVE)
+	B.btype[b] = dv
+	B.owner[b] = 0
+	B.team[b] = 0
+	B.x[b] = 60.0
+	B.z[b] = 60.0
+	B.rot[b] = 0.3
+	nav.stamp_building(B.handle(b), 0, Vector2(60, 60), dv, 0)
+	var s := nav.snap_on_wall(0, d.building(&"darvoza"), Vector2(60, 60))
+	SimHarness.check(int(s["why"]) == NavApi.Why.NOT_ON_WALL, "звено без концов: ворота — NOT_ON_WALL (%d)" % int(s["why"]))
+	# потерянный EconApi: был дан в setup и освобождён — расстановка не пропускает молча
+	var nav2 := NavGrid.new()
+	var e2 := EconStub.new()
+	e2.setup(d, d.rules_of(&"GOROD"), null, nav2, SimEvents.new(), 1)
+	nav2.setup(MAP_64, d, e2, null)
+	var at := nav2.snap(uy, Vector2(10, 10), 0)
+	var before := nav2.check_place(0, uy, at, 0)
+	e2 = null
+	var after := nav2.check_place(0, uy, at, 0)
+	var cells := nav2.place_cells(0, uy, at, 0)
+	var plan := nav2.plan_wall(0, dv, PackedVector2Array([Vector2(0, 0), Vector2(20, 0)]))
+	var pw: PackedByteArray = plan["why"]
+	SimHarness.check(before == NavApi.Why.OK and nav2.econ == null and after == NavApi.Why.NOT_ALLOWED \
+		and cells.count(NavApi.Why.NOT_ALLOWED) == cells.size() and pw.count(NavApi.Why.NOT_ALLOWED) == pw.size(),
+		"EconApi освобождён: check_place %d → %d, клетки и звенья — NOT_ALLOWED" % [before, after])

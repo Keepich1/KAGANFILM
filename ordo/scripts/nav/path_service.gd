@@ -122,9 +122,14 @@ func checksum() -> int:
 func solve(g: NavGrid, t: int, from: Vector2, to: Vector2, cached := false) -> PathResult:
 	var r := PathResult.new()
 	r.issued_ver = g.version
-	var wl := g.walk_layer(t)
 	var from_c := g.clamp_pos(from)
 	var to_c := g.clamp_pos(to)
+	if not g.team_ok(t):                             # команда вне 0..teams−1: «нет пути», стоять на месте
+		r.no_route = true
+		r.pts = PackedVector2Array([from_c])
+		r.sectors = g.sectors_of(r.pts)
+		return r
+	var wl := g.walk_layer(t)
 	var cs := g.snap_cell(wl, from_c, SNAP_R)
 	if cs < 0:                                       # стоит в закрытом месте без выхода рядом
 		r.no_route = true
@@ -420,6 +425,9 @@ func _cache_get(g: NavGrid, key: int, t: int, cs: int, cg: int, goal_p: Vector2)
 	var sectors: PackedInt32Array = e[1]
 	if g.stale_sectors(sectors, e[2]):
 		_cache.erase(key)
+		var ki := _cache_keys.find(key)              # и из очереди вытеснения (иначе старая копия ключа
+		if ki >= 0:                                  # вытеснит потом свежую запись)
+			_cache_keys.remove_at(ki)
 		return null
 	var full: PackedVector2Array = e[0]
 	if rev:

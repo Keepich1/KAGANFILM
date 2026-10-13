@@ -13,17 +13,18 @@ const CM := 100.0
 
 ## Клетки (col, row) отрезка a→b парами [col0, row0, col1, row1, …], 4-связно, от a к b.
 ## Клетки вне сетки тоже возвращаются (обрезает вызывающий). cell — размер клетки, м.
-static func supercover4(a: Vector2, b: Vector2, origin: Vector2, cell: float) -> PackedInt32Array:
+static func supercover4(a: Vector2, b: Vector2, origin: Vector2, cell: float, corners := false) -> PackedInt32Array:
 	var s := roundi(cell * CM)
 	var x0 := roundi((a.x - origin.x) * CM)
 	var z0 := roundi((a.y - origin.y) * CM)
 	var x1 := roundi((b.x - origin.x) * CM)
 	var z1 := roundi((b.y - origin.y) * CM)
-	return supercover4_cm(x0, z0, x1, z1, s)
+	return supercover4_cm(x0, z0, x1, z1, s, corners)
 
 
-## То же в целых сантиметрах (s — клетка, см)
-static func supercover4_cm(x0: int, z0: int, x1: int, z1: int, s: int) -> PackedInt32Array:
+## То же в целых сантиметрах (s — клетка, см). corners — на точном углу клеток добавить и вторую
+## соседнюю клетку (отрезок касается обеих; порядок тогда не 4-связный — для множества секторов)
+static func supercover4_cm(x0: int, z0: int, x1: int, z1: int, s: int, corners := false) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	var cx := _fdiv(x0, s)
 	var cz := _fdiv(z0, s)
@@ -49,7 +50,12 @@ static func supercover4_cm(x0: int, z0: int, x1: int, z1: int, s: int) -> Packed
 		elif sz == 0:
 			step_x = true
 		else:
-			step_x = absi(bx - x0) * adz <= absi(bz - z0) * adx    # на углу — сперва по x
+			var lhs := absi(bx - x0) * adz
+			var rhs := absi(bz - z0) * adx
+			step_x = lhs <= rhs                                    # на углу — сперва по x
+			if corners and lhs == rhs:
+				out.append(cx)
+				out.append(cz + sz)
 		if step_x:
 			cx += sx
 			bx += sx * s
@@ -61,7 +67,8 @@ static func supercover4_cm(x0: int, z0: int, x1: int, z1: int, s: int) -> Packed
 	return out
 
 
-## Секторы (индексы sy * sw + sx) ломаной pts по порядку, без повторов; вне сетки — пропуск
+## Секторы (индексы sy * sw + sx) ломаной pts по порядку, без повторов; вне сетки — пропуск.
+## На точном углу секторов — оба боковых (как прямая видимость проверяет обе угловые клетки)
 static func sectors_of(pts: PackedVector2Array, origin: Vector2, cell: float, sector: int,
 		w: int, h: int) -> PackedInt32Array:
 	var out := PackedInt32Array()
@@ -69,7 +76,7 @@ static func sectors_of(pts: PackedVector2Array, origin: Vector2, cell: float, se
 	var sh := ceili(float(h) / sector)
 	var seen := {}
 	for i in range(1, pts.size()):
-		var cells := supercover4(pts[i - 1], pts[i], origin, cell * sector)
+		var cells := supercover4(pts[i - 1], pts[i], origin, cell * sector, true)
 		for k in range(0, cells.size(), 2):
 			var sx := cells[k]
 			var sy := cells[k + 1]

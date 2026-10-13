@@ -14,9 +14,12 @@ extends RefCounted
 ## snap_on_wall (этап 2): ворота (on_wall "align") — на свою стену, по её линии, заменяют звенья под
 ## собой; башня ("replace") — в клетки сетки у стены, звенья под следом уходят; без стены — как
 ## обычная постройка. Ответ: {why, center, rot, removes, a, b} (a, b — концы ворот для stamp_link).
+## gate_line — линия ворот, которые ECON штампует через stamp_building (без концов a, b).
 
 const SNAP_R := 6.0               # м: ищем звено стены не дальше
 const LINE_EPS := 1.0             # м: звено «на линии» ворот
+const GATE_REACH := 3.0 * NavApi.CELL   # м: от края ворот до клеток уцелевших звеньев (снятые + сдвиг центра)
+const GATE_PERP := NavApi.CELL    # м: прямая стены не дальше этого от центра ворот
 
 var _units := PackedInt32Array()
 
@@ -71,6 +74,8 @@ func plan_wall(g: NavGrid, player: int, wtype: int, pts: PackedVector2Array) -> 
 ## Причина для одного звена la→lb
 func link_why(g: NavGrid, player: int, team: int, wtype: int, c: Vector2, la: Vector2, lb: Vector2) -> int:
 	var d := g.defs
+	if g.econ_lost():
+		return NavApi.Why.NOT_ALLOWED
 	var link_kind := d.b_kind[wtype] == Defs.BKind.LINK
 	var raw := NavRaster.supercover4(la, lb, g.origin, NavApi.CELL)
 	var worst := NavApi.Why.OK
@@ -125,7 +130,7 @@ func snap_on_wall(g: NavGrid, player: int, btype: int, p: Vector2) -> Dictionary
 	var out := {"why": NavApi.Why.NOT_ON_WALL, "center": p, "rot": 0.0, "removes": PackedInt32Array(),
 		"a": p, "b": p}
 	var d := g.defs
-	if d == null or btype < 0 or btype >= d.b_ids.size():
+	if d == null or btype < 0 or btype >= d.b_ids.size() or g.econ_lost():
 		out["why"] = NavApi.Why.NOT_ALLOWED
 		return out
 	var mode := String(d.b_place[btype].get("on_wall", ""))
@@ -201,6 +206,60 @@ func snap_on_wall(g: NavGrid, player: int, btype: int, p: Vector2) -> Dictionary
 	return out
 
 
+## Линия ворот btype с центром у center (stamp_building без концов): ось — прямая своего звена стены
+## рядом, ближайшая к центру (ничьи — меньший описатель); середина — проекция центра на неё; концы —
+## ± (ширина / 2 + margin). Звенья под воротами к этому времени могут быть уже сняты — ищутся уцелевшие
+## в радиусе GATE_REACH от краёв. Пусто — своей стены рядом нет. Состояние навигации не меняет.
+func gate_line(g: NavGrid, team: int, btype: int, center: Vector2, margin: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var d := g.defs
+	if d == null or btype < 0 or btype >= d.b_ids.size():
+		return out
+	var half := d.b_size[btype].x * 0.5
+	var rad := half + GATE_REACH
+	var c0 := g.cell_of(g.clamp_pos(center))
+	if c0 < 0:
+		return out
+	var k := ceili(rad / NavApi.CELL)
+	var cx := c0 % g.w
+	var cy := c0 / g.w
+	var seen := {}
+	var best := 0
+	var bd := GATE_PERP
+	var ba := Vector2.ZERO
+	var bdir := Vector2.ZERO
+	for y in range(maxi(cy - k, 0), mini(cy + k + 1, g.h)):
+		for x in range(maxi(cx - k, 0), mini(cx + k + 1, g.w)):
+			var c := y * g.w + x
+			if g.flags[c] & NavApi.F.WALL == 0 or center.distance_squared_to(g.cell_center(c)) > rad * rad:
+				continue
+			for bh in g.stamps_at(c):
+				if seen.has(bh):
+					continue
+				seen[bh] = true
+				var rec := g.stamp_of(bh)
+				if rec.is_empty() or rec[0] != team or rec[2] & NavApi.F.WALL == 0:
+					continue
+				var geo := _link_geo(g, bh)
+				if geo.is_empty():
+					continue
+				var a: Vector2 = geo[0]
+				var dir: Vector2 = geo[1]
+				var perp := absf(dir.cross(center - a))
+				if perp < bd or (perp == bd and bh < best):
+					bd = perp
+					best = bh
+					ba = a
+					bdir = dir
+	if best == 0:
+		return out
+	var proj := ba + bdir * bdir.dot(center - ba)
+	var e := half + margin
+	out.append(proj - bdir * e)
+	out.append(proj + bdir * e)
+	return out
+
+
 ## Башня: в клетки у стены; свои звенья под следом уходят. Без стены — как обычная постройка
 func _snap_tower(g: NavGrid, player: int, btype: int, p: Vector2, team: int, link: int) -> Dictionary:
 	var d := g.defs
@@ -259,8 +318,13 @@ func _link_near(g: NavGrid, player: int, team: int, p: Vector2) -> int:
 	return best
 
 
-## Геометрия звена: [a, dir, b] по BuildingTable (концы, иначе центр и поворот); пусто — нет
+## Геометрия звена: [a, dir, b] — по концам его штампа (stamp_link), иначе по концам в BuildingTable;
+## пусто — концов нет (звено без концов на стене не считается: поворот rot — только для вида, правила
+## по тригонометрии не решаются — CONTRACT §10)
 func _link_geo(g: NavGrid, bh: int) -> Array:
+	var ends := g.link_ends(bh)
+	if ends.size() == 2 and ends[0].distance_squared_to(ends[1]) > 0.01:
+		return [ends[0], (ends[1] - ends[0]).normalized(), ends[1]]
 	if g.econ == null or g.econ.buildings == null or not g.econ.buildings.valid(bh):
 		return []
 	var B := g.econ.buildings
@@ -268,11 +332,7 @@ func _link_geo(g: NavGrid, bh: int) -> Array:
 	var a := Vector2(B.ax[b], B.az[b])
 	var e := Vector2(B.bx[b], B.bz[b])
 	if a.distance_squared_to(e) < 0.01:
-		var dir := Vector2(cos(B.rot[b]), -sin(B.rot[b]))
-		var half := g.defs.b_link_len[B.btype[b]] * 0.5 if B.btype[b] >= 0 else 1.8
-		var c := Vector2(B.x[b], B.z[b])
-		a = c - dir * half
-		e = c + dir * half
+		return []
 	return [a, (e - a).normalized(), e]
 
 

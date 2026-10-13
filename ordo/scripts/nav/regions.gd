@@ -6,14 +6,20 @@ extends RefCounted
 ##
 ## Граф секторов (HPA*): сетка режется на секторы 16 × 16 клеток; внутри сектора — метки
 ## 4-связных областей (lab, 255 — закрыто). Входы — отрезки общей границы соседних секторов,
-## где обе клетки открыты; у каждого входа точка в AStar2D (только walk). Компоненты связности
-## (comp) — объединением областей через входы: reachable за O(1).
+## где обе клетки открыты; у каждого входа точка в AStar2D (только walk). Компоненты связности —
+## номер у каждой области (rcomp[s * RMAX + метка], слияния — через _cpar): reachable за O(1).
 ## Правки клеток (set_cell) помечают сектор грязным; flush() перемечивает только грязные
-## секторы и их границы. flush зовёт только код симуляции (NavGrid — в service/find_now/reachable):
-## порядок правок AStar2D должен быть одинаков в каждом прогоне.
+## секторы и их границы (точки AStar2D — только у границ, чьи входы сменились), а компоненты правит
+## по месту (_update_components): слияние — объединением номеров, возможный разрыв — попеременным
+## обходом из частей, который останавливается, как только части встретились (обход вокруг конца
+## стены) или одна исчерпана (она и отрезана). Полный пересчёт (_components) — только при первой
+## разметке и при сжатии номеров (или если частей разрыва больше SPLIT_FRONTS).
+## flush зовёт только код симуляции (NavGrid — в service/find_now/reachable): порядок правок
+## AStar2D должен быть одинаков в каждом прогоне.
 
 const S := 16                 # = NavApi.SECTOR
-const RMAX := 256             # меток в секторе (байт)
+const RMAX := 256             # меток в секторе (байт); номер области — s * RMAX + метка
+const SPLIT_FRONTS := 60      # частей разрыва больше — полный пересчёт (номер части — 6 бит)
 const CLOSED := 255
 const RUN_SPLIT := 6          # длиннее — вход у каждого конца отрезка, короче — один посередине
 
@@ -30,11 +36,20 @@ var sec_solid := PackedInt32Array()        # закрытых клеток в с
 var sec_busy := PackedInt32Array()         # клеток с code ≠ 0 в секторе (0 — сектор чист)
 var lab := PackedByteArray()               # метка области в секторе, CLOSED
 var reg_n := PackedInt32Array()            # областей в секторе
-var reg_base := PackedInt32Array()         # плотный номер первой области сектора
-var comp := PackedInt32Array()             # [reg_base[сектор] + метка] → компонента (меньший плотный номер)
+var rcomp := PackedInt32Array()            # [s * RMAX + метка] → номер компоненты (корень — _cfind)
 var flushes := 0                           # сколько раз перемечали (для замеров)
+var full_passes := 0                       # полных пересчётов компонент (для замеров)
+var split_visits := 0                      # областей пройдено проверками разрыва (для замеров)
 
 var _comp_dirty := true
+var _cpar := PackedInt32Array()            # объединения номеров компонент (слияния без перенумерации)
+var _regions := 0                          # областей всего (порог сжатия _cpar)
+var _vis := PackedInt32Array()             # отметки обхода: эпоха << 6 | часть (по требованию)
+var _epoch := 0
+var _l_map := {}                           # местные группы flush: номер области → местный номер
+var _l_rk := PackedInt32Array()
+var _l_par := PackedInt32Array()
+var _l_anc := PackedByteArray()            # 1 — якорь (область чистого сектора за границей)
 var _dirty := PackedByteArray()
 var _dirty_list := PackedInt32Array()
 var _ent_e: Array[PackedInt32Array] = []   # входы на восточной границе сектора: [cA, cB, lA, lB] × n
@@ -69,8 +84,11 @@ func setup(p_w: int, p_h: int, p_portals: bool) -> void:
 	sec_busy.fill(0)
 	reg_n.resize(ns)
 	reg_n.fill(0)
-	reg_base.resize(ns + 1)
-	reg_base.fill(0)
+	rcomp.resize(ns * RMAX)
+	rcomp.fill(-1)
+	_cpar.clear()
+	_vis.clear()
+	_epoch = 0
 	_dirty.resize(ns)
 	_dirty.fill(0)
 	_ent_e.resize(ns)
@@ -126,7 +144,7 @@ func comp_of(c: int) -> int:
 	var l := lab[c]
 	if l == CLOSED:
 		return -1
-	return comp[reg_base[sector_of(c)] + l]
+	return _cfind(rcomp[sector_of(c) * RMAX + l])
 
 
 ## Перемечает грязные секторы, их границы, входы и компоненты. true — было что перемечать
@@ -136,10 +154,12 @@ func flush() -> bool:
 	flushes += 1
 	var list := _dirty_list.duplicate()
 	list.sort()
-	var same := not _comp_dirty
+	var inc := not _comp_dirty                   # компоненты — по месту (иначе полный пересчёт по запросу)
+	var same := inc
 	for s in list:
 		var before := reg_n[s]
 		_relabel(s)
+		_regions += reg_n[s] - before
 		same = same and reg_n[s] == before
 	# границы вокруг грязных секторов: ключ = сектор * 2 + (0 — восточная, 1 — южная)
 	var keys := {}
@@ -156,21 +176,29 @@ func flush() -> bool:
 			keys[(s - sw) * 2 + 1] = true
 	var bk := PackedInt32Array(keys.keys())
 	bk.sort()
-	if portals:
-		for k in bk:
-			var ent := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
-			for i in range(0, ent.size(), 4):
-				graph.remove_point(_ent_id(ent[i], k & 1))
+	# граница с теми же входами (клетки и метки обеих сторон) не трогается: связи её точек с прочими
+	# входами секторов зависят только от равенства меток, а метки те же. Перестраиваются только
+	# сменившиеся границы: их точки снимаются (со связями) и ставятся заново
+	var changed := PackedInt32Array()
+	var old_anchor := PackedInt32Array()         # области чистых секторов, смежные с грязными до правки
 	for k in bk:
 		var old_e := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
 		var ne := _border(k >> 1, k & 1)
-		same = same and _pairs(old_e) == _pairs(ne)
+		if ne == old_e:
+			continue
+		changed.append(k)
+		if inc:
+			same = same and _pairs(old_e) == _pairs(ne)
+			_collect_anchors(k, old_e, old_anchor)
+		if portals:
+			for i in range(0, old_e.size(), 4):
+				graph.remove_point(_ent_id(old_e[i], k & 1))
 		if k & 1 == 0:
 			_ent_e[k >> 1] = ne
 		else:
 			_ent_s[k >> 1] = ne
 	if portals:
-		for k in bk:
+		for k in changed:
 			var ent := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
 			for i in range(0, ent.size(), 4):
 				var ca := ent[i]
@@ -178,7 +206,7 @@ func flush() -> bool:
 				var pa := Vector2(ca % w, ca / w)
 				var pb := Vector2(cb % w, cb / w)
 				graph.add_point(_ent_id(ca, k & 1), (pa + pb) * 0.5 + Vector2(0.5, 0.5))
-		for k in bk:
+		for k in changed:
 			var ent := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
 			var sa := k >> 1
 			var sb := sa + 1 if k & 1 == 0 else sa + sw
@@ -186,12 +214,14 @@ func flush() -> bool:
 				var id := _ent_id(ent[i], k & 1)
 				_connect_region(id, sa, ent[i + 2])
 				_connect_region(id, sb, ent[i + 3])
+	# связность меняется, только если сменилось число областей или пары меток на границах
+	if inc and not same:
+		_update_components(list, bk, old_anchor)
 	for s in list:
 		_dirty[s] = 0
 	_dirty_list.clear()
-	# связность меняется, только если сменилось число областей или пары меток на границах
-	if not same:
-		_comp_dirty = true
+	if not _comp_dirty and _cpar.size() > 4 * _regions + 4096:
+		_comp_dirty = true                       # сжатие номеров: полный пересчёт при следующем запросе
 	return true
 
 
@@ -267,10 +297,10 @@ func nearest_in_comp(cid: int, goal: int) -> int:
 
 ## Ближайшая к (gx, gy) клетка компоненты cid в секторе s, если лучше bd; −1 — нет
 func _nearest_in_sector(s: int, cid: int, gx: int, gy: int, bd: int, best: int) -> int:
-	var rb := reg_base[s]
+	var rb := s * RMAX
 	var has := false
 	for l in reg_n[s]:
-		if comp[rb + l] == cid:
+		if _cfind(rcomp[rb + l]) == cid:
 			has = true
 			break
 	if not has:
@@ -292,7 +322,7 @@ func _nearest_in_sector(s: int, cid: int, gx: int, gy: int, bd: int, best: int) 
 	var xi := clampi(gx, x0, x1 - 1) - x0
 	var ady := absi(yc - gy)
 	for l in reg_n[s]:
-		if comp[rb + l] != cid:
+		if _cfind(rcomp[rb + l]) != cid:
 			continue
 		for k in 2 * S:
 			var y := yc - (k + 1) / 2 if k % 2 == 1 else yc + k / 2
@@ -468,16 +498,20 @@ func _connect_list(id: int, ent: PackedInt32Array, dir: int, li: int, l: int) ->
 			graph.connect_points(id, other)
 
 
-## Компоненты: объединение областей через входы всех границ (корень — меньший плотный номер)
+## Компоненты заново: объединение областей через входы всех границ; номера — 0, 1, … по первой
+## области компоненты (в порядке секторов и меток), _cpar — тождественный
 func _components() -> void:
 	_comp_dirty = false
+	full_passes += 1
 	var ns := sw * sh
-	var base := reg_base
+	var base := PackedInt32Array()
+	base.resize(ns + 1)
 	var acc := 0
 	for s in ns:
 		base[s] = acc
 		acc += reg_n[s]
 	base[ns] = acc
+	_regions = acc
 	var parent := PackedInt32Array()
 	parent.resize(acc)
 	for i in acc:
@@ -507,13 +541,281 @@ func _components() -> void:
 					parent[b] = a
 				elif b < a:
 					parent[a] = b
-	comp.resize(acc)
-	for i in acc:
-		var r := i
-		while parent[r] != r:
-			r = parent[r]
-		parent[i] = r
-		comp[i] = r
+	_cpar.clear()
+	var cid := PackedInt32Array()
+	cid.resize(acc)
+	cid.fill(-1)
+	for s in ns:
+		var rb := s * RMAX
+		var bs := base[s]
+		for l in reg_n[s]:
+			var r := bs + l
+			while parent[r] != r:
+				r = parent[r]
+			if cid[r] < 0:
+				cid[r] = _cpar.size()
+				_cpar.append(cid[r])
+			rcomp[rb + l] = cid[r]
+
+
+## Номер компоненты-корня (сжатие пути делением пополам)
+func _cfind(c: int) -> int:
+	while _cpar[c] != c:
+		var p := _cpar[_cpar[c]]
+		_cpar[c] = p
+		c = p
+	return c
+
+
+func _cnew() -> int:
+	var id := _cpar.size()
+	_cpar.append(id)
+	return id
+
+
+## Слияние компонент a и b (корень — меньший номер); ответ — корень
+func _cunion(a: int, b: int) -> int:
+	a = _cfind(a)
+	b = _cfind(b)
+	if a < b:
+		_cpar[b] = a
+		return a
+	if b < a:
+		_cpar[a] = b
+	return b
+
+
+## Якоря границы k: области её чистой стороны (её метки не менялись) из входов ent
+func _collect_anchors(k: int, ent: PackedInt32Array, out: PackedInt32Array) -> void:
+	var sa := k >> 1
+	var sb := sa + 1 if k & 1 == 0 else sa + sw
+	var da := _dirty[sa] != 0
+	var db := _dirty[sb] != 0
+	if da and db:
+		return
+	var pa := -1
+	var pb := -1
+	for i in range(0, ent.size(), 4):
+		if ent[i + 2] == pa and ent[i + 3] == pb:
+			continue
+		pa = ent[i + 2]
+		pb = ent[i + 3]
+		if not da:
+			out.append(sa * RMAX + pa)
+		if not db:
+			out.append(sb * RMAX + pb)
+
+
+## Компоненты после перемечивания секторов list (границы bk уже новые). Местные группы: области
+## грязных секторов и якоря (области чистых соседей, смежные с грязными до или после правки),
+## объединённые по новым входам. Группа с якорями разных компонент — их слияние; группа без якорей —
+## новая компонента; компонента, чьи якоря оказались в нескольких группах, могла распасться —
+## её проверяет _split. Остальные компоненты правка не задела: их пути в грязные секторы не входят.
+func _update_components(list: PackedInt32Array, bk: PackedInt32Array, old_anchor: PackedInt32Array) -> void:
+	_l_map.clear()
+	_l_rk.clear()
+	_l_par.clear()
+	_l_anc.clear()
+	for s in list:
+		for l in reg_n[s]:
+			_loc(s * RMAX + l, 0)
+	for rk in old_anchor:
+		_loc(rk, 1)
+	for k in bk:
+		var e := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
+		var sa := k >> 1
+		var sb := sa + 1 if k & 1 == 0 else sa + sw
+		var anc_a := 0 if _dirty[sa] != 0 else 1
+		var anc_b := 0 if _dirty[sb] != 0 else 1
+		var pa := -1
+		var pb := -1
+		for i in range(0, e.size(), 4):
+			if e[i + 2] == pa and e[i + 3] == pb:
+				continue
+			pa = e[i + 2]
+			pb = e[i + 3]
+			var ia := _loc(sa * RMAX + pa, anc_a)
+			var ib := _loc(sb * RMAX + pb, anc_b)
+			var ra := _find(_l_par, ia)
+			var rb := _find(_l_par, ib)
+			if ra < rb:
+				_l_par[rb] = ra
+			elif rb < ra:
+				_l_par[ra] = rb
+	var n := _l_rk.size()
+	var grp := PackedInt32Array()
+	grp.resize(n)
+	var gcomp := PackedInt32Array()               # компонента группы (−1 — без якорей)
+	var g_of_root := {}
+	for i in n:
+		var r := _find(_l_par, i)
+		if not g_of_root.has(r):
+			g_of_root[r] = gcomp.size()
+			gcomp.append(-1)
+		var gi: int = g_of_root[r]
+		grp[i] = gi
+		if _l_anc[i] != 0:
+			var c := _cfind(rcomp[_l_rk[i]])
+			gcomp[gi] = c if gcomp[gi] < 0 else _cunion(gcomp[gi], c)
+	var ng := gcomp.size()
+	var by_c := {}                                 # компонента → её группы с якорями (по порядку)
+	for gi in ng:
+		if gcomp[gi] < 0:
+			gcomp[gi] = _cnew()
+			continue
+		var c := _cfind(gcomp[gi])
+		gcomp[gi] = c
+		if not by_c.has(c):
+			by_c[c] = PackedInt32Array()
+		var lst: PackedInt32Array = by_c[c]
+		lst.append(gi)
+		by_c[c] = lst
+	for i in n:
+		if _l_anc[i] == 0:
+			rcomp[_l_rk[i]] = gcomp[grp[i]]
+	for c: int in by_c:
+		var gs: PackedInt32Array = by_c[c]
+		if gs.size() < 2:
+			continue
+		var seeds: Array[PackedInt32Array] = []
+		var slot := {}
+		for gi in gs:
+			slot[gi] = seeds.size()
+			seeds.append(PackedInt32Array())
+		for i in n:
+			if slot.has(grp[i]):
+				var si: int = slot[grp[i]]
+				var sd: PackedInt32Array = seeds[si]
+				sd.append(_l_rk[i])
+				seeds[si] = sd
+		_split(seeds)
+		if _comp_dirty:
+			return
+
+
+## Местный номер области rk (новый — с отметкой якоря anc)
+func _loc(rk: int, anc: int) -> int:
+	var i: int = _l_map.get(rk, -1)
+	if i >= 0:
+		if anc != 0:
+			_l_anc[i] = 1
+		return i
+	i = _l_rk.size()
+	_l_map[rk] = i
+	_l_rk.append(rk)
+	_l_par.append(i)
+	_l_anc.append(anc)
+	return i
+
+
+## Разрыв компоненты: части seeds (области, связные внутри каждой части) обходятся по графу областей
+## попеременно, по одной области. Встретились — одна часть; исчерпана, пока другие живы, — отрезана:
+## её области получают новый номер. Последняя живая часть сохраняет номер компоненты.
+func _split(seeds: Array[PackedInt32Array]) -> void:
+	var k := seeds.size()
+	if k > SPLIT_FRONTS:
+		_comp_dirty = true
+		return
+	if _vis.size() != rcomp.size():
+		_vis.resize(rcomp.size())
+		_vis.fill(0)
+		_epoch = 0
+	_epoch += 1
+	if _epoch >= (1 << 24):
+		_vis.fill(0)
+		_epoch = 1
+	var base := _epoch << 6
+	var qu: Array[PackedInt32Array] = []          # очередь части
+	var vl: Array[PackedInt32Array] = []          # пройденные области части
+	var head := PackedInt32Array()
+	var fpar := PackedInt32Array()
+	var alive := PackedByteArray()
+	for f in k:
+		var seed: PackedInt32Array = seeds[f]
+		for rk in seed:
+			_vis[rk] = base | f
+		qu.append(seed.duplicate())
+		vl.append(seed.duplicate())
+		head.append(0)
+		fpar.append(f)
+		alive.append(1)
+	var active := k
+	var budget := 2 * _regions + 64               # страховка: столько областей — уже полный обход
+	while active > 1:
+		for f in k:
+			if active <= 1:
+				break
+			if alive[f] == 0:
+				continue
+			var q: PackedInt32Array = qu[f]
+			var vf: PackedInt32Array = vl[f]
+			if head[f] >= q.size():
+				var id := _cnew()                      # исчерпана: отрезанная компонента
+				for rk in vf:
+					rcomp[rk] = id
+				alive[f] = 0
+				active -= 1
+				continue
+			var rk := q[head[f]]
+			head[f] += 1
+			split_visits += 1
+			budget -= 1
+			if budget < 0:
+				_comp_dirty = true
+				return
+			var s := rk >> 8
+			var l := rk & 255
+			var sx := s % sw
+			for side in 4:
+				var e: PackedInt32Array
+				var mine: int
+				var nb_s: int
+				if side == 0:
+					e = _ent_e[s]
+					mine = 2
+					nb_s = s + 1
+				elif side == 1:
+					e = _ent_s[s]
+					mine = 2
+					nb_s = s + sw
+				elif side == 2:
+					if sx == 0:
+						continue
+					e = _ent_e[s - 1]
+					mine = 3
+					nb_s = s - 1
+				else:
+					if s < sw:
+						continue
+					e = _ent_s[s - sw]
+					mine = 3
+					nb_s = s - sw
+				var other := 5 - mine
+				for i in range(0, e.size(), 4):
+					if e[i + mine] != l:
+						continue
+					var nb := nb_s * RMAX + e[i + other]
+					var v := _vis[nb]
+					if v >> 6 != _epoch:
+						_vis[nb] = base | f
+						q.append(nb)
+						vf.append(nb)
+						continue
+					var o := _find(fpar, v & 63)
+					if o == f:
+						continue
+					# встреча: часть o вливается в f — сразу, с каждой встреченной частью (иначе смежность
+					# с другой частью, уже пройденной с обеих сторон, потерялась бы — ложный разрыв)
+					var oq: PackedInt32Array = qu[o]
+					q.append_array(oq.slice(head[o]))
+					vf.append_array(vl[o])
+					fpar[o] = f
+					alive[o] = 0
+					qu[o] = PackedInt32Array()
+					vl[o] = PackedInt32Array()
+					active -= 1
+			qu[f] = q
+			vl[f] = vf
 
 
 func _find(parent: PackedInt32Array, k: int) -> int:

@@ -7,7 +7,8 @@ extends NavApi
 ## Данные клетки c = row * w + col:
 ##   flags      NavApi.F: статика (STATIC — крутизна или глубокая вода, WATER, FORD — мелкая вода,
 ##              проходима с весом 2) | штампы (STRUCT, WALL, GATE, SOFT — поле, вес 1,5) | NODE — ядро жилы
-##   team_of    команда постройки клетки (255 — нет); struct_of — описатель первой постройки клетки (0)
+##   team_of    команда постройки клетки (255 — нет или ничья: команда вне 0..3); struct_of — описатель
+##              первой постройки клетки (0)
 ## Слои команды t: walk[t] (постройки и жилы сплошные, свои ворота — проход) и breach[t] (чужие
 ## постройки — вес W_BREACH = 4, свои — сплошные). Каждый штамп поднимает version и версию
 ## затронутых секторов (устаревание путей), правит оба слоя всех команд и помечает секторы для
@@ -19,20 +20,25 @@ extends NavApi
 ## навигации не меняют.
 ##
 ## info — Terrain.info() (size, spacing, origin) + необязательные ключи NAV:
-##   teams (2) — слои скольких команд построить сразу (остальные — по первому запросу, до 4);
+##   teams (2) — сколько команд (1..4): у каждой слои walk и breach, строятся в setup. Команда вне
+##     0..teams−1 в запросах (passable, reachable, find_now, request…) — предупреждение и ответ «нет
+##     пути»; постройка такой команды — чужая всем (team_of — её номер, вне 0..3 — 255);
 ##   flat (false) — без рельефа (тесты на больших сетках); rules — словарь правил (иначе GOROD).
 ##
 ## Для пакетов:
 ##   • ECON: постройки — stamp_building; звенья стен и арыков — stamp_link(h, team, a, b, тип) с концами
-##     из plan_wall (ключи "a", "b"); ворота — stamp_link по концам из snap_on_wall ("a", "b") после unstamp
-##     звеньев из "removes"; башня на стене — unstamp "removes", затем stamp_building. Стройка (SITE)
-##     штампуется сразу. Жилы (NodeDefs.blocks_cells > 0) NAV берёт из EconApi.nodes сам — в ближайшем
+##     из plan_wall (ключи "a", "b"); ворота — unstamp звеньев из "removes" snap_on_wall и stamp_link по его
+##     концам ("a", "b") — или stamp_building: тогда NAV штампует ворота линией сам (концы — ax/az/bx/bz
+##     постройки в BuildingTable, иначе по своей стене у центра, с запасом GATE_MARGIN), так что щели в
+##     косой стене не остаётся при любом вызове. Башня на стене — unstamp "removes", затем stamp_building.
+##     Стройка (SITE) штампуется сразу. Жилы (NodeDefs.blocks_cells > 0) NAV берёт из EconApi.nodes сам — в ближайшем
 ##     такте (service) или штампе; снимает, когда ECON освобождает слот узла.
 ##   • CORE: static_grid() — после MapSetup (в нём и ядра жил); speed_grid() — 16, вода 9. Путь: pts без
 ##     начальной точки (первая — снаружи постройки, если юнит стоял в ней); билеты отпускать (release).
 ##   • GAME: service(tick) — каждый такт (в нём перемечивание графа). reachable, find_now и service —
 ##     только из симуляции; check_place, place_cells, plan_wall, snap_on_wall, ring_slots — откуда угодно.
-##   • econ и port NAV держит слабо (WeakRef): их держит владелец (GameSim / тест).
+##   • econ и port NAV держит слабо (WeakRef): их держит владелец (GameSim / тест). Если econ дали в
+##     setup, а он уже освобождён, — расстановка отвечает NOT_ALLOWED (не пропускает молча).
 
 const W_BREACH := 4.0
 const W_WATER := 2.0
@@ -43,6 +49,7 @@ const MAX_SLOPE := 0.75           # подъём/шаг по клетке: кр�
 const SPD_WATER := 9              # ×16: мелкая вода 0,55
 const MAX_TEAMS := 4
 const NO_TEAM := 255
+const GATE_MARGIN := CELL         # м: запас линии ворот без концов (сдвиг центра прижатием к сетке ≤ 2,83 м)
 
 var flags := PackedByteArray()
 var team_of := PackedByteArray()
@@ -50,6 +57,7 @@ var struct_of := PackedInt32Array()
 
 var defs: Defs
 var flat := false                            # без рельефа (info.flat)
+var teams := 2                               # команд (info.teams): слои 0..teams−1
 ## ECON и порт держат навигацию; навигация держит их слабо (иначе кольцо RefCounted не освобождается)
 var econ: EconApi:
 	get:
@@ -65,6 +73,9 @@ var rules := {}
 
 var _econ_w: WeakRef
 var _port_w: WeakRef
+var _had_econ := false                       # econ дан в setup (потеря — ошибка владельца)
+var _warned_team := false
+var _warned_econ := false
 
 var _static_f := PackedByteArray()           # статические флаги (рельеф)
 var _static_cells := PackedInt32Array()      # клетки с ненулевой статикой
@@ -73,11 +84,12 @@ var _wcode := PackedByteArray()              # вес клетки: 0 — 1, 1 �
 var _cnt := PackedByteArray()                # сколько штампов на клетке
 var _multi := {}                             # клетка → PackedInt32Array описателей (при _cnt ≥ 2)
 var _stamps := {}                            # описатель → PackedInt32Array [команда, тип, флаги, клетки…]
+var _ends := {}                              # описатель звена (stamp_link) → PackedVector2Array [a, b]
 var _node_cnt := PackedByteArray()           # ядра жил на клетке
 var _deposits := {}                          # слот узла → PackedInt32Array [gen, клетки…]
 var _dep_hash := Vector2i(0, 0)
 var _sector_ver := PackedInt32Array()
-var _team_structs := PackedInt32Array()      # штампов STRUCT по командам
+var _team_structs := PackedInt32Array()      # штампов STRUCT по командам (последний — ничьи)
 var _walk: Array[NavRegions] = []
 var _breach: Array[NavRegions] = []
 var _sw := 0
@@ -97,6 +109,7 @@ func setup(info: Dictionary, p_defs: Defs, p_econ: EconApi, p_port: CombatPort) 
 	defs = p_defs
 	econ = p_econ
 	port = p_port
+	_had_econ = p_econ != null
 	rules = info.get("rules", defs.rules_of(&"GOROD") if defs else {})
 	var n := int(info.get("size", 513))
 	var spacing := float(info.get("spacing", 2.0))
@@ -124,12 +137,13 @@ func setup(info: Dictionary, p_defs: Defs, p_econ: EconApi, p_port: CombatPort) 
 	_spd.fill(16)
 	_sector_ver.resize(_sw * _sh)
 	_sector_ver.fill(0)
-	_team_structs.resize(MAX_TEAMS)
+	_team_structs.resize(MAX_TEAMS + 1)
 	_team_structs.fill(0)
 	_static_f.resize(wh)
 	_static_f.fill(0)
 	_multi.clear()
 	_stamps.clear()
+	_ends.clear()
 	_deposits.clear()
 	_walk.clear()
 	_breach.clear()
@@ -143,8 +157,9 @@ func setup(info: Dictionary, p_defs: Defs, p_econ: EconApi, p_port: CombatPort) 
 	paths.setup(rules)
 	placement = Placement.new()
 	walls = WallTool.new()
-	for t in clampi(int(info.get("teams", 2)), 1, MAX_TEAMS):
-		_ensure_team(t)
+	teams = clampi(int(info.get("teams", 2)), 1, MAX_TEAMS)
+	for t in teams:
+		_add_team()
 	_sync_deposits()
 	for t in _walk.size():
 		_walk[t].flush()
@@ -154,12 +169,14 @@ func setup(info: Dictionary, p_defs: Defs, p_econ: EconApi, p_port: CombatPort) 
 # ================================================================= сетка
 
 func passable(team: int, c: int) -> bool:
-	if c < 0 or c >= w * h:
+	if c < 0 or c >= w * h or not team_ok(team):
 		return false
 	return walk_layer(team).solid[c] == 0
 
 
 func reachable(team: int, a: Vector2, b: Vector2) -> bool:
+	if not team_ok(team):
+		return false
 	sync_for_paths()
 	var wl := walk_layer(team)
 	var ca := snap_cell(wl, clamp_pos(a), PathService.SNAP_R)
@@ -169,6 +186,8 @@ func reachable(team: int, a: Vector2, b: Vector2) -> bool:
 
 func nearest_passable(team: int, p: Vector2, max_r := 40.0) -> Vector2:
 	var q := clamp_pos(p)
+	if not team_ok(team):
+		return q
 	var wl := walk_layer(team)
 	var c := snap_cell(wl, q, max_r)
 	if c < 0:
@@ -198,8 +217,14 @@ func speed_grid() -> PackedByteArray:
 	return _spd.duplicate()
 
 
+## След постройки. Ворота на стене (on_wall "align") — линией по стене, как stamp_link (прямоугольник
+## следа в косой стене оставил бы щель на месте снятых звеньев); ответ для них — рамка клеток линии
 func stamp_building(b_h: int, team: int, center: Vector2, btype: int, rot_q: int) -> Rect2i:
 	_sync_deposits()
+	if _is_gate(btype):
+		var ends := _gate_ends(b_h, team, btype, center)
+		if not ends.is_empty():
+			return _stamp_line(b_h, team, ends[0], ends[1], btype)
 	var r := NavApi.footprint(defs, btype, center, rot_q, origin)
 	var cells := PackedInt32Array()
 	for row in range(maxi(r.position.y, 0), mini(r.end.y, h)):
@@ -211,7 +236,14 @@ func stamp_building(b_h: int, team: int, center: Vector2, btype: int, rot_q: int
 
 func stamp_link(b_h: int, team: int, a: Vector2, b: Vector2, btype: int) -> Rect2i:
 	_sync_deposits()
+	return _stamp_line(b_h, team, a, b, btype)
+
+
+func _stamp_line(b_h: int, team: int, a: Vector2, b: Vector2, btype: int) -> Rect2i:
 	var cells := link_cells(a, b)
+	if _stamps.has(b_h):
+		unstamp(b_h)
+	_ends[b_h] = PackedVector2Array([a, b])      # до штампа: по концам решается середина ворот
 	_add_stamp(b_h, team, btype, cells)
 	if cells.is_empty():
 		return Rect2i()
@@ -229,8 +261,9 @@ func unstamp(b_h: int) -> void:
 		return
 	var rec: PackedInt32Array = _stamps[b_h]
 	_stamps.erase(b_h)
+	_ends.erase(b_h)
 	if rec[2] & F.STRUCT:
-		_team_structs[rec[0]] -= 1
+		_team_structs[mini(rec[0], MAX_TEAMS)] -= 1
 	version += 1
 	for i in range(3, rec.size()):
 		var c := rec[i]
@@ -328,14 +361,33 @@ func checksum() -> int:
 
 # ================================================================= для PathService, Placement, WallTool
 
+## Слои команды t (вызывающий проверяет team_ok; иначе — слой ближайшей допустимой команды)
 func walk_layer(t: int) -> NavRegions:
-	_ensure_team(t)
-	return _walk[t]
+	return _walk[clampi(t, 0, _walk.size() - 1)]
 
 
 func breach_layer(t: int) -> NavRegions:
-	_ensure_team(t)
-	return _breach[t]
+	return _breach[clampi(t, 0, _breach.size() - 1)]
+
+
+## Команда t допустима (0..teams−1); нет — предупреждение (один раз на сетку)
+func team_ok(t: int) -> bool:
+	if t >= 0 and t < _walk.size():
+		return true
+	if not _warned_team:
+		_warned_team = true
+		push_warning("NavGrid: команда %d вне 0..%d — ответ «нет пути» (info.teams = %d)" % [t, _walk.size() - 1, teams])
+	return false
+
+
+## econ дан в setup, но уже освобождён (владелец уронил): расстановка не пропускает молча
+func econ_lost() -> bool:
+	if not _had_econ or econ != null:
+		return false
+	if not _warned_econ:
+		_warned_econ = true
+		push_warning("NavGrid: EconApi освобождён — расстановка отвечает NOT_ALLOWED")
+	return true
 
 
 ## Перед решением путей: жилы в сетку, перемечивание графа входов всех команд (только из
@@ -349,7 +401,7 @@ func sync_for_paths() -> void:
 func enemy_structs(t: int) -> bool:
 	var own := _team_structs[t] if t >= 0 and t < MAX_TEAMS else 0
 	var all := 0
-	for k in MAX_TEAMS:
+	for k in MAX_TEAMS + 1:
 		all += _team_structs[k]
 	return all - own > 0
 
@@ -404,7 +456,9 @@ func snap_cell(layer: NavRegions, p: Vector2, max_r: float) -> int:
 	return best
 
 
-## Прямая видимость центр→центр: все клетки открыты и не тяжелее концов (на углах — обе соседние).
+## Прямая видимость центр→центр: клетки открыты, а промежуточные (и соседние на углах) — не тяжелее
+## более лёгкого конца (§9.4e: с суши — только по клеткам веса 1; вода и поле срезаются, лишь если
+## оба конца в них же — иначе натянутая нить ушла бы в воду мимо найденного A* сухого обхода).
 ## Сначала — по секторам: если линия идёт только через чистые секторы (без закрытых и тяжёлых
 ## клеток), клетки не проверяются.
 func los(layer: NavRegions, c0: int, c1: int) -> bool:
@@ -413,7 +467,7 @@ func los(layer: NavRegions, c0: int, c1: int) -> bool:
 	var k1 := code[c1]
 	if k0 == 255 or k1 == 255:
 		return false
-	var wmax := maxi(k0, k1)
+	var wmax := mini(k0, k1)
 	var x0 := c0 % w
 	var y0 := c0 / w
 	var dx := c1 % w - x0
@@ -446,7 +500,7 @@ func los(layer: NavRegions, c0: int, c1: int) -> bool:
 			c += syw
 			iy += 1
 			ez += 2 * ax
-		if code[c] > wmax:
+		if code[c] > wmax and c != c1:
 			return false
 	return true
 
@@ -578,11 +632,16 @@ func stamp_of(b_h: int) -> PackedInt32Array:
 	return _stamps.get(b_h, PackedInt32Array())
 
 
+## Концы линии штампа (stamp_link, ворота линией): [a, b]; пусто — штамп прямоугольником или нет
+func link_ends(b_h: int) -> PackedVector2Array:
+	return _ends.get(b_h, PackedVector2Array())
+
+
 # ================================================================= внутреннее
 
-func _ensure_team(t: int) -> void:
-	t = clampi(t, 0, MAX_TEAMS - 1)
-	while _walk.size() <= t:
+## Слои следующей команды (только в setup: число команд задаёт info.teams)
+func _add_team() -> void:
+	if _walk.size() < MAX_TEAMS:
 		var k := _walk.size()
 		var wl := NavRegions.new()
 		wl.setup(w, h, true)
@@ -600,6 +659,54 @@ func _ensure_team(t: int) -> void:
 			var dr: PackedInt32Array = _deposits[n]
 			for i in range(1, dr.size()):
 				_apply_team(k, dr[i])
+
+
+## Ворота на стене (штампуются линией)
+func _is_gate(btype: int) -> bool:
+	if btype < 0 or defs == null or btype >= defs.b_kind.size():
+		return false
+	return defs.b_kind[btype] == Defs.BKind.GATE or String(defs.b_place[btype].get("on_wall", "")) == "align"
+
+
+## Концы линии ворот для stamp_building: ax/az/bx/bz постройки (ECON задал), иначе — по своей стене у
+## центра (WallTool.gate_line, с запасом GATE_MARGIN). Пусто — стены рядом нет (штамп прямоугольником)
+func _gate_ends(b_h: int, team: int, btype: int, center: Vector2) -> PackedVector2Array:
+	var e := econ
+	if e != null and e.buildings != null and e.buildings.valid(b_h):
+		var B := e.buildings
+		var b := B.slot(b_h)
+		var a := Vector2(B.ax[b], B.az[b])
+		var z := Vector2(B.bx[b], B.bz[b])
+		if a.distance_squared_to(z) > 0.01:
+			return PackedVector2Array([a, z])
+	return walls.gate_line(self, _stamp_team(team), btype, center, GATE_MARGIN)
+
+
+## Клетка c — в середине ворот gh (штамп линией): проекция её центра на линию ворот не дальше
+## половины ширины ворот (b_size.x) от середины линии. Целочисленно, в сантиметрах
+func _in_gate_core(gh: int, c: int) -> bool:
+	var e: PackedVector2Array = _ends.get(gh, PackedVector2Array())
+	var bt: int = (_stamps[gh] as PackedInt32Array)[1]
+	if e.size() != 2 or defs == null or bt < 0 or bt >= defs.b_size.size():
+		return false
+	var ax := roundi(e[0].x * 100.0)
+	var az := roundi(e[0].y * 100.0)
+	var dx := roundi(e[1].x * 100.0) - ax
+	var dz := roundi(e[1].y * 100.0) - az
+	var l2 := dx * dx + dz * dz
+	if l2 == 0:
+		return false
+	# центр клетки и середина линии — в удвоенных сантиметрах (без дробей)
+	var cx := 2 * roundi(origin.x * 100.0) + (c % w) * 800 + 400
+	var cz := 2 * roundi(origin.y * 100.0) + (c / w) * 800 + 400
+	var t := (cx - (2 * ax + dx)) * dx + (cz - (2 * az + dz)) * dz      # 2 · проекция · |d|
+	var half := roundi(defs.b_size[bt].x * 100.0)                      # 2 · полуширина, см
+	return t * t < half * half * l2
+
+
+## Команда штампа: 0..3, иначе ничья (NO_TEAM — чужая всем)
+func _stamp_team(team: int) -> int:
+	return team if team >= 0 and team < MAX_TEAMS else NO_TEAM
 
 
 ## Флаги штампа по типу постройки
@@ -621,14 +728,13 @@ func _dyn_flags(btype: int) -> int:
 func _add_stamp(b_h: int, team: int, btype: int, cells: PackedInt32Array) -> void:
 	if _stamps.has(b_h):
 		unstamp(b_h)
-	team = clampi(team, 0, MAX_TEAMS - 1)
-	_ensure_team(team)
+	team = _stamp_team(team)
 	var dyn := _dyn_flags(btype)
 	var rec := PackedInt32Array([team, btype, dyn])
 	rec.append_array(cells)
 	_stamps[b_h] = rec
 	if dyn & F.STRUCT:
-		_team_structs[team] += 1
+		_team_structs[mini(team, MAX_TEAMS)] += 1
 	version += 1
 	for c in cells:
 		if _cnt[c] == 0:
@@ -652,13 +758,32 @@ func _refresh_cell(c: int) -> void:
 		if _cnt[c] <= 1:
 			f |= (_stamps[bh] as PackedInt32Array)[2]
 		else:
-			var wall := false                  # ворота поверх звена стены — клетка остаётся стеной
-			for hh in (_multi[c] as PackedInt32Array):
+			# ворота поверх звена стены — клетка остаётся стеной; но в середине ворот (их ширина вдоль
+			# линии) своё звено, заходящее под ворота на перекрытие, уступает проходу — иначе узкие ворота
+			# на косой стене могли остаться без единой клетки прохода
+			var list: PackedInt32Array = _multi[c]
+			var gh := 0
+			for hh in list:
 				var df: int = (_stamps[hh] as PackedInt32Array)[2]
 				f |= df
-				wall = wall or (df & F.STRUCT != 0 and df & F.GATE == 0)
-			if wall:
-				f &= ~F.GATE
+				if df & F.GATE:
+					gh = hh
+			if f & F.GATE:
+				var gt: int = (_stamps[gh] as PackedInt32Array)[0]
+				var core := -1                     # −1 — ещё не считали
+				for hh in list:
+					var rec: PackedInt32Array = _stamps[hh]
+					if rec[2] & F.STRUCT == 0 or rec[2] & F.GATE:
+						continue
+					if rec[2] & F.WALL and rec[0] == gt:
+						if core < 0:
+							core = 1 if _in_gate_core(gh, c) else 0
+						if core == 1:
+							continue
+					f &= ~F.GATE
+					break
+				if f & F.GATE:
+					bh = gh
 		team_of[c] = (_stamps[bh] as PackedInt32Array)[0]
 	else:
 		team_of[c] = NO_TEAM
@@ -679,7 +804,7 @@ func _apply_team(t: int, c: int) -> void:
 	var wc := _wcode[c]
 	var wt := W_WATER if wc == 2 else (W_SOFT if wc == 1 else 1.0)
 	_walk[t].set_cell(c, blocked or (st and not (gate and own)), wt, wc)
-	if st and not own:
+	if st and not own and not blocked:              # статика и ядра жил сплошные и под чужой постройкой (§9.3)
 		_breach[t].set_cell(c, false, W_BREACH, 3)
 	else:
 		_breach[t].set_cell(c, blocked or (st and own and not gate), wt, wc)
