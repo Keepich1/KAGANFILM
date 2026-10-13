@@ -34,6 +34,8 @@ var last_served := 0
 var last_cells := 0
 var served_total := 0
 var cache_hits := 0
+var trace := false                 # тесты: журнал обслуженных [такт, команда, от, до, из кэша]
+var trace_log: Array = []
 
 var _next := 1
 var _hi: Array[Array] = []         # [ticket, team, from, to, client, est]
@@ -89,7 +91,10 @@ func service(g: NavGrid, tick: int) -> void:
 		if served > 0 and cells + est > cells_per_tick:
 			break
 		_pop(hi)
+		var hits := cache_hits
 		_results[t] = solve(g, e[1], e[2], e[3], use_cache)
+		if trace:
+			trace_log.append([tick, e[1], e[2], e[3], cache_hits != hits])
 		served += 1
 		cells += est
 	last_served = served

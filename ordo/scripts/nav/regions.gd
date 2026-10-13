@@ -136,8 +136,11 @@ func flush() -> bool:
 	flushes += 1
 	var list := _dirty_list.duplicate()
 	list.sort()
+	var same := not _comp_dirty
 	for s in list:
+		var before := reg_n[s]
 		_relabel(s)
+		same = same and reg_n[s] == before
 	# границы вокруг грязных секторов: ключ = сектор * 2 + (0 — восточная, 1 — южная)
 	var keys := {}
 	for s in list:
@@ -159,10 +162,13 @@ func flush() -> bool:
 			for i in range(0, ent.size(), 4):
 				graph.remove_point(_ent_id(ent[i], k & 1))
 	for k in bk:
+		var old_e := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
+		var ne := _border(k >> 1, k & 1)
+		same = same and _pairs(old_e) == _pairs(ne)
 		if k & 1 == 0:
-			_ent_e[k >> 1] = _border(k >> 1, 0)
+			_ent_e[k >> 1] = ne
 		else:
-			_ent_s[k >> 1] = _border(k >> 1, 1)
+			_ent_s[k >> 1] = ne
 	if portals:
 		for k in bk:
 			var ent := _ent_e[k >> 1] if k & 1 == 0 else _ent_s[k >> 1]
@@ -183,8 +189,21 @@ func flush() -> bool:
 	for s in list:
 		_dirty[s] = 0
 	_dirty_list.clear()
-	_comp_dirty = true
+	# связность меняется, только если сменилось число областей или пары меток на границах
+	if not same:
+		_comp_dirty = true
 	return true
+
+
+## Пары меток (lA, lB) входов границы — без повторов, по порядку (для сравнения связности)
+func _pairs(ent: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for i in range(0, ent.size(), 4):
+		var v := ent[i + 2] * RMAX + ent[i + 3]
+		if out.find(v) < 0:
+			out.append(v)
+	out.sort()
+	return out
 
 
 ## Коридор входов от клетки cs к клетке cg (одна компонента, разные области):
@@ -211,49 +230,77 @@ func ent_cells(id: int) -> Vector2i:
 	return Vector2i(ca, ca + 1 if id & 1 == 0 else ca + w)
 
 
-## Ближайшая к клетке goal открытая клетка компоненты cid (по прямой; ничьи — меньший индекс)
+## Ближайшая к клетке goal открытая клетка компоненты cid (по прямой; ничьи — меньший индекс).
+## Секторы — кольцами вокруг сектора цели, пока нижняя оценка кольца не больше лучшего.
+## Открытый сектор этой компоненты — за O(1) (ближайшая клетка — проекция цели на сектор).
 func nearest_in_comp(cid: int, goal: int) -> int:
 	if _comp_dirty or not _dirty_list.is_empty():
 		comp_of(goal)
 	var gx := goal % w
 	var gy := goal / w
-	# секторы с областями этой компоненты — по нижней оценке расстояния
-	var cand: Array[Vector2i] = []      # (оценка², сектор)
-	for s in sw * sh:
-		var n := reg_n[s]
-		var has := false
-		var rb := reg_base[s]
-		for l in n:
-			if comp[rb + l] == cid:
-				has = true
-				break
-		if not has:
-			continue
-		var x0 := (s % sw) * S
-		var y0 := (s / sw) * S
-		var dx := maxi(0, maxi(x0 - gx, gx - (mini(x0 + S, w) - 1)))
-		var dy := maxi(0, maxi(y0 - gy, gy - (mini(y0 + S, h) - 1)))
-		cand.append(Vector2i(dx * dx + dy * dy, s))
-	cand.sort()
+	var gsx := gx / S
+	var gsy := gy / S
 	var best := -1
 	var bd := 1 << 60
-	for cv in cand:
-		if cv.x > bd:
+	for k in maxi(sw, sh):
+		var lb := maxi(0, (k - 1) * S + 1)
+		if best >= 0 and lb * lb > bd:
 			break
-		var s := cv.y
-		var x0 := (s % sw) * S
-		var y0 := (s / sw) * S
-		for y in range(y0, mini(y0 + S, h)):
-			for x in range(x0, mini(x0 + S, w)):
-				var c := y * w + x
-				var l := lab[c]
-				if l == CLOSED or comp[reg_base[s] + l] != cid:
-					continue
-				var d := (x - gx) * (x - gx) + (y - gy) * (y - gy)
-				if d < bd or (d == bd and c < best):
-					bd = d
-					best = c
+		for sy in range(gsy - k, gsy + k + 1):
+			if sy < 0 or sy >= sh:
+				continue
+			var step := 1 if (sy == gsy - k or sy == gsy + k) else 2 * k
+			var sx := gsx - k
+			while sx <= gsx + k:
+				if sx >= 0 and sx < sw:
+					var c := _nearest_in_sector(sy * sw + sx, cid, gx, gy, bd, best)
+					if c >= 0:
+						var dx := c % w - gx
+						var dy := c / w - gy
+						var d := dx * dx + dy * dy
+						if d < bd or (d == bd and c < best):
+							bd = d
+							best = c
+				sx += maxi(step, 1)
 	return best
+
+
+## Ближайшая к (gx, gy) клетка компоненты cid в секторе s, если лучше bd; −1 — нет
+func _nearest_in_sector(s: int, cid: int, gx: int, gy: int, bd: int, best: int) -> int:
+	var rb := reg_base[s]
+	var has := false
+	for l in reg_n[s]:
+		if comp[rb + l] == cid:
+			has = true
+			break
+	if not has:
+		return -1
+	var x0 := (s % sw) * S
+	var y0 := (s / sw) * S
+	var x1 := mini(x0 + S, w)
+	var y1 := mini(y0 + S, h)
+	if sec_solid[s] == 0:                         # весь сектор — одна открытая область
+		var cx := clampi(gx, x0, x1 - 1)
+		var cy := clampi(gy, y0, y1 - 1)
+		return cy * w + cx
+	var out := -1
+	var od := bd
+	var ob := best
+	for y in range(y0, y1):
+		var dy2 := (y - gy) * (y - gy)
+		if dy2 > od:
+			continue
+		for x in range(x0, x1):
+			var c := y * w + x
+			var l := lab[c]
+			if l == CLOSED or comp[rb + l] != cid:
+				continue
+			var d := (x - gx) * (x - gx) + dy2
+			if d < od or (d == od and c < ob):
+				od = d
+				ob = c
+				out = c
+	return out
 
 
 func checksum() -> int:
