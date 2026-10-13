@@ -188,6 +188,19 @@ func selection_info(hs: PackedInt32Array) -> Dictionary:
 			return {"kind": "herd", "cards": [], "name": tr(_defs.h_name[H.htype[h]]), "heads": H.heads(h)}
 	var port := _port
 	var sim := battle()
+	# массивы ядра — в локальные один раз за вызов (§5.2 п. 9, граница C++: у BattleCore чтение свойства копирует)
+	var u_hp := sim.u_hp if sim else PackedFloat32Array()
+	var u_type := sim.u_type if sim else PackedInt32Array()
+	var t_hp := sim.t_hp if sim else PackedFloat32Array()
+	var sq_morale := sim.sq_morale if sim else PackedFloat32Array()
+	var sq_stam := sim.sq_stam if sim else PackedFloat32Array()
+	var sq_banner := sim.sq_banner if sim else PackedInt32Array()
+	var sq_type := sim.sq_type if sim else PackedInt32Array()
+	var hp01 := func(u_h: int) -> float:
+		if sim == null:
+			return 1.0
+		var ui := Ids.slot(u_h)
+		return u_hp[ui] / maxf(t_hp[u_type[ui]], 1.0)
 	var cards: Array = []
 	var seen := {}
 	var singles := {}                    # тип → [число, сумма hp]
@@ -202,7 +215,7 @@ func selection_info(hs: PackedInt32Array) -> Dictionary:
 			if not singles.has(t):
 				singles[t] = [0, 0.0]
 			singles[t][0] += 1
-			singles[t][1] += _hp01(sim, u)
+			singles[t][1] += hp01.call(u)
 		elif not seen.has(s):
 			seen[s] = true
 			var alive := 0
@@ -211,17 +224,17 @@ func selection_info(hs: PackedInt32Array) -> Dictionary:
 			for mu in m:
 				if port.alive(mu):
 					alive += 1
-					hp += _hp01(sim, mu)
+					hp += hp01.call(mu)
 					if t == "" or _flags_of(String(port.type_id(mu))) & UnitStats.OFFICER == 0:
 						t = String(port.type_id(mu))
 			var card := {"type": t, "name": tr(UnitStats.get_stats(t).get("name", t)), "count": alive,
 				"hp": hp / maxi(alive, 1), "morale": 1.0, "stamina": 1.0, "banner": false, "squad": s}
 			if sim != null:
 				var i := Ids.slot(s)
-				card["morale"] = sim.sq_morale[i] / 100.0
-				card["stamina"] = sim.sq_stam[i] / 100.0
-				card["banner"] = sim.sq_banner[i] >= 0
-				card["type"] = sim.type_ids[sim.sq_type[i]]
+				card["morale"] = sq_morale[i] / 100.0
+				card["stamina"] = sq_stam[i] / 100.0
+				card["banner"] = sq_banner[i] >= 0
+				card["type"] = sim.type_ids[sq_type[i]]
 				card["name"] = tr(UnitStats.get_stats(card["type"]).get("name", card["type"]))
 			cards.append(card)
 	for t: String in singles:
@@ -435,13 +448,6 @@ func members(s_h: int) -> PackedInt32Array:
 func _flags_of(type_id: String) -> int:
 	var u := _defs.unit(StringName(type_id))
 	return _defs.u_flags[u] if u >= 0 else 0
-
-
-func _hp01(sim: BattleSim, u_h: int) -> float:
-	if sim == null:
-		return 1.0
-	var u := Ids.slot(u_h)
-	return sim.u_hp[u] / maxf(sim.t_hp[sim.u_type[u]], 1.0)
 
 
 static func _side(n: int) -> int:

@@ -24,6 +24,7 @@ var _hq := PackedInt32Array()           # последняя известная 
 var _arba := PackedInt32Array()         # арба со ставкой (описатель юнита), 0
 var _packed_t := PackedInt32Array()     # такт, когда ставку увидели свёрнутой (−1)
 var _buf := PackedInt32Array()
+var _teams0 := -1                       # сколько команд было на первом такте
 
 
 func setup(econ: EconApi, port: CombatPort, events: SimEvents) -> void:
@@ -57,7 +58,10 @@ func check(tick: int) -> void:
 	for p in n:
 		if defeated[p] == 0 and P.ctrl[p] != PlayerTable.Ctrl.NONE and not teams.has(P.team[p]):
 			teams.append(P.team[p])
-	if teams.size() <= 1 and n > 1:
+	# игра, где с начала была одна команда (союзники без врага, сценарии), сама не кончается
+	if _teams0 < 0:
+		_teams0 = teams.size()
+	if teams.size() <= 1 and n > 1 and _teams0 > 1:
 		winner_team = teams[0] if teams.size() == 1 else -1
 		over = true
 		_events.push(SimEvents.Ev.VICTORY, -1, winner_team)
