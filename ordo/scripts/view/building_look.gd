@@ -484,7 +484,8 @@ static func _mesh_instances(root: Node) -> Array[MeshInstance3D]:
 
 ## Части модели для MultiMesh: [{mesh, xform, material, var, spin, shadow}]; lod 0 или 1 ([] — нет LOD1);
 ## stage — стадия поля. var — двор Var_<k> (0 — общая часть), spin — колесо (крутит BuildingView),
-## shadow — отбрасывает ли тень (вода, двор, колосья — нет). Заместитель — один меш.
+## shadow — отбрасывает ли тень (вода, двор, колосья — нет). Части с одним материалом (и тем же двором
+## и тенью) слиты в один меш: на часть — свой MultiMesh, значит, вызов отрисовки. Заместитель — один меш.
 static func parts_for(defs: Defs, btype: int, lod := 0, stage := 2) -> Array:
 	var path := model_path(defs, btype, BuildingTable.State.ACTIVE, stage)
 	if path.ends_with(".glb"):
@@ -499,6 +500,9 @@ static func parts_for(defs: Defs, btype: int, lod := 0, stage := 2) -> Array:
 		for mi in _mesh_instances(n):
 			if mi.mesh == null or not mi.visible or String(mi.name) == "LOD1":
 				continue
+			# двор/пятно земли Коканда — только вблизи (вдали — земля мира): на группу вызовом меньше
+			if lod > 0 and String(mi.name).begins_with("Ground"):
+				continue
 			# материалы — в копию меша (у MultiMesh нет своих материалов на поверхность)
 			var m := mi.mesh.duplicate() as Mesh
 			for s in m.get_surface_count():
@@ -509,12 +513,78 @@ static func parts_for(defs: Defs, btype: int, lod := 0, stage := 2) -> Array:
 				"spin": String(mi.name).begins_with("Wheel"),
 				"shadow": mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF})
 		n.free()
+		out = merge_parts(out)
+		if lod > 0:
+			# вдали тень — только у самой большой части (флаги, навесы, колёса — без тени)
+			var main := -1
+			var best := -1.0
+			for i in out.size():
+				var v := ((out[i].mesh as Mesh).get_aabb().size as Vector3)
+				if bool(out[i].shadow) and v.x * v.y * v.z > best:
+					best = v.x * v.y * v.z
+					main = i
+			for i in out.size():
+				if i != main and int(out[i]["var"]) == 0:
+					out[i].shadow = false
 		_mesh_cache[key] = out
 		return out
 	if lod > 0:
 		return []
 	return [{"mesh": mesh_for(defs, btype), "xform": Transform3D(), "material": kit_material(), "var": 0,
 		"spin": false, "shadow": not is_flat(defs, btype)}]
+
+
+## Слить части с одним материалом, двором и тенью в один меш (SurfaceTool.append_from с переносом в
+## оси постройки). Колёса и многоповерхностные части — как есть.
+static func merge_parts(parts: Array) -> Array:
+	# двор Var_1..3 и общая часть с тем же материалом — в меш на каждый вариант (дом — один вызов,
+	# а не общий + свой двор); варианты есть все три — общая часть есть у каждого дома
+	var vars := {}
+	for p: Dictionary in parts:
+		if int(p["var"]) > 0 and (p.mesh as Mesh).get_surface_count() == 1:
+			var vk: Variant = [(p.mesh as Mesh).surface_get_material(0), bool(p.shadow)]
+			if not vars.has(vk):
+				vars[vk] = {}
+			(vars[vk] as Dictionary)[int(p["var"])] = true
+	var spread: Array = []
+	for p: Dictionary in parts:
+		var m: Mesh = p.mesh
+		var vk: Variant = [m.surface_get_material(0), bool(p.shadow)] if m.get_surface_count() == 1 else null
+		if int(p["var"]) == 0 and not bool(p.spin) and vk != null and vars.has(vk) and \
+				(vars[vk] as Dictionary).has_all([1, 2, 3]):
+			for k in [1, 2, 3]:
+				var c := p.duplicate()
+				c["var"] = k
+				spread.append(c)
+		else:
+			spread.append(p)
+	parts = spread
+	var groups := {}
+	var order: Array = []
+	for p: Dictionary in parts:
+		var m: Mesh = p.mesh
+		var key: Variant = p
+		if not bool(p.spin) and m.get_surface_count() == 1:
+			key = [m.surface_get_material(0), int(p["var"]), bool(p.shadow)]
+		if not groups.has(key):
+			groups[key] = []
+			order.append(key)
+		(groups[key] as Array).append(p)
+	var out: Array = []
+	for key: Variant in order:
+		var g: Array = groups[key]
+		if g.size() == 1:
+			out.append(g[0])
+			continue
+		var st := SurfaceTool.new()
+		for p: Dictionary in g:
+			st.append_from(p.mesh, 0, p.xform)
+		var am := st.commit()
+		var first: Dictionary = g[0]
+		am.surface_set_material(0, (first.mesh as Mesh).surface_get_material(0))
+		out.append({"mesh": am, "xform": Transform3D(), "material": null, "var": first["var"], "spin": false,
+			"shadow": first.shadow})
+	return out
 
 
 ## Двор Var_<k>, к которому относится меш (0 — общая часть)

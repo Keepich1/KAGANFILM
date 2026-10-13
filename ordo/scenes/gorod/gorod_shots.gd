@@ -33,37 +33,44 @@ const SHOTS := [
 ]
 
 ## Ряды образцов (scenes/test/gorod_look.tscn): все постройки обеих сторон готовыми, стройки на трёх
-## стадиях и руины — на ровном месте к югу от долины; камера по рядам (row — номер ряда)
+## стадиях и руины — к югу от долины; кадр на ряд (look_row<N>, row — номер ряда, по place_lineup),
+## потом призрак и общий вид
 const LOOK_SHOTS := [
-	["look_kokand", {"row": 0}],
-	["look_kokand2", {"row": 1}],
-	["look_kipchak", {"row": 2}],
-	["look_kipchak2", {"row": 3}],
-	["look_sites", {"row": 4}],
-	["look_sites2", {"row": 5}],
-	["look_ghost", {"view": Vector4(20, -6, 46, -30), "pitch": 34.0, "ghost": ["uy", Vector2(14, -8), 0],
-		"wall": ["devor", [Vector2(-6, -4), Vector2(40, -40)]]}],
-	["look_all", {"view": Vector4(35, -70, 150, -20), "pitch": 42.0}],
+	["look_ghost", {"view": Vector4(10, -6, 40, -30), "pitch": 34.0, "ghost": ["uy", Vector2(4, -8), 0],
+		"wall": ["devor", [Vector2(-16, -4), Vector2(30, -30)]]}],
+	["look_all", {"view": Vector4(46, -76, 150, -16), "pitch": 46.0}],
 ]
-## Где ряды: x от LOOK_X0 до LOOK_X1, первый ряд — от z = LOOK_Z0 на юг (−z); фасады (+Z) — к камере
-const LOOK_X0 := -40.0
-const LOOK_X1 := 112.0
+## Где ряды: колонки шириной LOOK_W от x = LOOK_COLS[i], ряды — от z = LOOK_Z0 на юг (−z) до LOOK_ZMIN
+## (дальше — река); не влез ряд — следующая колонка. Фасады (+Z) — к камере. Узкие ряды — крупнее в кадре.
+const LOOK_COLS := [-40.0, 50.0]
+const LOOK_W := 82.0
 const LOOK_Z0 := -24.0
+const LOOK_ZMIN := -126.0
 const LOOK_KOKAND := ["urda", "uy", "dala", "tegirmon", "ombor", "togon", "aryk", "xumdon", "bozor", "kazarma",
 	"otxona", "topxona", "temirchixona", "devor", "tosh", "darvoza", "burj"]
 const LOOK_KIPCHAK := ["ordo", "boz", "koroo", "ken", "jooker", "jylky", "kurultai", "kiyiz", "temirchi", "chep",
 	"darbaza", "munara"]
-## Стройки на трёх стадиях (‰) и руина — заместители и модели
-const LOOK_SITES := ["uy", "kazarma", "urda", "boz", "ordo"]
+## Стройки на трёх стадиях (‰) и руина: модели _site/_ruin (uy, kazarma), без них — срез готовой (boz, ordo)
+const LOOK_SITES := ["uy", "kazarma", "boz", "ordo"]
 const LOOK_STAGES := [250, 550, 850]
+const LOOK_GAP := 4.0
+const LOOK_ROW_GAP := 6.0
 
 ## Прямоугольники рядов образцов (x, z) после place_lineup
 static var rows: Array[Rect2] = []
 
 
-## Набор кадров сцены: «look» — ряды образцов, иначе — город
+## Набор кадров сцены: «look» — по кадру на ряд образцов и LOOK_SHOTS, иначе — город
 static func shots(set_name: StringName) -> Array:
-	return LOOK_SHOTS if set_name == &"look" else SHOTS
+	if set_name != &"look":
+		return SHOTS
+	var out: Array = []
+	for i in rows.size():
+		# ряд из одной небольшой постройки виден в кадре соседнего ряда
+		if rows[i].size.x >= 20.0:
+			out.append(["look_row%d" % i, {"row": i}])
+	out.append_array(LOOK_SHOTS)
+	return out
 
 
 ## Поставить ряды образцов в поддельный город (сцена gorod_look; FakeCity — подделка, не правила игры)
@@ -81,32 +88,48 @@ static func place_lineup(city: FakeCity) -> void:
 		for k: int in LOOK_STAGES:
 			items.append([2, id, BuildingTable.State.SITE, k])
 		items.append([2, id, BuildingTable.State.RUIN, 0])
-	var x := LOOK_X0
+	# раскладка: ряды по колонкам — [[id, состояние, прогресс, центр]]
+	var col := 0
+	var x0: float = LOOK_COLS[0]
+	var x := x0
 	var z := LOOK_Z0
 	var depth := 0.0
-	var group := 0
-	var row := Rect2(LOOK_X0, LOOK_Z0, 0, 0)
-	for it: Array in items:
-		var ty := d.building(StringName(it[1]))
-		if ty < 0:
+	var group := -1
+	var row_items: Array = []
+	var placed: Array = []
+	for it: Array in items + [[-1, "", 0, 0]]:
+		var ty := d.building(StringName(it[1])) if it[0] >= 0 else -1
+		if it[0] >= 0 and ty < 0:
 			continue
-		var sz := d.b_size[ty]
-		if (int(it[0]) != group or x + sz.x > LOOK_X1) and x > LOOK_X0:
-			rows.append(Rect2(row.position.x, z - depth, x - row.position.x, depth))
-			z -= depth + 8.0
-			x = LOOK_X0
+		var sz := d.b_size[ty] if ty >= 0 else Vector2.ZERO
+		if not row_items.is_empty() and (int(it[0]) != group or x + sz.x > x0 + LOOK_W):
+			# ряд закрыт: не влез по глубине — в следующую колонку
+			var w := x - LOOK_GAP - x0
+			if z - depth < LOOK_ZMIN and col + 1 < LOOK_COLS.size():
+				col += 1
+				var dx: float = float(LOOK_COLS[col]) - x0
+				x0 = LOOK_COLS[col]
+				z = LOOK_Z0
+				for r: Array in row_items:
+					r[3] = (r[3] as Vector2) + Vector2(dx, LOOK_Z0 - (r[4] as float))
+			rows.append(Rect2(x0, z - depth, w, depth))
+			placed.append_array(row_items)
+			row_items = []
+			z -= depth + LOOK_ROW_GAP
+			x = x0
 			depth = 0.0
-			row = Rect2(LOOK_X0, z, 0, 0)
+		if it[0] < 0:
+			break
 		group = int(it[0])
-		var c := Vector2(x + sz.x * 0.5, z - sz.y * 0.5)
-		var owner := FakeCity.KOK if d.b_faction[ty] == "kokand" else FakeCity.KIP
-		var b: int = city.call("_add", owner, StringName(it[1]), c, 0, it[2])
-		if int(it[2]) == BuildingTable.State.SITE:
-			city.buildings().progress[b] = int(it[3])
-		x += sz.x + 5.0
+		row_items.append([it[1], it[2], it[3], Vector2(x + sz.x * 0.5, z - sz.y * 0.5), z])
+		x += sz.x + LOOK_GAP
 		depth = maxf(depth, sz.y)
-	if x > LOOK_X0:
-		rows.append(Rect2(row.position.x, z - depth, x - row.position.x, depth))
+	for r: Array in placed:
+		var ty := d.building(StringName(r[0]))
+		var owner := FakeCity.KOK if d.b_faction[ty] == "kokand" else FakeCity.KIP
+		var b: int = city.call("_add", owner, StringName(r[0]), r[3], 0, r[1])
+		if int(r[1]) == BuildingTable.State.SITE:
+			city.buildings().progress[b] = int(r[2])
 
 
 static func setup(scene: GorodScene, s: Array) -> void:
@@ -126,8 +149,8 @@ static func setup(scene: GorodScene, s: Array) -> void:
 		# ряд образцов: середина ряда, расстояние по ширине
 		var r: Rect2 = rows[mini(int(cfg["row"]), rows.size() - 1)] if not rows.is_empty() else Rect2()
 		var c := r.get_center()
-		view = Vector4(c.x, c.y, r.size.x * 0.62 + 16.0, -14.0)
-		pitch = 30.0
+		view = Vector4(c.x, c.y, r.size.x * 0.68 + 12.0, -14.0)
+		pitch = 28.0
 	elif cfg.has("work"):
 		var aux := float(cfg["work"])
 		var u := -1

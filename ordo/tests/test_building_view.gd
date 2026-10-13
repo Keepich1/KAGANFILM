@@ -65,6 +65,8 @@ func _test_lookup(city: FakeCity) -> void:
 		for pt: Dictionary in parts:
 			vars[int(pt["var"])] = true
 		_check(vars.has(0) and vars.has(1) and vars.has(2) and vars.has(3), "дом: части двора Var_1..3 и общие (%s)" % [vars.keys()])
+		# части с одним материалом слиты: урда (9 мешей) — 3 части; дом — по меш на двор и общая земля
+		_check(BuildingLook.parts_for(d, urda, 0).size() <= 4, "урда: части с одним материалом слиты (%d)" % BuildingLook.parts_for(d, urda, 0).size())
 		var spin := false
 		for pt: Dictionary in BuildingLook.parts_for(d, d.building(&"tegirmon"), 0):
 			spin = spin or bool(pt.spin)

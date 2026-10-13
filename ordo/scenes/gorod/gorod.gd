@@ -4,8 +4,8 @@ extends Node3D
 ## + места под интерфейс (CityHud) и управление (RtsInput) — их ставит пакет UI.
 ## До I4 драйвер — FakeCityDriver (живой поддельный город); после I4 — GameDriver, виды не меняются.
 ##
-## Выделение — SelectionModel (хранение; поведение даёт RtsInput из UI). Пока RtsInput нет, сцена
-## держит свою модель: selection.
+## Выделение — SelectionModel (хранение; поведение даёт RtsInput из UI). Поставил RtsInput свою
+## модель в SelectionView — сцена берёт её; нет — держит свою: selection.
 ##
 ## Ключи после «--»:
 ##   --skip=С            промотать город на С секунд при запуске (без отрисовки)
@@ -16,6 +16,8 @@ extends Node3D
 ##   --perf_frames=N     замер N кадров, итог в консоль и выход (с --stress)
 ##   --perf_cpu          время вида — процессорное время потока (чужие процессы не мешают)
 ##   --perf_warm=N       сколько первых кадров не считать (загрузка, шейдеры), по умолчанию 30
+##   --draw_parts        вызовы отрисовки по видам: все, без видов, без каждого вида по очереди
+##                       (видимые / тени / 2D), итог в консоль и выход
 
 signal series_done
 
@@ -51,7 +53,11 @@ var _log_t := 0.0
 
 func _ready() -> void:
 	_ordo = get_node_or_null("/root/Ordo")
-	selection_view.selection = selection
+	# своя модель — только если RtsInput (UI, его _ready раньше) не поставил свою
+	if selection_view.selection == null:
+		selection_view.selection = selection
+	else:
+		selection = selection_view.selection
 	if _ordo and _ordo.has_arg("skip") and driver.sim:
 		for i in int(float(_ordo.arg("skip")) * 30.0):
 			driver.step()
@@ -80,6 +86,8 @@ func _ready() -> void:
 				_series.append(s)
 		camera.interactive = false
 		_wait = 3
+	if _ordo and _ordo.has_arg("draw_parts"):
+		_draw_parts()
 	if _ordo and (_ordo.has_arg("series") or _ordo.has_arg("shot")):
 		world.environment_node.environment.volumetric_fog_temporal_reprojection_enabled = false
 		_fast = true
@@ -154,8 +162,8 @@ func _shoot(s: Array) -> void:
 	var img := get_viewport().get_texture().get_image()
 	var path := "%s/%s.png" % [_series_dir, String(s[0])]
 	img.save_png(path)
-	print("[город] кадр: %s t=%.2f, %d мс, вызовов отрисовки %d, юнитов %d" % [path, driver.time, Time.get_ticks_msec(),
-		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), driver.sim.n])
+	print("[город] кадр: %s t=%.2f, %d мс, вызовов отрисовки %s, юнитов %d" % [path, driver.time, Time.get_ticks_msec(),
+		draw_calls_text(draw_calls()), driver.sim.n])
 	_busy = false
 	_wait = 1
 	if _series.is_empty():
@@ -205,6 +213,54 @@ func _perf_text() -> String:
 			&"view_select", &"view_overlay", &"view_cityfx", &"fx", &"render_cpu", &"draw_calls", &"frame"]:
 		parts.append("%s %.2f (%.2f)" % [k, float(_perf_sum.get(k, 0.0)) / n, float(_perf_max.get(k, 0.0))])
 	return " | ".join(parts)
+
+
+## Вызовы отрисовки кадра: [всего, видимые, тени, 2D]
+func draw_calls() -> PackedInt32Array:
+	var rid := get_viewport().get_viewport_rid()
+	var info := RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME
+	var v := RenderingServer.viewport_get_render_info(rid, RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE, info)
+	var sh := RenderingServer.viewport_get_render_info(rid, RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW, info)
+	var c := RenderingServer.viewport_get_render_info(rid, RenderingServer.VIEWPORT_RENDER_INFO_TYPE_CANVAS, info)
+	return PackedInt32Array([int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), v, sh, c])
+
+
+static func draw_calls_text(d: PackedInt32Array) -> String:
+	return "%d (видимых %d, теней %d, 2D %d)" % [d[0], d[1], d[2], d[3]]
+
+
+## --draw_parts: доля каждого вида в вызовах отрисовки (вид прячется на 4 кадра)
+func _draw_parts() -> void:
+	for i in 40:
+		await get_tree().process_frame
+	var views := $Views as Node3D
+	var hud := $HUD as CanvasLayer
+	var all := draw_calls()
+	print("[город вызовы] все виды: ", draw_calls_text(all))
+	views.visible = false
+	hud.visible = false
+	for i in 4:
+		await get_tree().process_frame
+	var none := draw_calls()
+	print("[город вызовы] без видов (мир): ", draw_calls_text(none))
+	views.visible = true
+	hud.visible = true
+	for c in views.get_children():
+		if not c is Node3D:
+			continue
+		(c as Node3D).visible = false
+		for i in 4:
+			await get_tree().process_frame
+		var d := draw_calls()
+		print("[город вызовы] вид %s: %d (видимых %d, теней %d)" % [c.name, all[0] - d[0], all[1] - d[1], all[2] - d[2]])
+		(c as Node3D).visible = true
+	hud.visible = false
+	for i in 4:
+		await get_tree().process_frame
+	var d2 := draw_calls()
+	print("[город вызовы] HUD (2D): %d" % (all[0] - d2[0]))
+	print("[город вызовы] доля видов: %d (видимых %d, теней %d)" % [all[0] - none[0], all[1] - none[1], all[2] - none[2]])
+	get_tree().quit()
 
 
 func _buildings_count() -> int:
