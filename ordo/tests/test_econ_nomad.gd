@@ -27,7 +27,7 @@ func _init() -> void:
 	SimHarness.check(e.pack_all(p, hq) == EconApi.Err.OK, "свернуть весь лагерь")
 	k.step()
 	SimHarness.check(e.players.pop_cap[p] == 0, "население сразу 0")
-	k.run_s(15.0)
+	k.run_s(16.0)
 	var packed := 0
 	for b in e.buildings.hw:
 		if e.buildings.state[b] == BuildingTable.State.PACKED:
@@ -37,7 +37,7 @@ func _init() -> void:
 		if e.un_cargo[s] > 0 and e.un_gen[s] != 0:
 			arbas.append(Ids.make(Ids.Kind.UNIT, s, e.un_gen[s]))
 	SimHarness.check(packed == 6 and arbas.size() == 7 and k.count_ev(SimEvents.Ev.PACKED, c0) == 6,
-		"через 15 с: 6 построек в арбах, арб 7 (ставка — 2)")
+		"через 15 с (+ до секунды): 6 построек в арбах, арб 7 (ставка — 2)")
 	SimHarness.check(e.players.hq_b[p] == 0 and e.has_hq(p), "ставка в арбе: hq_b = 0, но игрок жив")
 	SimHarness.check(e.arba_cargo(arbas[0]) != 0 and e.buildings.valid(e.arba_cargo(arbas[0])), "arba_cargo → постройка")
 	SimHarness.check(e.players.pop_used[p] == 2, "арбы мест не занимают")

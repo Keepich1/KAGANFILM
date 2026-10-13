@@ -181,6 +181,15 @@ func add_player(team: int, faction: StringName, ctrl: int) -> int:
 
 func spawn_building(p: int, btype: int, center: Vector2, rot_q: int, active := true) -> int:
 	var b := _new_building(p, btype, center, rot_q, BuildingTable.State.ACTIVE if active else BuildingTable.State.SITE)
+	var kind := defs.b_kind[btype]
+	if kind == Defs.BKind.LINK or kind == Defs.BKind.WALL:
+		# одиночное звено: концы — вдоль своей оси X, повёрнутой на rot_q
+		var d: Vector2 = DIR4[(rot_q + 1) & 3]
+		var half := defs.b_link_len[btype] * 0.5
+		buildings.ax[b] = center.x - d.x * half
+		buildings.az[b] = center.y - d.y * half
+		buildings.bx[b] = center.x + d.x * half
+		buildings.bz[b] = center.y + d.y * half
 	_place_world(b)
 	if active:
 		_activate(b, false)
@@ -355,6 +364,27 @@ func place_wall(p: int, wtype: int, pts: PackedVector2Array, workers: PackedInt3
 		_not_enough(p, cost, SimCmd.Op.BUILD_WALL)
 		return -Err.NO_RES
 	pay(p, cost)
+	var made := _make_links(p, wtype, pts, plan, ok, false)
+	wk.send_builders(self, p, workers, made[1])
+	return made[0]
+
+
+## Звенья стартовой линии карты (Бош ариқ у тўғона, MapSetup): сразу готовые, даром. Вернёт id цепочки.
+func spawn_links(p: int, wtype: int, pts: PackedVector2Array) -> int:
+	if p < 0 or p >= players.count or wtype < 0 or pts.size() < 2:
+		return 0
+	var plan := nav.plan_wall(p, wtype, pts) if nav else {}
+	var centers: PackedVector2Array = plan.get("centers", PackedVector2Array())
+	var ok := PackedInt32Array()
+	for i in centers.size():
+		ok.append(i)
+	return _make_links(p, wtype, pts, plan, ok, true)[0]
+
+
+## Звенья по плану стены/арыка: [chain, описатель первого]
+func _make_links(p: int, wtype: int, pts: PackedVector2Array, plan: Dictionary, ok: PackedInt32Array, active: bool) -> Array:
+	var centers: PackedVector2Array = plan.get("centers", PackedVector2Array())
+	var rots: PackedFloat32Array = plan.get("rots", PackedFloat32Array())
 	_order_seq += 1
 	var chain := _order_seq
 	var half := defs.b_link_len[wtype] * 0.5
@@ -362,21 +392,23 @@ func place_wall(p: int, wtype: int, pts: PackedVector2Array, workers: PackedInt3
 	for i in ok:
 		var c := centers[i]
 		var dir := _polyline_dir(pts, c)
-		var b := _new_building(p, wtype, c, 0, BuildingTable.State.SITE)
+		var b := _new_building(p, wtype, c, 0, BuildingTable.State.ACTIVE if active else BuildingTable.State.SITE)
 		var B := buildings
 		B.chain[b] = chain
-		B.rot[b] = (plan["rots"] as PackedFloat32Array)[i] if (plan.get("rots", PackedFloat32Array()) as PackedFloat32Array).size() > i else 0.0
+		B.rot[b] = rots[i] if i < rots.size() else 0.0
 		B.ax[b] = c.x - dir.x * half
 		B.az[b] = c.y - dir.y * half
 		B.bx[b] = c.x + dir.x * half
 		B.bz[b] = c.y + dir.y * half
 		_place_world(b)
-		_start_site(b, defs.b_build_ticks[wtype])
+		if active:
+			_activate(b, false)
+		else:
+			_start_site(b, defs.b_build_ticks[wtype])
+			events.push(SimEvents.Ev.SITE_PLACED, p, B.handle(b), wtype, chain, c)
 		if first == 0:
 			first = B.handle(b)
-		events.push(SimEvents.Ev.SITE_PLACED, p, B.handle(b), wtype, chain, c)
-	wk.send_builders(self, p, workers, first)
-	return chain
+	return [chain, first]
 
 
 func assign_gather(p: int, workers: PackedInt32Array, source_h: int) -> int:
@@ -670,6 +702,11 @@ func building_panel(b_h: int) -> Dictionary:
 
 func build_menu(p: int, tab: StringName) -> Array[Dictionary]:
 	return qry.build_menu(self, p, tab)
+
+
+## Круг прогресса набега над зданием 0..1 (барымта, талоо, вытаптывание) — для вида и панели
+func raid_progress(b_h: int) -> float:
+	return raid.raid_progress(self, buildings.slot(b_h)) if buildings.valid(b_h) else 0.0
 
 
 ## Есть ли у игрока ставка (стоит, строится или едет в арбе) — для Victory

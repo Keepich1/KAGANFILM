@@ -60,6 +60,7 @@ func _init() -> void:
 	_units(defs)
 	_economy(defs)
 	_factions(defs)
+	_sb1(defs)
 	_hash(defs)
 	SimHarness.finish(self)
 
@@ -190,6 +191,25 @@ func _factions(defs: Defs) -> void:
 	SimHarness.check(defs.ai["RAID"]["peace_ticks"] == [9000, 14400, 21600], "мирный период 5/8/12 мин в тактах")
 	SimHarness.check(gorod["herd_theft"]["guard_r"] == 30.0 and gorod["herd_theft"]["circle_ticks"] == 180,
 		"барымта: охрана 30 м, круг 6 с")
+
+
+## Сб. 1 (ECONOMY §12.1, решения ведущего 2026-10-13): башни — да, стены и ворота — этап 2, Сб. 2 — выключено
+func _sb1(defs: Defs) -> void:
+	print("[Сб. 1: что включено]")
+	var on := func(id: String) -> bool: return defs.b_enabled[defs.building(id)] == 1
+	SimHarness.check(on.call("burj") and on.call("munara") and on.call("xumdon"), "башни и Хумдон — в Сб. 1")
+	SimHarness.check(not on.call("devor") and not on.call("tosh") and not on.call("darvoza") and not on.call("chep")
+		and not on.call("darbaza"), "стены и ворота — этап 2 (выключены)")
+	SimHarness.check(not on.call("temirchixona") and not on.call("kiyiz") and not on.call("temirchi")
+		and defs.r_enabled[defs.res(&"felt")] == 0 and defs.r_enabled[defs.res(&"wool")] == 0, "кузницы и войлок — Сб. 2")
+	SimHarness.check(defs.u_carry_milli[defs.unit(&"dehqon")] == 30000 and defs.u_carry_milli[defs.unit(&"malchy")] == 30000,
+		"ноша работника 30 (−15% на каждые лишние 20 м пути)")
+	var bd: Dictionary = defs.rules_of(&"GOROD").get("bld_dmg", {})
+	SimHarness.check(is_equal_approx(float(bd.get("melee_inf", 0)), 0.5) and is_equal_approx(float(bd.get("melee_cav", 0)), 0.3)
+		and is_equal_approx(float(bd.get("raider_econ", 0)), 0.4), "урон рукопашной по зданиям: ×0,5 / ×0,3 / налётчики ×0,4")
+	SimHarness.check(defs.b_flags[defs.building(&"aryk")] & Defs.BF_TERRITORY != 0 and is_equal_approx(defs.b_territory_r[defs.building(&"urda")], 90.0),
+		"своя земля: ставка 90 м, вдоль арыка 24 м")
+	SimHarness.check(defs.b_tax_milli_min[defs.building(&"urda")] == 8000, "подать с Урды 8 золота в минуту")
 
 
 func _hash(defs: Defs) -> void:

@@ -11,6 +11,7 @@ func _init() -> void:
 	_koroo()
 	_pasture()
 	_barymta()
+	_post()
 	_water()
 	_bounty()
 	SimHarness.finish(self)
@@ -165,6 +166,21 @@ func _barymta() -> void:
 		SimHarness.check(e.b_otlar[e.buildings.slot(ot)] == heads, "довёл до Отхоны — %d «отлар»" % heads)
 
 
+## Барымта у коновязи ставки кыпчаков
+func _post() -> void:
+	print("[коновязь ставки]")
+	var k := EconKit.make()
+	var kip := k.kipchak(KIP, 0)
+	var kok := k.kokand(KOK, 0)
+	var e := k.econ
+	for i in 6:
+		k.port.spawn(kok, e.players.team[kok], &"navkar", KIP + Vector2(-4 + i * 2.0, 14), 0.0)
+	var c0 := k.events.head
+	k.run_s(8.0)
+	var st := k.last_ev(SimEvents.Ev.HERD_STOLEN, c0)
+	SimHarness.check(st >= 0 and k.events.e_c[st] == 3 and k.res(kip, "horse") == 3.0, "6 всадников у ставки — уведено 3 коня с коновязи")
+
+
 ## T1, T2: вода — 9-е поле на тўғоне с 8 местами — «лалми»; тўғон сломан — через 20 с поля 25%
 func _water() -> void:
 	print("[вода, T1, T2]")
@@ -173,12 +189,9 @@ func _water() -> void:
 	var e := k.econ
 	var stub := k.port as CombatPortStub
 	var dam := k.build_now(p, &"togon", Vector2(90, -100))
-	k.set_res(p, "wood", 1000.0)
-	e.place_wall(p, k.b(&"aryk"), PackedVector2Array([Vector2(90, -94), Vector2(90, 30)]), PackedInt32Array())
-	for b in e.buildings.hw:
-		if e.buildings.state[b] == BuildingTable.State.SITE:
-			e._sites.erase(b)
-			e._activate(b, true)
+	var w_before := k.res(p, "wood")
+	var chain := e.spawn_links(p, k.b(&"aryk"), PackedVector2Array([Vector2(90, -94), Vector2(90, 30)]))
+	SimHarness.check(chain > 0 and k.res(p, "wood") == w_before, "стартовый Бош ариқ карты — сразу готов и даром (spawn_links)")
 	var fields := PackedInt32Array()
 	for i in 9:
 		fields.append(k.build_now(p, &"dala", Vector2(70 if i % 2 == 0 else 110, -80 + (i / 2) * 18)))

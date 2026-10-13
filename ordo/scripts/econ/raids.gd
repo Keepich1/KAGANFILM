@@ -38,11 +38,15 @@ func act_of(e: EconomySim, b: int) -> int:
 	var D := e.defs
 	if D.b_kind[bt] == Defs.BKind.FIELD:
 		return Act.TRAMPLE
-	if B.flags[b] & Defs.BF_PEN or e.b_otlar[b] > 0:
+	if e.b_otlar[b] > 0:
+		return Act.HERD
+	if D.b_herd[bt] >= 0:
+		# двор, короо, коновязь ставки
 		var h := e.hd.herd_at(e, b, -1)
-		if (h >= 0 and e.herds.heads_milli[h] >= 1000 and D.h_capturable[e.herds.htype[h]] == 1) or e.b_otlar[b] > 0:
+		if h >= 0 and e.herds.heads_milli[h] >= 1000 and D.h_capturable[e.herds.htype[h]] == 1:
 			return Act.HERD
-		return Act.NONE
+		if B.flags[b] & Defs.BF_PEN:
+			return Act.NONE
 	if B.flags[b] & Defs.BF_HQ:
 		return Act.NONE
 	if B.flags[b] & Defs.BF_MARKET or (B.flags[b] & Defs.BF_DROP and B.store_mask[b] & (1 << e.r_gold)):
