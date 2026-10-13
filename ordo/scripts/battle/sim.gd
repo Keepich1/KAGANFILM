@@ -461,7 +461,7 @@ func add_squad(side: int, type_id: String, count: int, pos: Vector2, heading: fl
 		sq_officer[s] = o
 	if banner and count > 0:
 		sq_banner[s] = members[count - 1]
-	sq_members[s] = members
+	sq_members[s].append_array(members)  # на месте: читатели (вид) держат ссылку на список
 	sq_init[s] = members.size()
 	sq_alive[s] = members.size()
 	side_init[side] += members.size()
@@ -484,7 +484,7 @@ func add_general(side: int, type_id: String, pos: Vector2, heading: float, owner
 	sq_single[s] = 1
 	sq_files[s] = 1
 	var u := _new_unit(s, sq_type[s], Role.GENERAL, 0)
-	sq_members[s] = PackedInt32Array([u])
+	sq_members[s].append(u)
 	sq_officer[s] = u
 	sq_init[s] = 1
 	sq_alive[s] = 1
@@ -646,7 +646,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float, owner := -
 			_grow_squads(s + 1)
 	sq_side[s] = side
 	sq_type[s] = type_i
-	sq_members[s] = PackedInt32Array()
+	sq_members[s].clear()
 	sq_officer[s] = -1
 	sq_banner[s] = -1
 	sq_form[s] = Formation.LINE
@@ -688,13 +688,13 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float, owner := -
 	sq_owner[s] = owner if owner >= 0 else side
 	var tf := t_flags[type_i]
 	sq_stance[s] = Stance.PASSIVE if tf & UnitStats.WAGON != 0 else (Stance.DEFENSIVE if tf & UnitStats.WORKER != 0 else Stance.AGGRESSIVE)
-	sq_path[s] = PackedVector2Array()
+	sq_path[s].clear()
 	sq_wp[s] = 0
 	sq_breach_st[s] = -1
 	sq_breach_wp[s] = -1
 	sq_st_target[s] = -1
 	sq_enemy[s] = -1
-	sq_trail[s] = PackedVector2Array()
+	sq_trail[s].clear()
 	sq_used[s] = 1
 	sq_stuck[s] = 0
 	sq_dorm[s] = 0
@@ -995,7 +995,9 @@ func clear_melee(s: int) -> void:
 ## Путь для отряда (R7, от NAV): якорь идёт по точкам; последняя — цель приказа (sq_tx, sq_tz).
 ## breach_st/breach_wp — этап 2 (пролом у точки breach_wp).
 func set_path(s: int, pts: PackedVector2Array, breach_st := -1, breach_wp := -1) -> void:
-	sq_path[s] = pts.duplicate()
+	var path := sq_path[s]
+	path.clear()
+	path.append_array(pts)
 	sq_wp[s] = 0
 	sq_breach_st[s] = breach_st
 	sq_breach_wp[s] = breach_wp
