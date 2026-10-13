@@ -7,7 +7,9 @@ extends SceneTree
 ## • работа: Act.WORK → AnimSpec.Human.WORK с видом работы (рубит/копает/строит — цикл по времени,
 ##   несёт — фаза шага по пройденному пути), идущий к работе с инструментом — WALK, павший — не WORK;
 ## • заместители: деҳқон рисуется малчы в кокандском атласе, юнит без вида и заместителя — без места;
-## • тела перед уборкой (corpse_steps) уходят в землю за последние 3 с.
+## • тела перед уборкой (corpse_steps) уходят в землю за последние 3 с;
+## • знаменосец: роль BANNER без нового поколения (собрали отряд из одиночек) — юнит переезжает в слой
+##   со знаменем, распустили — обратно; у заместителей знамя — знаменосец своей стороны.
 
 const H := AnimSpec.Human
 
@@ -19,6 +21,7 @@ func _init() -> void:
 	_test_slots()
 	_test_work()
 	_test_sink()
+	_test_banner()
 	print("")
 	if _fails == 0:
 		print("ИТОГ: ВСЁ ПРОШЛО (%d проверок)" % _checks)
@@ -104,6 +107,10 @@ func _test_slots() -> void:
 			if sim.u_life[u] == BattleSim.Life.ALIVE:
 				sim.u_life[u] = BattleSim.Life.DEAD
 				sim.u_death_t[u] = sim.time
+		elif r < 98:
+			# роль знаменосца без нового поколения (собрали / распустили отряд)
+			var u := rng.range_i(sim.n)
+			sim.u_role[u] = BattleSim.Role.BANNER if sim.u_role[u] != BattleSim.Role.BANNER else BattleSim.Role.TROOPER
 		else:
 			# смена поколения без FREE между сверками (освободили и тут же заняли)
 			var u := rng.range_i(sim.n)
@@ -157,6 +164,13 @@ func _test_work() -> void:
 	_check(absf(cc.g - want) < 0.001, "несёт: фаза шага по пути (%.3f ≈ %.3f)" % [cc.g, want])
 	var still := v.custom_for(u, t + 1.0, 0.0, 0.0)
 	_check(is_equal_approx(still.g, cc.g), "несёт, стоит: фаза не бежит")
+	# мешок за спиной у несущего — один экземпляр на несущего; без груза мешка нет
+	v.update_view()
+	_check(v.sacks_drawn == 1, "несёт: мешок за спиной (%d)" % v.sacks_drawn)
+	sim.u_work[u] = AnimSpec.WORK_CHOP
+	v.update_view()
+	_check(v.sacks_drawn == 0, "рубит: мешка нет (%d)" % v.sacks_drawn)
+	sim.u_work[u] = AnimSpec.WORK_CARRY
 	sim.u_act[u] = BattleSim.Act.NONE
 	_check(int(v.custom_for(u, t, 0.0, 0.0).r) == H.IDLE, "без работы: IDLE")
 	sim.u_act[u] = BattleSim.Act.WORK
@@ -188,4 +202,45 @@ func _test_sink() -> void:
 		ys.append(buf[v.slot_of[u] * 16 + 7])
 	_check(absf(float(ys[0]) - ground) < 0.01, "за 25 с до уборки — на земле (%.2f ≈ %.2f)" % [ys[0], ground])
 	_check(float(ys[1]) < ground - 0.1 and float(ys[2]) < float(ys[1]), "в последние 3 с — уходит вниз (%.2f → %.2f)" % [ys[1], ys[2]])
+	v.free()
+
+
+## Слой юнита u ("" — без места)
+func _key_of(v: UnitView, u: int) -> String:
+	var li := v.layer_of[u]
+	return v.l_key[li] if li >= 0 else ""
+
+
+func _test_banner() -> void:
+	print("Знаменосец: собрали отряд и распустили (роль без нового поколения)")
+	var sim := BattleSim.new(11)
+	var v := _view(sim)
+	# одиночки, нанятые по одному (как в городе), потом «form_squad»: последний — знаменосец
+	var us := PackedInt32Array()
+	for t: String in ["sarboz", "sarboz", "nayzachi", "jooker", "chabuulchu", "navkar"]:
+		var s := sim.add_squad(0, t, 1, Vector2(30 + us.size() * 3, 30), 0.0, BattleSim.Formation.LINE, 1, "", false)
+		us.append(sim.sq_members[s][0])
+	v.sync_slots()
+	_check(_key_of(v, us[1]) == "kok_sarboz|", "одиночка сарбоз — без знамени (%s)" % _key_of(v, us[1]))
+	var want := ["kok_sarboz_banner|", "kok_sarboz_banner|", "kok_sarboz_banner|kipchak", "kip_sayisker_banner|",
+		"kip_sayisker_banner|kokand"]
+	var gens := PackedInt32Array()
+	for i in range(1, us.size()):
+		gens.append(sim.u_gen[us[i]])
+		sim.u_role[us[i]] = BattleSim.Role.BANNER
+	v.sync_slots()
+	for i in range(1, us.size()):
+		var u := us[i]
+		_check(_key_of(v, u) == want[i - 1], "%s знаменосец: слой %s (ожидался %s)" % [sim.type_of(u), _key_of(v, u), want[i - 1]])
+		_check(sim.u_gen[u] == gens[i - 1], "%s: поколение не менялось" % sim.type_of(u))
+	_check(v.check_slots() == "", "инварианты мест после сбора: " + v.check_slots())
+	# распустили: снова бойцы
+	for i in range(1, us.size()):
+		sim.u_role[us[i]] = BattleSim.Role.TROOPER
+	v.sync_slots()
+	_check(_key_of(v, us[1]) == "kok_sarboz|", "распустили: сарбоз без знамени (%s)" % _key_of(v, us[1]))
+	_check(_key_of(v, us[2]) == v.layer_key("nayzachi", false), "распустили: найзачи — свой заместитель (%s)" % _key_of(v, us[2]))
+	_check(_key_of(v, us[3]) == "kip_jooker|", "распустили: жоокер без знамени (%s)" % _key_of(v, us[3]))
+	_check(v.check_slots() == "", "инварианты мест после роспуска: " + v.check_slots())
+	_check(v.used_slots() == _expected(sim, v), "мест %d = %d" % [v.used_slots(), _expected(sim, v)])
 	v.free()

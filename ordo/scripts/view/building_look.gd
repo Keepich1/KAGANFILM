@@ -97,6 +97,7 @@ static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE) -> Nod
 		rb.name = "Rubble"
 		rb.mesh = rubble_mesh(defs, btype)
 		rb.material_override = kit_material()
+		rb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		rb.set_instance_shader_parameter("scorch", 0.55)
 		root.add_child(rb)
 		_add_cap(root, defs, btype, 0.85)
@@ -130,6 +131,7 @@ static func _add_cap(root: Node3D, defs: Defs, btype: int, scorch: float) -> voi
 	cap.name = "Cap"
 	cap.mesh = mesh
 	cap.material_override = kit_material()
+	cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	cap.set_instance_shader_parameter("scorch", scorch)
 	cap.set_meta("round", round)
 	root.add_child(cap)
@@ -144,12 +146,34 @@ static func set_progress(root: Node3D, k: float) -> void:
 	# фундамент виден сразу (0,35 м), дальше стены растут
 	var clip := 0.35 + clampf(k, 0.0, 1.0) * (h - 0.35) * 1.02
 	_set_inst(body, "clip_h", clip)
-	_set_inst(body, "base_y", root.global_position.y if root.is_inside_tree() else root.position.y)
+	set_base(root)
 	var cap := root.get_node_or_null("Cap") as Node3D
 	if cap:
 		cap.position.y = clip - 0.02
 		# у круглых кровля сужается — выше стен крышка торчала бы наружу
 		cap.visible = k < 0.97 and (not bool(cap.get_meta("round", false)) or clip < h * 0.55)
+
+
+## Основание среза (site_rise считает высоту от мировой y основания): звать, когда узел поставлен на место.
+## Стройка зовёт сама из set_progress; руине — BuildingView после постановки (иначе срез от y = 0 мира).
+static func set_base(root: Node3D) -> void:
+	var body := root.get_node_or_null("Body") as Node3D
+	if body == null or bool(root.get_meta("exact", false)):
+		return
+	_set_inst(body, "base_y", root.global_position.y if root.is_inside_tree() else root.position.y)
+
+
+## Плоская постройка (поле, арык и другое, по чему ходят): тени не нужны — меньше вызовов отрисовки
+static func is_flat(defs: Defs, btype: int) -> bool:
+	return defs.b_kind[btype] == Defs.BKind.FIELD or defs.b_flags[btype] & Defs.BF_WALKABLE != 0
+
+
+## Выключить тени у всех мешей узла
+static func no_shadow(root: Node) -> void:
+	for g in root.find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if root is GeometryInstance3D:
+		(root as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Копоть 0..1 (руина, сильно повреждённое здание)

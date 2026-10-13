@@ -2,7 +2,8 @@ class_name SelectionView
 extends Node3D
 ## Выделение на земле (ARCHITECTURE §13): читает SelectionModel (описатели).
 ##   юниты — кольцо цвета стороны под каждым (ui_ring.gdshader; раненый краснеет);
-##   постройка — рамка по следу (sel_frame.gdshader) и флаг места сбора (kipchak/tug.glb);
+##   постройка — рамка по следу (sel_frame.gdshader) и флаг места сбора (kipchak/tug.glb) — у цели
+##   rally_h или в точке rally_x/z; точка (0, 0) без цели — сбора нет (флага нет);
 ##   узел и стадо — кольцо по месту.
 ## Таблички (название, здоровье, мораль) рисует OverlayView. PerfMeter «view_select».
 
@@ -33,6 +34,13 @@ func _ready() -> void:
 		d.connect("started", func(_s: int) -> void: set_query(CityView.query_of(d)))
 	if CityView.query_of(d):
 		set_query(CityView.query_of(d))
+	_build()
+
+
+## Узлы выделения (один раз; тесты зовут _update без дерева сцены)
+func _build() -> void:
+	if _mm:
+		return
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_colors = true
@@ -90,6 +98,7 @@ func _process(_delta: float) -> void:
 
 
 func _update() -> void:
+	_build()
 	var sim := query.battle()
 	var bt := query.buildings()
 	var nt := query.nodes()
@@ -135,10 +144,11 @@ func _update() -> void:
 				f.set_instance_shader_parameter("frame_col", SIDE_LIGHT[clampi(bt.team[b], 0, 3)])
 				f.visible = true
 				if not defs.b_trains[bt.btype[b]].is_empty() and not flag:
-					var rx := bt.rally_x[b]
-					var rz := bt.rally_z[b]
-					_flag.position = Vector3(rx, Terrain.height_at(rx, rz), rz)
-					flag = true
+					var at: Variant = rally_point(query, b)
+					if at != null:
+						var p: Vector2 = at
+						_flag.position = Vector3(p.x, Terrain.height_at(p.x, p.y), p.y)
+						flag = true
 			Ids.Kind.NODE:
 				if not nt.valid(h) or n >= cap:
 					continue
@@ -160,6 +170,38 @@ func _update() -> void:
 	for i in range(fi, MAX_FRAMES):
 		_frames[i].visible = false
 	_flag.visible = flag
+
+
+## Место сбора постройки b: цель rally_h (узел, постройка, юнит, стадо) или точка rally_x/z;
+## null — места сбора нет (rally_h = 0 и точка (0, 0): так ECON отмечает «не задано»)
+static func rally_point(q: GameQuery, b: int) -> Variant:
+	var bt := q.buildings()
+	var h := bt.rally_h[b]
+	if h != 0:
+		match Ids.kind(h):
+			Ids.Kind.NODE:
+				var nt := q.nodes()
+				if nt.valid(h):
+					var s := nt.slot(h)
+					return Vector2(nt.x[s], nt.z[s])
+			Ids.Kind.BUILDING:
+				if bt.valid(h):
+					var s := bt.slot(h)
+					return Vector2(bt.x[s], bt.z[s])
+			Ids.Kind.HERD:
+				var ht := q.herds()
+				if ht.valid(h):
+					var s := ht.slot(h)
+					return Vector2(ht.x[s], ht.z[s])
+			Ids.Kind.UNIT:
+				var u := q.unit_index(h)
+				var sim := q.battle()
+				if u >= 0 and sim and sim.u_life[u] == BattleSim.Life.ALIVE:
+					return Vector2(sim.u_x[u], sim.u_z[u])
+		# цели больше нет — точка, если задана
+	if bt.rally_x[b] != 0.0 or bt.rally_z[b] != 0.0:
+		return Vector2(bt.rally_x[b], bt.rally_z[b])
+	return null
 
 
 func _grow(cap: int) -> void:

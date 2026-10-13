@@ -8,12 +8,20 @@ extends BattleView
 ## вид сам видит новый индекс, FREE и смену поколения. Слой начинается с 512 мест и при заполнении
 ## пересоздаётся вдвое больше.
 ##
+## Роль знаменосца ядро меняет без нового поколения (CORE R3: собрать отряд из одиночек — последний
+## боец становится BANNER, распустить — снова TROOPER), поэтому вид помнит и флаг знамени: сменился —
+## юнит переезжает в слой с флагом (или без). Знаменосец без своего «_banner»-вида рисуется знаменосцем
+## своей стороны (BANNER_STANDIN: пеший — kok_sarboz_banner, конный — kip_sayisker_banner, атлас стороны).
+##
 ## Анимация — как у BattleView (_human_c/_rider_c), плюс работа: Act.WORK → AnimSpec.Human.WORK
 ## с видом работы u_work (рубит/копает/строит — цикл по времени; несёт — ноги по пройденному пути,
 ## ARCHITECTURE §1 ряд 22). Тела перед уборкой (corpse_steps) за последние 3 с уходят в землю.
 ## Гарнизон — на высоте площадки st_top. Арбы — отдельные модели kipchak/arba.glb (пока у толпы нет
 ## скелета «wagon»). Юниты без своей модели рисуются заместителем (STANDIN) — модель ближайшего вида,
 ## атлас своей стороны (цвет стороны узнаётся сразу).
+##
+## Несущий груз (WORK_CARRY) — с мешком за спиной (свой MultiMesh «Sacks», один вызов отрисовки), пока у
+## вида нет своего инструмента в руках (поле «tools» в реестре толпы — тогда мешок не нужен).
 ##
 ## Каждый кадр обновляются только юниты в прямоугольнике камеры + 40 м, остальные — раз в 4 кадра.
 ## Время кадра — PerfMeter «view_units».
@@ -32,6 +40,7 @@ const WORK_DIG_S := 1.7
 const WORK_BUILD_S := 1.3
 const FREE := BattleSim.Life.FREE
 const ACT_WORK := BattleSim.Act.WORK
+const BANNER := BattleSim.Role.BANNER
 
 ## Заместители: тип ядра → [вид толпы, атлас стороны ("" — атлас самого вида)].
 ## Работник Коканда — малчы в кокандских цветах (свой kok_dehqon делает область «Юниты»).
@@ -49,11 +58,23 @@ const STANDIN := {
 	"batyr": ["kip_kolbashchy", ""],
 	"mergen": ["kip_jooker", ""],
 }
+## Знаменосец, у вида которого нет «_banner»: базовый вид → знаменный вид толпы и его родная сторона
+const BANNER_STANDIN := {
+	"kok_sarboz": ["kok_sarboz_banner", "kokand"],
+	"kip_jooker": ["kok_sarboz_banner", "kokand"],
+	"kip_malchy": ["kok_sarboz_banner", "kokand"],
+	"kok_yuzboshi": ["kip_sayisker_banner", "kipchak"],
+	"kip_sayisker": ["kip_sayisker_banner", "kipchak"],
+	"kip_kolbashchy": ["kip_sayisker_banner", "kipchak"],
+}
 const ATLAS := {
 	"kokand": "res://assets/textures/units/kokand_units.png",
 	"kipchak": "res://assets/textures/units/kipchak_units.png",
 }
 const ARBA_MODEL := "res://assets/models/kipchak/arba.glb"
+## Мешок несущего: центр на доле высоты вида и за спиной, м
+const SACK_UP := 0.6
+const SACK_BACK := 0.26
 
 ## Обновлять дальние юниты реже (выключают тесты, чтобы видеть каждый кадр)
 @export var cull := true
@@ -71,12 +92,18 @@ var layer_of := PackedInt32Array()
 var _l_fast: Array[bool] = []
 var _l_index := {}
 var _seen_gen := PackedInt32Array()
+var _seen_banner := PackedByteArray()  # 1 — юнит нарисован знаменосцем (роль меняется без поколения)
 var _fresh := PackedByteArray()        # новое место: записать в этом кадре, даже если вне камеры
 var _arbas: Array[Node3D] = []         # по местам арб
 var _arba_units := PackedInt32Array()
 var _arba_root: Node3D
 var _rect := Rect2()
 var _standin_mats := {}
+var _l_sack := PackedFloat32Array()    # по слоям: высота центра мешка (0 — без мешка)
+var _sacks: MultiMeshInstance3D
+var _sack_buf := PackedFloat32Array()
+## Сколько мешков нарисовано в последнем кадре (тесты)
+var sacks_drawn := 0
 
 
 func _ready() -> void:
@@ -123,6 +150,7 @@ func _reset() -> void:
 	slot_of.resize(0)
 	layer_of.resize(0)
 	_seen_gen.resize(0)
+	_seen_banner.resize(0)
 	_fresh.resize(0)
 	_u_layer.resize(0)
 	_u_slot.resize(0)
@@ -159,7 +187,8 @@ func update_view() -> void:
 
 # ---------------------------------------------------------------- места
 
-## Сверка мест с ядром: новые юниты получают место, FREE и сменившие поколение — отдают
+## Сверка мест с ядром: новые юниты получают место, FREE и сменившие поколение — отдают;
+## сменившие роль знаменосца (собрали или распустили отряд) — переезжают в другой слой
 func sync_slots() -> void:
 	var sim := _sim
 	var n := sim.n
@@ -167,7 +196,9 @@ func sync_slots() -> void:
 		_grow_units(n)
 	var life := sim.u_life
 	var gen := sim.u_gen
+	var role := sim.u_role
 	var seen := _seen_gen
+	var seen_b := _seen_banner
 	var lay := layer_of
 	for u in n:
 		if life[u] == FREE:
@@ -175,10 +206,12 @@ func sync_slots() -> void:
 				_release(u)
 			seen[u] = 0
 			continue
-		if seen[u] != gen[u]:
+		var bf := 1 if role[u] == BANNER else 0
+		if seen[u] != gen[u] or seen_b[u] != bf:
 			if lay[u] != -1:
 				_release(u)
 			seen[u] = gen[u]
+			seen_b[u] = bf
 			_map(u)
 
 
@@ -187,6 +220,7 @@ func _grow_units(n: int) -> void:
 	for arr: Variant in [slot_of, layer_of]:
 		arr.resize(n)
 	_seen_gen.resize(n)
+	_seen_banner.resize(n)
 	_fresh.resize(n)
 	for a: Variant in [_u_skel, _u_slot]:
 		a.resize(n)
@@ -197,6 +231,7 @@ func _grow_units(n: int) -> void:
 		slot_of[u] = -1
 		layer_of[u] = -1
 		_seen_gen[u] = 0
+		_seen_banner[u] = 0
 
 
 ## Юнит получает вид, слой и место
@@ -211,7 +246,7 @@ func _map(u: int) -> void:
 	if sim.t_flags[sim.u_type[u]] & UnitStats.WAGON:
 		_add_arba(u)
 		return
-	var key := layer_key(t, sim.u_role[u] == BattleSim.Role.BANNER)
+	var key := layer_key(t, sim.u_role[u] == BANNER)
 	if key == "":
 		return
 	var vid := key.get_slice("|", 0)
@@ -222,15 +257,23 @@ func _map(u: int) -> void:
 	_acquire(u, li)
 
 
-## Ключ слоя «вид|атлас» для типа ядра ("" — не рисуется)
+## Ключ слоя «вид|атлас» для типа ядра ("" — не рисуется); banner — знаменосец отряда
 func layer_key(type_id: String, banner: bool) -> String:
 	var vid := UnitStats.visual_for(type_id, banner)
-	if vid != "":
-		return vid + "|"
-	if STANDIN.has(type_id):
+	var atlas := ""
+	if vid == "" and STANDIN.has(type_id):
 		var s: Array = STANDIN[type_id]
-		return String(s[0]) + "|" + String(s[1])
-	return ""
+		vid = s[0]
+		atlas = s[1]
+	if vid == "":
+		return ""
+	if banner and not vid.ends_with("_banner") and BANNER_STANDIN.has(vid):
+		# знамя в руке — знаменосец своей стороны: родной вид или атлас стороны поверх
+		var bs: Array = BANNER_STANDIN[vid]
+		var side := String(UnitStats.get_stats(type_id).get("faction", bs[1]))
+		vid = bs[0]
+		atlas = "" if side == bs[1] or not ATLAS.has(side) else side
+	return vid + "|" + atlas
 
 
 func _layer_for(key: String) -> int:
@@ -246,6 +289,9 @@ func _layer_for(key: String) -> int:
 	l_units.append(PackedInt32Array())
 	l_count.append(0)
 	_l_fast.append(false)
+	var info := unit_info(key.get_slice("|", 0))
+	var human := String(info.get("skeleton", "human")) == "human"
+	_l_sack.append(float(info.get("height", 2.0)) * SACK_UP if human and not info.has("tools") else 0.0)
 	_setup_layer(li, START_CAP)
 	return li
 
@@ -412,10 +458,13 @@ func _update_units() -> void:
 	var sink := sim.corpse_steps > 0
 	var life_s := sim.corpse_steps * BattleSim.DT
 	var phase4 := frame & 3
+	var sacks := _sack_buf
+	var ns := 0
 	for li in l_node.size():
 		var cnt := l_count[li]
 		if cnt == 0:
 			continue
+		var sack_h := _l_sack[li]
 		var l: Node3D = l_node[li]
 		var units: PackedInt32Array = l_units[li]
 		var fast := _l_fast[li]
@@ -473,6 +522,26 @@ func _update_units() -> void:
 					y -= SINK_DEPTH * clampf(1.0 - left / SINK_S, 0.0, 1.0)
 			elif life == ALIVE and gar[u] >= 0 and gar[u] < st_top.size():
 				y += st_top[gar[u]]
+			if sack_h > 0.0 and life == ALIVE and acts[u] == ACT_WORK and works[u] >= 0.625:
+				# мешок за спиной (вперёд модели — +Z: (sin h, cos h))
+				if sacks.size() < (ns + 1) * 12:
+					sacks.resize(maxi(sacks.size() * 2, 64 * 12))
+				var o2 := ns * 12
+				var c2 := cos(h)
+				var s2 := sin(h)
+				sacks[o2] = c2
+				sacks[o2 + 1] = 0.0
+				sacks[o2 + 2] = s2
+				sacks[o2 + 3] = x - s2 * SACK_BACK
+				sacks[o2 + 4] = 0.0
+				sacks[o2 + 5] = 1.0
+				sacks[o2 + 6] = 0.0
+				sacks[o2 + 7] = y + sack_h
+				sacks[o2 + 8] = -s2
+				sacks[o2 + 9] = 0.0
+				sacks[o2 + 10] = c2
+				sacks[o2 + 11] = z - c2 * SACK_BACK
+				ns += 1
 			if fast:
 				var o := s * 16
 				var cs := cos(h)
@@ -505,6 +574,43 @@ func _update_units() -> void:
 				done[u] = 1
 		if fast and x0 <= x1:
 			l.call("expand_bounds", Vector3(x0, y0, z0), Vector3(x1, y1, z1))
+	_sack_buf = sacks
+	_draw_sacks(ns)
+
+
+## Мешки несущих: буфер MultiMesh на ns экземпляров (ёмкость растёт вдвое)
+func _draw_sacks(ns: int) -> void:
+	sacks_drawn = ns
+	if _sacks == null:
+		if ns == 0:
+			return
+		_sacks = MultiMeshInstance3D.new()
+		_sacks.name = "Sacks"
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = sack_mesh()
+		_sacks.multimesh = mm
+		_sacks.material_override = BuildingLook.kit_material()
+		# мешки разбросаны по всему городу: границы — вся карта
+		_sacks.custom_aabb = AABB(Vector3(-1.0e4, -1.0e3, -1.0e4), Vector3(2.0e4, 2.0e3, 2.0e4))
+		add_child(_sacks)
+	var mm := _sacks.multimesh
+	var cap := _sack_buf.size() / 12
+	if mm.instance_count != cap:
+		mm.instance_count = cap
+	if cap > 0:
+		mm.buffer = _sack_buf
+	mm.visible_instance_count = ns
+
+
+## Мешок: мешковина, перевязанная сверху (набор заместителей построек — тот же материал)
+static func sack_mesh() -> ArrayMesh:
+	var k := BuildingLook.Kit.new()
+	var tint := Color(0.86, 0.74, 0.56)
+	k.cyl(Vector3(0, -0.28, 0), 0.19, 0.22, 0.4, 8, "hay", tint)
+	k.cyl(Vector3(0, 0.12, 0), 0.22, 0.08, 0.14, 8, "hay", Color(0.79, 0.68, 0.52))
+	k.cyl(Vector3(0, 0.25, 0), 0.07, 0.1, 0.08, 6, "rope", Color(0.8, 0.7, 0.55))
+	return k.commit()
 
 
 ## Работа (Act.WORK): рубит/копает/строит — цикл по времени; несёт — шаг по пройденному пути.

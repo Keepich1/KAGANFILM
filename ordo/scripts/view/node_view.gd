@@ -102,6 +102,7 @@ func _rebuild_stumps() -> void:
 	if _stumps == null:
 		_stumps = MultiMeshInstance3D.new()
 		_stumps.name = "Stumps"
+		_stumps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_stumps)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -214,6 +215,7 @@ func _placeholder(gold: bool, st: int, seed: int) -> Node3D:
 	var gr := MeshInstance3D.new()
 	gr.mesh = k.commit()
 	gr.material_override = BuildingLook.kit_material()
+	gr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(gr)
 	return root
 
