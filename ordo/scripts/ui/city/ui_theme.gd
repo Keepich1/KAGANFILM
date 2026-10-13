@@ -258,6 +258,7 @@ static func order_icon(op: int) -> Texture2D:
 		SimCmd.Op.STANCE: name = "stance"
 		SimCmd.Op.BUILD_WALL: name = "build"
 		SimCmd.Op.CANCEL_TRAIN: name = "stop"
+		SimCmd.Op.SET_RECIPE: name = "recipe"
 	return icon("ord", name)
 
 

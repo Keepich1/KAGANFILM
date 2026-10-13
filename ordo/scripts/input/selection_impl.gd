@@ -7,6 +7,9 @@ extends RefCounted
 ##   • двойной щелчок — все свои того же рода, видимые на экране.
 ## Экранные координаты даёт RtsInput (to_screen), чтобы тесты обходились без камеры.
 
+## Запас отсечения рамки, м: голова юнита на холме проецируется дальше своей точки на земле
+const CULL_M := 8.0
+
 var query: GameQuery
 var model: SelectionModel
 var player := 0
@@ -42,16 +45,19 @@ func click(world: Vector2, shift: bool, r := 2.5) -> int:
 	return h
 
 
-## Рамка (экранный прямоугольник): свои юниты внутри, отряды целиком
-func box(rect: Rect2, shift: bool, to_screen: Callable) -> int:
+## Рамка (экранный прямоугольник): свои юниты внутри, отряды целиком. to_world (экран → мир, Vector3) —
+## если задан и все углы рамки попадают в землю, юниты вне мирового прямоугольника под рамкой (+ запас)
+## отсекаются без проекции на экран: рамка по 1000 юнитам стоит доли миллисекунды, а не десятки.
+func box(rect: Rect2, shift: bool, to_screen: Callable, to_world := Callable()) -> int:
 	rect = rect.abs()
 	var bs := query.battle()
 	var found := PackedInt32Array()
 	var seen_sq := {}
-	for h in query.units_of(player):
-		var u := query.unit_index(h)
-		if u < 0:
+	var cull := _ground_rect(rect, to_world)
+	for u in _own_indices(bs):
+		if cull.size.x > 0.0 and bs != null and not cull.has_point(Vector2(bs.u_x[u], bs.u_z[u])):
 			continue
+		var h := query.unit_handle(u)
 		var p := _screen_of(bs, u, to_screen)
 		if not rect.has_point(p):
 			continue
@@ -77,10 +83,9 @@ func same_type(h: int, view: Rect2, to_screen: Callable) -> int:
 		return 0
 	var t := bs.u_type[u0]
 	var found := PackedInt32Array()
-	for x in query.units_of(player):
-		var u := query.unit_index(x)
-		if u >= 0 and bs.u_type[u] == t and view.has_point(_screen_of(bs, u, to_screen)):
-			found.append(x)
+	for u in _own_indices(bs):
+		if bs.u_type[u] == t and view.has_point(_screen_of(bs, u, to_screen)):
+			found.append(query.unit_handle(u))
 	model.set_selection(found)
 	return found.size()
 
@@ -104,6 +109,38 @@ func expand(h: int) -> PackedInt32Array:
 	if out.is_empty():
 		out.append(h)
 	return out
+
+
+## Индексы ядра живых своих юнитов: прямо по массивам BattleSim (u_owner, u_life) — без описателя на
+## каждого; без ядра — через GameQuery.units_of
+func _own_indices(bs: BattleSim) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if bs == null:
+		for h in query.units_of(player):
+			var u := query.unit_index(h)
+			if u >= 0:
+				out.append(u)
+		return out
+	var owner := bs.u_owner
+	var life := bs.u_life
+	for u in bs.n:
+		if owner[u] == player and life[u] == BattleSim.Life.ALIVE:
+			out.append(u)
+	return out
+
+
+## Мировой прямоугольник (x, z) под экранной рамкой с запасом CULL_M; пусто — угол мимо земли
+func _ground_rect(rect: Rect2, to_world: Callable) -> Rect2:
+	if not to_world.is_valid():
+		return Rect2()
+	var out := Rect2()
+	for i in 4:
+		var c := rect.position + rect.size * Vector2(i % 2, i / 2)
+		var w: Vector3 = to_world.call(c)
+		if w.x == INF:
+			return Rect2()
+		out = Rect2(w.x, w.z, 0, 0) if i == 0 else out.expand(Vector2(w.x, w.z))
+	return out.grow(CULL_M)
 
 
 func _screen_of(bs: BattleSim, u: int, to_screen: Callable) -> Vector2:

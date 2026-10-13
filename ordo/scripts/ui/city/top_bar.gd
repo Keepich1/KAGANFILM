@@ -131,7 +131,8 @@ func setup(p_hud: CityHud) -> void:
 	_pause = _sys_button("pause", tr("Пауза (P)"))
 	_pause.pressed.connect(func() -> void: hud.toggle_pause())
 	right.add_child(_pause)
-	var menu := _sys_button("menu", tr("Меню"))
+	var menu := _sys_button("menu", tr("Меню (F10)"))
+	menu.pressed.connect(func() -> void: hud.open_menu())
 	right.add_child(menu)
 
 

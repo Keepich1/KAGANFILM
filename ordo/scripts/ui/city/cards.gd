@@ -3,6 +3,7 @@ extends Control
 ## Карточки выделенных (ТЗ §12): отряд — эмблема рода войск в кругу цвета стороны, имя, «×30»,
 ## полоски здоровья, морали и выносливости, знамя; одиночки — по роду с числом. Один юнит —
 ## большая карточка с числами из UnitStats. Пусто — герб стороны и подсказка управления.
+## Щелчок по карточке — оставить в выделении только её отряд (Shift — убрать, двойной — камера).
 ## Строение карточек меняется только при смене выделения; полоски — каждое обновление.
 
 const CARD := Vector2(128, 178)
@@ -134,7 +135,14 @@ func _card(c: Dictionary, at: Vector2) -> void:
 	bg.position = at
 	bg.size = CARD
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	bg.tooltip_text = "%s\n%s" % [c.get("name", ""), tr("Отряд со знаменем") if c.get("banner", false) else tr("Одиночки")]
+	bg.tooltip_text = "%s\n%s\n%s" % [c.get("name", ""), tr("Отряд со знаменем") if c.get("banner", false) else tr("Одиночки"),
+		tr("Щелчок — только они, Shift — убрать, дважды — камера")]
+	bg.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var card := c
+	bg.gui_input.connect(func(e: InputEvent) -> void:
+		var mb := e as InputEventMouseButton
+		if mb and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			hud.select_card(card, mb.shift_pressed, mb.double_click))
 	add_child(bg)
 	var team := hud.selection_team()
 	var roundel := CityRoundel.new()

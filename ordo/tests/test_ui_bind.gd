@@ -15,7 +15,50 @@ func _init() -> void:
 		city.step()
 	for p in 2:
 		_test_side(p)
+	_test_big_city()
 	SimHarness.finish(self)
+
+
+## Город на 1000+ своих юнитов (ARCHITECTURE §16): рамка, двойной щелчок, сводка выделения и сетка — дёшево
+func _test_big_city() -> void:
+	print("[город на 1000+ юнитов]")
+	for i in 32:
+		city.sim.add_squad(0, "sarboz", 30, Vector2(-300.0 + (i % 8) * 70.0, -300.0 + (i / 8) * 60.0), 0.0,
+			BattleSim.Formation.LINE, 15, "", true, 0.3)
+	var made := _make_hud(0)
+	var hud: CityHud = made[0]
+	var sel: SelectionModel = made[1]
+	var inp: RtsInput = made[2]
+	var n := city.units_of(0).size()
+	var si := SelectionImpl.new(city, sel, 0)
+	# экран ↔ мир как в _make_hud: 10 пикселей на метр
+	var to_s := func(w: Vector3) -> Vector2: return Vector2(w.x, w.z) * 10.0
+	var to_w := func(sp: Vector2) -> Vector3: return Vector3(sp.x * 0.1, 0.0, sp.y * 0.1)
+	var small := Rect2(Vector2(-300, -300) * 10.0, Vector2(80, 60) * 10.0)
+	var t0 := Time.get_ticks_usec()
+	var got := 0
+	for i in 10:
+		got = si.box(small, false, to_s, to_w)
+	var box_cull := (Time.get_ticks_usec() - t0) / 10000.0
+	t0 = Time.get_ticks_usec()
+	for i in 10:
+		si.box(small, false, to_s)
+	var box_full := (Time.get_ticks_usec() - t0) / 10000.0
+	var same := sel.selected.size() == got and got >= 30
+	t0 = Time.get_ticks_usec()
+	si.box(Rect2(-1e5, -1e5, 2e5, 2e5), false, to_s, to_w)
+	var all_ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var all_n := sel.selected.size()
+	t0 = Time.get_ticks_usec()
+	for i in 10:
+		hud.refresh_now()
+	var ui_ms := (Time.get_ticks_usec() - t0) / 10000.0
+	print("  замер: %d своих юнитов; рамка с отсечением %.2f мс (без него %.2f мс), рамка на всех %.1f мс (%d), панели с выделением всех %.2f мс" % [
+		n, box_cull, box_full, all_ms, all_n, ui_ms])
+	SimHarness.check(n >= 1000 and same and box_cull < box_full, "рамка с отсечением выделяет то же (%d) и быстрее" % got)
+	SimHarness.check(box_cull < 4.0 and ui_ms < 8.0, "рамка %.2f мс, панели %.2f мс при %d юнитах" % [box_cull, ui_ms, n])
+	hud.queue_free()
+	inp.queue_free()
 
 
 func _make_hud(p: int) -> Array:
@@ -155,11 +198,11 @@ func _test_side(p: int) -> void:
 	(made[2] as Node).queue_free()
 
 
-## Надписи с латиницей (кроме клавиш: одна буква, Del, Shift+K, F1…)
+## Надписи с латиницей (кроме клавиш: одна буква, WASD, Del, Shift+K, F1…)
 func _latin_texts(n: Node) -> PackedStringArray:
 	var out := PackedStringArray()
 	var re := RegEx.create_from_string("[A-Za-z]{2,}")
-	var keys := ["Del", "Shift", "Ctrl", "Esc", "Tab"]
+	var keys := ["WASD", "Del", "Shift", "Ctrl", "Esc", "Tab"]
 	for c in n.get_children():
 		var txt := ""
 		if c is Label:

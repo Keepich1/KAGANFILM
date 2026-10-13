@@ -14,11 +14,22 @@ extends CanvasLayer
 ##   hud.setup(driver.query, driver, selection, driver.local_player, camera, input)
 ##   camera.presets_enabled = false                             # цифры — группы; виды — F5–F8
 ##   camera.edge_blocked = hud.blocks_edge_pan
+##   input.overlay_toggled.connect(overlay_view.set_enabled)    # Tab — наложения (VIEW)
+##   hud.restart_requested.connect(...); hud.quit_requested.connect(...)   # меню (иначе перезагрузка / выход)
+## Меню (≡, F10, Esc при пустом выделении) ставит SimDriver на паузу и выключает ввод, пока открыто.
 
 signal tab_opened(tab: StringName)
+## Меню: «Начать заново» / «Выйти» (никто не слушает — перезагрузка сцены / выход из игры)
+signal restart_requested
+signal quit_requested
 
 const UI_HZ := 0.15
 const MAP_HZ := 0.25
+## Тяжёлое (чистка выделения от мёртвых, сетка приказов) — при смене выделения/вкладки и раз в HEAVY_S
+const HEAVY_S := 1.0
+## Большое выделение (больше BIG_SEL описателей) — сводку карточек спрашиваем реже, раз в BIG_INFO_S
+const BIG_SEL := 200
+const BIG_INFO_S := 0.5
 
 var query: GameQuery
 var driver: SimDriver
@@ -32,6 +43,7 @@ var root: Control
 var top: CityTopBar
 var bottom: CityBottomPanel
 var notes: CityNotes
+var menu: CityMenu
 var info := {}
 
 var _box: Control
@@ -39,7 +51,14 @@ var _box_rect := Rect2()
 var _line := PackedVector2Array()
 var _t_ui := 0.0
 var _t_map := 0.0
+var _t_heavy := 0.0
+var _t_info := 0.0
 var _ready_done := false
+var _in_refresh := false
+## Выделение сменилось с прошлого обновления (сигнал SelectionModel.changed)
+var _sel_dirty := true
+## Всё выделенное — своё (пересчёт при смене выделения)
+var _own := false
 
 
 func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camera3D = null, inp: RtsInput = null) -> void:
@@ -77,10 +96,14 @@ func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camer
 	top = CityTopBar.new()
 	root.add_child(top)
 	top.setup(self)
+	menu = CityMenu.new()
+	root.add_child(menu)
+	menu.setup(self)
 	if selection:
-		selection.changed.connect(func(_h: PackedInt32Array) -> void: refresh_now())
+		selection.changed.connect(_on_selection_changed)
 	if input:
 		input.hud = self
+		input.armed_changed.connect(func(_op: int) -> void: refresh_now())
 	CityCursor.apply(CityCursor.Kind.DEFAULT)
 	_ready_done = true
 	refresh_now()
@@ -94,6 +117,8 @@ func _process(delta: float) -> void:
 	notes.tick(delta)
 	_t_ui += delta
 	_t_map += delta
+	_t_heavy += delta
+	_t_info += delta
 	if _t_ui >= UI_HZ:
 		_t_ui = 0.0
 		refresh_now()
@@ -102,20 +127,37 @@ func _process(delta: float) -> void:
 		bottom.minimap.refresh()
 
 
-## Обновить панели сейчас (смена выделения, вкладки)
-func refresh_now() -> void:
-	if not _ready_done:
+func _on_selection_changed(_h: PackedInt32Array) -> void:
+	_sel_dirty = true
+	if not _in_refresh:
+		refresh_now()
+
+
+## Обновить панели сейчас (по часам 6–7 Гц, смена выделения, вкладки, взведённый приказ). heavy — пересчитать
+## и тяжёлое: при 1000 выделенных чистка от мёртвых и сетка приказов стоят миллисекунды, поэтому — по смене
+## выделения и раз в секунду; свежее выделение не чистим (его только что собрали из живых).
+func refresh_now(heavy := false) -> void:
+	if not _ready_done or _in_refresh:
 		return
-	var sel := PackedInt32Array()
-	if selection:
-		selection.prune(query)
-		sel = selection.selected
-	info = query.selection_info(sel)
-	bottom.refresh(info, sel)
+	_in_refresh = true
+	heavy = heavy or _sel_dirty or _t_heavy >= HEAVY_S
+	if heavy:
+		_t_heavy = 0.0
+		if selection and not _sel_dirty:
+			selection.prune(query)            # кто-то погиб — сигнал поднимет _sel_dirty
+	var sel := selection.selected if selection else PackedInt32Array()
+	if _sel_dirty:
+		_own = not sel.is_empty() and RtsInput.owns_all(query, player, sel)
+	if _sel_dirty or sel.size() <= BIG_SEL or _t_info >= BIG_INFO_S:
+		_t_info = 0.0
+		info = query.selection_info(sel)
+	_sel_dirty = false
+	bottom.refresh(info, sel, heavy)
 	top.refresh()
-	# на вкладке стройки буквы — постройки: WASD камеры молчат
+	# на вкладке стройки буквы — постройки: WASD и Q/E камеры молчат
 	if camera and camera.get("pan_keys") != null:
 		camera.set("pan_keys", bottom.tabs.current == &"orders")
+	_in_refresh = false
 
 
 # ================================================================= для частей интерфейса
@@ -138,11 +180,9 @@ func team_of_building(h: int) -> int:
 	return bt.team[bt.slot(h)] if bt.valid(h) else my_team()
 
 
-## Всё выделенное — своё (приказы только своим)
+## Всё выделенное — своё (приказы только своим; пересчёт при смене выделения)
 func selection_is_own() -> bool:
-	if selection == null or selection.selected.is_empty():
-		return false
-	return RtsInput.owns_all(query, player, selection.selected)
+	return _own and selection != null and not selection.selected.is_empty()
 
 
 func look_at_world(p: Vector2) -> void:
@@ -200,10 +240,57 @@ func toggle_pause() -> void:
 		refresh_now()
 
 
+func open_menu() -> void:
+	menu.open()
+
+
+func request_restart() -> void:
+	if restart_requested.get_connections().is_empty():
+		if is_inside_tree():
+			get_tree().reload_current_scene()
+	else:
+		restart_requested.emit()
+
+
+func request_quit() -> void:
+	if quit_requested.get_connections().is_empty():
+		if is_inside_tree():
+			get_tree().quit()
+	else:
+		quit_requested.emit()
+
+
+## Щелчок по карточке: оставить в выделении только этот отряд (одиночек этого рода); Shift — убрать их;
+## двойной щелчок — ещё и камера к ним
+func select_card(card: Dictionary, shift := false, double := false) -> void:
+	if selection == null:
+		return
+	var bs := query.battle()
+	var sq := int(card.get("squad", 0))
+	var type_id := String(card.get("type", ""))
+	var keep := PackedInt32Array()
+	for h in selection.selected:
+		var u := query.unit_index(h)
+		var mine := false
+		if u >= 0 and bs:
+			var s := bs.u_squad[u]
+			if sq != 0:
+				mine = Ids.make(Ids.Kind.SQUAD, s, bs.sq_gen[s]) == sq
+			else:
+				mine = (bs.sq_single[s] == 1 or bs.sq_members[s].size() == 1) and bs.type_ids[bs.u_type[u]] == type_id
+		if mine != shift:
+			keep.append(h)
+	if keep.is_empty():
+		return
+	selection.set_selection(keep)
+	if double and input:
+		input.center_on(keep)
+
+
 func open_tab(tab: StringName) -> void:
 	bottom.tabs.select(tab)
 	tab_opened.emit(tab)
-	refresh_now()
+	refresh_now(true)
 
 
 func current_tab() -> StringName:
@@ -227,6 +314,8 @@ func on_event(kind: int, _a: int, _b: int, _c: int, pos := Vector2.INF) -> void:
 func blocks(pos: Vector2) -> bool:
 	if not _ready_done:
 		return false
+	if menu.visible:
+		return true
 	var c := root.get_viewport().gui_get_hovered_control() if root.is_inside_tree() else null
 	if c != null and c != root and c != _box and c != notes and c != top and c != bottom:
 		return true

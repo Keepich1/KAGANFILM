@@ -25,7 +25,7 @@ signal moved_by_player
 @export var interactive := true
 ## Виды 1–4 с клавиш (срез — да; в «Городе» цифры — группы, виды — F5–F8 через RtsInput)
 @export var presets_enabled := true
-## Сдвиг клавишами WASD (интерфейс «Города» гасит его, пока открыта вкладка стройки с буквами)
+## Сдвиг WASD и поворот Q/E с клавиш (интерфейс «Города» гасит их, пока открыта вкладка стройки с буквами)
 var pan_keys := true
 ## Экран над интерфейсом: Callable(pos: Vector2) -> bool; true — край экрана здесь не двигает камеру
 var edge_blocked: Callable
@@ -133,8 +133,9 @@ func _read_controls(delta: float) -> void:
 		_t_focus += Vector3(r.x, 0.0, r.y) * pan_speed * maxf(distance, 30.0) * delta
 		moved_by_player.emit()
 	var rot := 0.0
-	if Input.is_physical_key_pressed(KEY_Q): rot += 1.0
-	if Input.is_physical_key_pressed(KEY_E): rot -= 1.0
+	if pan_keys:
+		if Input.is_physical_key_pressed(KEY_Q): rot += 1.0
+		if Input.is_physical_key_pressed(KEY_E): rot -= 1.0
 	if rot != 0.0:
 		_t_yaw += rot * rotate_speed * delta
 		moved_by_player.emit()

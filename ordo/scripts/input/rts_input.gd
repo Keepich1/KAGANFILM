@@ -4,23 +4,37 @@ extends Node
 ##   ЛКМ / рамка / двойной щелчок — выбрать / свои в рамке / всех такого рода на экране;
 ##   ПКМ — по смыслу (GameQuery.pick): враг → ATTACK; узел, своё поле, своё стадо + работники → GATHER;
 ##     своя стройка или повреждённое здание + работники → ASSIST; своя башня/ворота + пехота → GARRISON;
+##     всадники по чужому табуну, загону, полю, складу → набег (ECONOMY §4.1; Ctrl+ПКМ — простая атака);
 ##     земля → MOVE (Shift — в очередь); выбрано своё здание с наймом → RALLY;
 ##   протянуть ПКМ — MOVE_LINE; двойной ПКМ — бегом/галопом;
-##   H стоп, F строй по кругу, G качып, R стрельба/рукопашная, V клич, U собрать/распустить отряд,
-##   K свернуть / Shift+K свернуть лагерь / K с арбами — развернуть у курсора, «.» свободный работник,
-##   Ctrl+1…9 / 1…9 / Shift+1…9 группы (двойное — камера), P пауза, + / − скорость, M звук,
-##   B — вкладка «Хозяйство», буквы на открытой вкладке — постройки, Del — снести, Esc — отмена,
-##   F5–F8 — виды камеры (1–4 в городе — группы).
+##   H стоп, F строй по кругу, G качып, R стрельба/рукопашная, V клич (у Урды — Ҳашар), U собрать/распустить
+##   отряд, K свернуть / Shift+K свернуть лагерь / K с арбами — развернуть у курсора, «.» свободный работник,
+##   N тревога (Ноғора / Чакырык), Tab — наложения на карту, Ctrl+1…9 / 1…9 / Shift+1…9 группы (двойное —
+##   камера), P пауза, + / − скорость, M звук, B — вкладка «Хозяйство», буквы на открытой вкладке — постройки,
+##   Del — снести, Esc — отмена (пустое выделение — меню), F10 — меню, F5–F8 — виды камеры (1–4 — группы).
+## Кнопки сетки с целью (идти, в атаку, добывать, помочь, место сбора, в гарнизон) «взводят» приказ: следующий
+## ЛКМ по миру или миникарте отдаёт его (Shift — ещё), ПКМ или Esc — снимает.
 ## Постройка — PlacementMode (призрак, поворот колесом или R, стены ЛКМ-ЛКМ-…-ПКМ).
+## Приказы, которых ещё нет в SimCmd (тревога, Ҳашар, набег), ищутся по имени строителя (future_cmd):
+## появятся в договоре — заработают без правки здесь.
 ##
 ## Узел ставится в сцене ПОСЛЕ RtsCamera (свой _unhandled_input получает раньше камеры: колесо в режиме
 ## постройки поворачивает, а не приближает). Тесты подают события в handle() и задают to_world / to_screen.
 
 signal issued(cmd: PackedInt32Array)
+## Взведён / снят приказ с кнопки (NONE — снят)
+signal armed_changed(op: int)
+## Tab: наложения на карту (вода и сухие поля, трава) — включает OverlayView (VIEW)
+signal overlay_toggled(on: bool)
 
 const DRAG_PX := 8.0
 const LINE_PX := 16.0
 const DOUBLE_S := 0.35
+## Приказы, которые взводит кнопка сетки (ждут точки на карте)
+const ARMABLE := [SimCmd.Op.MOVE, SimCmd.Op.ATTACK_MOVE, SimCmd.Op.GATHER, SimCmd.Op.ASSIST, SimCmd.Op.RALLY,
+	SimCmd.Op.GARRISON]
+## Имена умений построек (Defs.b_ability хранит только id)
+const ABILITY_NAMES := {"hashar": "Ҳашар"}
 
 var query: GameQuery
 var selection: SelectionModel
@@ -39,6 +53,10 @@ var view_rect: Callable
 ## Часы для двойных нажатий: ≥ 0 — подставные (тесты), иначе время движка
 var now_s := -1.0
 var enabled := true
+## Взведённый приказ с кнопки сетки (SimCmd.Op; NONE — нет)
+var armed := SimCmd.Op.NONE
+## Наложения на карту включены (Tab)
+var overlay := false
 
 var sel: SelectionImpl
 var groups: ControlGroups
@@ -131,6 +149,11 @@ func _mouse_button(mb: InputEventMouseButton) -> bool:
 						elif not placement.is_wall and hud:
 							hud.notes.push(tr("Здесь не встанет"), CityNotes.Seal.RED)
 					return true
+				if armed != SimCmd.Op.NONE:
+					var aw := _world(mb.position)
+					if aw != Vector2.INF:
+						fire_armed(aw, mb.shift_pressed)
+					return true
 				_lmb = true
 				_lmb_from = mb.position
 				_boxing = false
@@ -142,7 +165,7 @@ func _mouse_button(mb: InputEventMouseButton) -> bool:
 				_boxing = false
 				if hud:
 					hud.hide_box()
-				sel.box(Rect2(_lmb_from, mb.position - _lmb_from), mb.shift_pressed, to_screen)
+				sel.box(Rect2(_lmb_from, mb.position - _lmb_from), mb.shift_pressed, to_screen, to_world)
 				return true
 			var w := _world(mb.position)
 			var t := _now()
@@ -168,6 +191,9 @@ func _mouse_button(mb: InputEventMouseButton) -> bool:
 					else:
 						placement.cancel()
 					return true
+				if armed != SimCmd.Op.NONE:
+					disarm()
+					return true
 				_rmb = true
 				_rmb_from = mb.position
 				_lining = false
@@ -191,7 +217,7 @@ func _mouse_button(mb: InputEventMouseButton) -> bool:
 			_rmb_pos = mb.position
 			var w := _world(mb.position)
 			if w != Vector2.INF:
-				order_at(w, mb.shift_pressed, run)
+				order_at(w, mb.shift_pressed, run, mb.ctrl_pressed)
 			return true
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 			if placement.active() and mb.pressed:
@@ -232,6 +258,13 @@ func _key(k: InputEventKey) -> bool:
 			else:
 				placement.cancel()
 			return true
+	if armed != SimCmd.Op.NONE and code == KEY_ESCAPE:
+		disarm()
+		return true
+	if code == KEY_F10:
+		if hud:
+			hud.open_menu()
+		return true
 	# открытая вкладка стройки: буквы — постройки
 	if hud and hud.current_tab() != &"orders" and not k.ctrl_pressed:
 		var key := OS.get_keycode_string(code)
@@ -245,8 +278,10 @@ func _key(k: InputEventKey) -> bool:
 	if code == KEY_ESCAPE:
 		if hud and hud.current_tab() != &"orders":
 			hud.open_tab(&"orders")
-		else:
+		elif not selection.selected.is_empty():
 			selection.set_selection(PackedInt32Array())
+		elif hud:
+			hud.open_menu()
 		return true
 	if code >= KEY_F5 and code <= KEY_F8 and camera and camera.get("presets") != null:
 		var presets: Array = camera.get("presets")
@@ -261,7 +296,7 @@ func _key(k: InputEventKey) -> bool:
 			elif k.shift_pressed:
 				groups.add(i)
 			elif groups.recall(i, _now()):
-				_center_on(selection.selected)
+				center_on(selection.selected)
 			return true
 	if _is(k, "ordo_stop", KEY_H):
 		var u := _own_units()
@@ -286,9 +321,20 @@ func _key(k: InputEventKey) -> bool:
 			issue_cmd(SimCmd.fire_mode(compact(u), SimCmd.FIRE_MELEE if _melee else SimCmd.FIRE_AUTO))
 		return true
 	if _is(k, "ordo_war_cry", KEY_V):
+		var ab := _ability_building()
+		if ab != 0:
+			use_ability(ab)
+			return true
 		var g := _general()
 		if g != 0:
 			issue_cmd(SimCmd.war_cry(g))
+		return true
+	if _is(k, "ordo_alarm", KEY_N):
+		alarm()
+		return true
+	if _is(k, "ordo_overlay", KEY_TAB):
+		overlay = not overlay
+		overlay_toggled.emit(overlay)
 		return true
 	if _is(k, "ordo_squad", KEY_U):
 		_squad_key()
@@ -343,8 +389,8 @@ func issue_cmd(cmd: PackedInt32Array) -> void:
 	issued.emit(cmd)
 
 
-## ПКМ в точке мира (и с миникарты): приказ по смыслу цели под точкой
-func order_at(world: Vector2, shift := false, run := false) -> void:
+## ПКМ в точке мира (и с миникарты): приказ по смыслу цели под точкой; plain (Ctrl) — без набега, простая атака
+func order_at(world: Vector2, shift := false, run := false, plain := false) -> void:
 	var own := _own_selection()
 	if own.is_empty():
 		return
@@ -359,43 +405,186 @@ func order_at(world: Vector2, shift := false, run := false) -> void:
 	var units := _units_of(own)
 	if units.is_empty():
 		return
-	var my_team := query.players().team[player]
 	var workers := _filter(units, UnitStats.WORKER, true)
 	var rest := _without(units, workers)
 	if target != 0:
-		var tk := Ids.kind(target)
-		var tteam := team_of(query, target)
-		if (tk == Ids.Kind.UNIT or tk == Ids.Kind.BUILDING) and tteam >= 0 and tteam != my_team:
+		# всадники по чужому табуну, загону, полю, складу — набег (барымта, вытоптать, талоо; ECONOMY §4.1)
+		if not plain and is_raid_target(target):
+			var riders := _filter(rest, UnitStats.MOUNTED, true)
+			var raid := future_cmd("raid", [compact(riders), target]) if not riders.is_empty() else PackedInt32Array()
+			if not raid.is_empty():
+				issue_cmd(raid)
+				var others := _without(units, riders)
+				if not others.is_empty():
+					issue_cmd(SimCmd.move(compact(others), world, run, NAN, shift))
+				return
+		if is_enemy(target):
 			issue_cmd(SimCmd.attack(compact(units), target, true))
 			return
-		var towner := owner_of(query, target)
 		if not workers.is_empty():
 			var job := PackedInt32Array()
-			if tk == Ids.Kind.NODE or (tk == Ids.Kind.HERD and towner == player):
+			if needs_hands(target):
+				job = SimCmd.assist(workers, target)
+			elif gatherable(target):
 				job = SimCmd.gather(workers, target)
-			elif tk == Ids.Kind.BUILDING and towner == player:
-				var bt := query.buildings()
-				var b := bt.slot(target)
-				var kind := query.defs().b_kind[bt.btype[b]]
-				if bt.state[b] == BuildingTable.State.SITE or bt.hp_c[b] < bt.hp_max_c[b]:
-					job = SimCmd.assist(workers, target)
-				elif kind == Defs.BKind.FIELD:
-					job = SimCmd.gather(workers, target)
 			if not job.is_empty():
 				issue_cmd(job)
 				if not rest.is_empty():
 					issue_cmd(SimCmd.move(compact(rest), world, run, NAN, shift))
 				return
-		if tk == Ids.Kind.BUILDING and towner == player:
-			var bt := query.buildings()
-			var b := bt.slot(target)
-			var defs := query.defs()
-			var kind := defs.b_kind[bt.btype[b]]
-			var foot := _filter(rest, UnitStats.MOUNTED | UnitStats.CANNON | UnitStats.WAGON, false)
-			if (kind == Defs.BKind.TOWER or kind == Defs.BKind.GATE) and defs.b_gar_cap[bt.btype[b]] > 0 and not foot.is_empty():
-				issue_cmd(SimCmd.garrison(foot, target))
-				return
+		var foot := _foot(rest)
+		if can_garrison(target) and not foot.is_empty():
+			issue_cmd(SimCmd.garrison(foot, target))
+			return
 	issue_cmd(SimCmd.move(compact(units), world, run, NAN, shift))
+
+
+## Взвести приказ кнопки (ждёт ЛКМ по карте); постройка снимается
+func arm(op: int) -> void:
+	if placement.active():
+		placement.cancel()
+	armed = op
+	armed_changed.emit(op)
+
+
+func disarm() -> void:
+	if armed == SimCmd.Op.NONE:
+		return
+	armed = SimCmd.Op.NONE
+	armed_changed.emit(armed)
+
+
+## ЛКМ по миру (или миникарте) со взведённым приказом; true — приказ отдан. Цель не подходит — приказ
+## остаётся взведённым и записка объясняет; Shift — взведён и после приказа.
+func fire_armed(world: Vector2, shift := false) -> bool:
+	if armed == SimCmd.Op.NONE:
+		return false
+	var own := _own_selection()
+	var units := _units_of(own)
+	var target := query.pick(player, world, _pick_r())
+	var cmd := PackedInt32Array()
+	var miss := ""
+	match armed:
+		SimCmd.Op.MOVE:
+			if not units.is_empty():
+				cmd = SimCmd.move(compact(units), world, false, NAN, shift)
+		SimCmd.Op.ATTACK_MOVE:
+			if not units.is_empty():
+				cmd = SimCmd.attack(compact(units), target, true) if is_enemy(target) else SimCmd.attack_move(compact(units), world)
+		SimCmd.Op.GATHER:
+			var wk := _filter(units, UnitStats.WORKER, true)
+			if not wk.is_empty() and gatherable(target):
+				cmd = SimCmd.gather(wk, target)
+			else:
+				miss = tr("Здесь нечего добывать")
+		SimCmd.Op.ASSIST:
+			var wk := _filter(units, UnitStats.WORKER, true)
+			if not wk.is_empty() and needs_hands(target):
+				cmd = SimCmd.assist(wk, target)
+			else:
+				miss = tr("Здесь нечего строить и чинить")
+		SimCmd.Op.RALLY:
+			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
+				cmd = SimCmd.rally(own[0], world, target if target != 0 and Ids.kind(target) != Ids.Kind.UNIT else 0)
+		SimCmd.Op.GARRISON:
+			var foot := _foot(units)
+			if not foot.is_empty() and can_garrison(target):
+				cmd = SimCmd.garrison(foot, target)
+			else:
+				miss = tr("Сюда не войти")
+	if cmd.is_empty():
+		if miss != "" and hud:
+			hud.notes.push(miss, CityNotes.Seal.GOLD)
+		return false
+	issue_cmd(cmd)
+	if not shift:
+		disarm()
+	return true
+
+
+# ================================================================= цели под курсором
+
+## Чужой юнит или здание (враждебная команда)
+func is_enemy(h: int) -> bool:
+	var k := Ids.kind(h)
+	if h == 0 or (k != Ids.Kind.UNIT and k != Ids.Kind.BUILDING):
+		return false
+	var t := team_of(query, h)
+	return t >= 0 and t != query.players().team[player]
+
+
+## Работникам есть что добывать: узел, своё стадо, своё готовое поле
+func gatherable(h: int) -> bool:
+	match Ids.kind(h):
+		Ids.Kind.NODE:
+			return query.nodes() == null or query.nodes().valid(h)
+		Ids.Kind.HERD:
+			return owner_of(query, h) == player
+		Ids.Kind.BUILDING:
+			var bt := query.buildings()
+			if not bt.valid(h) or bt.owner[bt.slot(h)] != player:
+				return false
+			return query.defs().b_kind[bt.btype[bt.slot(h)]] == Defs.BKind.FIELD
+	return false
+
+
+## Своя стройка или повреждённое своё здание (руки работников: ASSIST)
+func needs_hands(h: int) -> bool:
+	if Ids.kind(h) != Ids.Kind.BUILDING:
+		return false
+	var bt := query.buildings()
+	if not bt.valid(h) or bt.owner[bt.slot(h)] != player:
+		return false
+	var b := bt.slot(h)
+	return bt.state[b] == BuildingTable.State.SITE or (bt.state[b] != BuildingTable.State.PACKED and bt.hp_c[b] < bt.hp_max_c[b])
+
+
+## Своя башня или ворота с местами для гарнизона (этап 2)
+func can_garrison(h: int) -> bool:
+	if Ids.kind(h) != Ids.Kind.BUILDING:
+		return false
+	var bt := query.buildings()
+	if not bt.valid(h) or bt.owner[bt.slot(h)] != player:
+		return false
+	var defs := query.defs()
+	var t := bt.btype[bt.slot(h)]
+	return (defs.b_kind[t] == Defs.BKind.TOWER or defs.b_kind[t] == Defs.BKind.GATE) and defs.b_gar_cap[t] > 0
+
+
+## Цель набега всадников (ECONOMY §4.1): чужое стадо; чужой загон, двор с конями, поле, склад, базар
+func is_raid_target(h: int) -> bool:
+	match Ids.kind(h):
+		Ids.Kind.HERD:
+			var o := owner_of(query, h)
+			return o >= 0 and query.players().team[o] != query.players().team[player]
+		Ids.Kind.BUILDING:
+			if not is_enemy(h):
+				return false
+			var bt := query.buildings()
+			var defs := query.defs()
+			var t := bt.btype[bt.slot(h)]
+			return defs.b_flags[t] & (Defs.BF_PEN | Defs.BF_DROP | Defs.BF_MARKET) != 0 or defs.b_kind[t] == Defs.BKind.FIELD \
+				or not defs.b_otlar[t].is_empty()
+	return false
+
+
+## Приказ, которого может ещё не быть в SimCmd (raid, alarm, ability): строитель SimCmd.<name>(args…),
+## если ведущий его добавил; иначе пустой массив
+static func future_cmd(builder: String, args: Array) -> PackedInt32Array:
+	if not has_builder(builder):
+		return PackedInt32Array()
+	return (SimCmd as GDScript).callv(builder, args)
+
+
+static var _builders := {}
+
+
+## Есть ли в SimCmd строитель с таким именем (кэш)
+static func has_builder(builder: String) -> bool:
+	if _builders.is_empty():
+		for m in (SimCmd as GDScript).get_script_method_list():
+			_builders[String(m["name"])] = true
+	return _builders.has(builder)
 
 
 ## Кнопка сетки приказов
@@ -414,7 +603,7 @@ func order_button(op: int) -> void:
 				issue_cmd(SimCmd.formation(compact(units), _next_formation(units)))
 		SimCmd.Op.STANCE:
 			if not units.is_empty():
-				issue_cmd(SimCmd.stance(compact(units), BattleSim.Stance.HOLD))
+				issue_cmd(SimCmd.stance(compact(units), _next_stance(units)))
 		SimCmd.Op.KACHYP:
 			if not units.is_empty():
 				_kachyp = not _kachyp
@@ -447,11 +636,18 @@ func order_button(op: int) -> void:
 		SimCmd.Op.UNGARRISON:
 			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
 				issue_cmd(SimCmd.ungarrison(own[0]))
+		SimCmd.Op.SET_RECIPE:
+			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
+				var rc := _next_recipe(own[0])
+				if rc >= 0:
+					issue_cmd(SimCmd.set_recipe(own[0], rc))
 		_:
-			pass        # ПКМ-приказы (идти, атаковать, добывать, место сбора) — мышью по карте
+			if op in ARMABLE and not own.is_empty():
+				arm(op)        # ждёт ЛКМ по карте
 
 
 func begin_place(btype: int) -> void:
+	disarm()
 	placement.begin(btype)
 	var w := _world(_mouse)
 	if w != Vector2.INF:
@@ -466,7 +662,7 @@ func next_idle_worker() -> int:
 	_idle_i = (_idle_i + 1) % idle.size()
 	var h := idle[_idle_i]
 	selection.set_selection(PackedInt32Array([h]))
-	_center_on(selection.selected)
+	center_on(selection.selected)
 	return h
 
 
@@ -519,6 +715,78 @@ func _pack_key(all: bool) -> void:
 	for h in own:
 		if Ids.kind(h) == Ids.Kind.BUILDING and bt.valid(h) and defs.b_flags[bt.btype[bt.slot(h)]] & Defs.BF_PACKABLE:
 			issue_cmd(SimCmd.pack(h))
+
+
+## N: тревога стороны (Ноғора / Чакырык, ECONOMY §1.7) — у своей ставки; повторное N — отбой
+func alarm() -> void:
+	var hq := query.players().hq_b[player]
+	var cmd := future_cmd("alarm", [hq]) if hq != 0 else PackedInt32Array()
+	if not cmd.is_empty():
+		issue_cmd(cmd)
+	elif hud:
+		var name := query.defs().f_alarm[query.players().faction[player]]
+		hud.notes.push(tr("«%s» — ещё не готово") % (name if name != "" else tr("Тревога")), CityNotes.Seal.GOLD)
+
+
+## Кнопка постройки (Ҳашар у Урды; V при выбранной Урде)
+func use_ability(b_h: int) -> void:
+	var cmd := future_cmd("ability", [b_h])
+	if not cmd.is_empty():
+		issue_cmd(cmd)
+	elif hud:
+		var bt := query.buildings()
+		var ab: Dictionary = query.defs().b_ability[bt.btype[bt.slot(b_h)]]
+		hud.notes.push(tr("«%s» — ещё не готово") % ability_name(ab), CityNotes.Seal.GOLD)
+
+
+## Имя умения по-русски (в Defs у умения только id)
+static func ability_name(ab: Dictionary) -> String:
+	var id := String(ab.get("id", ""))
+	return TranslationServer.translate(String(ab.get("name", ABILITY_NAMES.get(id, id))))
+
+
+## Выделено одно своё здание с кнопкой-умением (Defs.b_ability) — его описатель, иначе 0
+func _ability_building() -> int:
+	var own := _own_selection()
+	if own.size() != 1 or Ids.kind(own[0]) != Ids.Kind.BUILDING:
+		return 0
+	var bt := query.buildings()
+	if not bt.valid(own[0]) or bt.state[bt.slot(own[0])] != BuildingTable.State.ACTIVE:
+		return 0
+	return own[0] if not query.defs().b_ability[bt.btype[bt.slot(own[0])]].is_empty() else 0
+
+
+## Следующая стойка по кругу (наступать → оборона → стоять → не отвечать) от стойки первого отряда
+func _next_stance(units: PackedInt32Array) -> int:
+	var bs := query.battle()
+	if bs == null:
+		return BattleSim.Stance.HOLD
+	for h in units:
+		var u := query.unit_index(h)
+		if u >= 0:
+			return (bs.sq_stance[bs.u_squad[u]] + 1) % 4
+	return BattleSim.Stance.HOLD
+
+
+## Следующий доступный рецепт здания по кругу (Defs.b_recipes); −1 — рецептов нет
+func _next_recipe(b_h: int) -> int:
+	var bt := query.buildings()
+	if not bt.valid(b_h):
+		return -1
+	var defs := query.defs()
+	var b := bt.slot(b_h)
+	var list := PackedInt32Array()
+	for rc in defs.b_recipes[bt.btype[b]]:
+		if defs.rc_enabled[rc] != 0:
+			list.append(rc)
+	if list.is_empty():
+		return -1
+	return list[(list.find(bt.recipe[b]) + 1) % list.size()]
+
+
+## Пешие (без коней, пушек и арб) — для гарнизона
+func _foot(units: PackedInt32Array) -> PackedInt32Array:
+	return _filter(units, UnitStats.MOUNTED | UnitStats.CANNON | UnitStats.WAGON, false)
 
 
 func _next_formation(units: PackedInt32Array) -> int:
@@ -574,7 +842,7 @@ func _filter(units: PackedInt32Array, mask: int, has: bool) -> PackedInt32Array:
 	var bs := query.battle()
 	for h in units:
 		var u := query.unit_index(h)
-		if u < 0 or bs == null:
+		if u < 0 or bs == null or bs.u_life[u] != BattleSim.Life.ALIVE:
 			continue
 		if (bs.t_flags[bs.u_type[u]] & mask != 0) == has:
 			out.append(h)
@@ -589,8 +857,8 @@ func _without(a: PackedInt32Array, b: PackedInt32Array) -> PackedInt32Array:
 	return out
 
 
-## Описатели для приказа: по одному бойцу на настоящий отряд (описатель юнита = его отряд) + все одиночки.
-## Так приказ «всем 300» — несколько чисел, а не 300.
+## Описатели для приказа: по одному живому бойцу на настоящий отряд (описатель юнита = его отряд) + все
+## живые одиночки. Так приказ «всем 300» — несколько чисел, а не 300, и павший в выделении его не сорвёт.
 func compact(units: PackedInt32Array) -> PackedInt32Array:
 	var bs := query.battle()
 	if bs == null:
@@ -599,7 +867,7 @@ func compact(units: PackedInt32Array) -> PackedInt32Array:
 	var seen := {}
 	for h in units:
 		var u := query.unit_index(h)
-		if u < 0:
+		if u < 0 or bs.u_life[u] != BattleSim.Life.ALIVE:
 			continue
 		var s := bs.u_squad[u]
 		if bs.sq_single[s] == 0 and bs.sq_members[s].size() > 1:
@@ -664,13 +932,20 @@ func _now() -> float:
 	return now_s if now_s >= 0.0 else Time.get_ticks_msec() / 1000.0
 
 
-func _center_on(hs: PackedInt32Array) -> void:
+## Камера к выделенному (среднее положение юнитов и зданий)
+func center_on(hs: PackedInt32Array) -> void:
 	if hs.is_empty() or camera == null or not camera.has_method("go_to"):
 		return
 	var bs := query.battle()
 	var c := Vector2.ZERO
 	var n := 0
+	var bt := query.buildings()
 	for h in hs:
+		if Ids.kind(h) == Ids.Kind.BUILDING:
+			if bt and bt.valid(h):
+				c += Vector2(bt.x[bt.slot(h)], bt.z[bt.slot(h)])
+				n += 1
+			continue
 		var u := query.unit_index(h)
 		if u >= 0 and bs:
 			c += Vector2(bs.u_x[u], bs.u_z[u])
@@ -725,30 +1000,40 @@ static func ground_point(cam: Camera3D, screen: Vector2, max_d := 900.0) -> Vect
 # ================================================================= курсор
 
 func _update_cursor() -> void:
-	var kind := CityCursor.Kind.DEFAULT
-	if hud and hud.blocks(_mouse):
-		CityCursor.apply(kind)
-		return
+	CityCursor.apply(cursor_kind(_mouse))
+
+
+## Вид курсора над точкой экрана (CityCursor.Kind): по смыслу ПКМ, взведённому приказу или призраку
+func cursor_kind(screen: Vector2) -> int:
+	if hud and hud.blocks(screen):
+		return CityCursor.Kind.DEFAULT
 	if placement.active():
-		kind = CityCursor.Kind.BUILD if placement.why == NavApi.Why.OK else CityCursor.Kind.FORBID
-	else:
-		var own := _own_selection()
-		if not own.is_empty() and Ids.kind(own[0]) == Ids.Kind.UNIT:
-			var w := _world(_mouse)
-			if w != Vector2.INF:
-				var t := query.pick(player, w, _pick_r())
-				var tk := Ids.kind(t)
-				if t != 0 and (tk == Ids.Kind.UNIT or tk == Ids.Kind.BUILDING) \
-						and team_of(query, t) != query.players().team[player] and team_of(query, t) >= 0:
-					kind = CityCursor.Kind.ATTACK
-				elif t != 0 and not _own_workers().is_empty():
-					if tk == Ids.Kind.NODE or tk == Ids.Kind.HERD:
-						kind = CityCursor.Kind.GATHER
-					elif tk == Ids.Kind.BUILDING:
-						var bt := query.buildings()
-						var b := bt.slot(t)
-						if bt.state[b] == BuildingTable.State.SITE or bt.hp_c[b] < bt.hp_max_c[b]:
-							kind = CityCursor.Kind.BUILD
-						elif query.defs().b_kind[bt.btype[b]] == Defs.BKind.FIELD:
-							kind = CityCursor.Kind.GATHER
-	CityCursor.apply(kind)
+		return CityCursor.Kind.BUILD if placement.why == NavApi.Why.OK else CityCursor.Kind.FORBID
+	var own := _own_selection()
+	if own.is_empty():
+		return CityCursor.Kind.DEFAULT
+	var w := _world(screen)
+	if w == Vector2.INF:
+		return CityCursor.Kind.FORBID if armed != SimCmd.Op.NONE else CityCursor.Kind.DEFAULT
+	var t := query.pick(player, w, _pick_r())
+	match armed:
+		SimCmd.Op.ATTACK_MOVE:
+			return CityCursor.Kind.ATTACK
+		SimCmd.Op.GATHER:
+			return CityCursor.Kind.GATHER if gatherable(t) else CityCursor.Kind.FORBID
+		SimCmd.Op.ASSIST:
+			return CityCursor.Kind.BUILD if needs_hands(t) else CityCursor.Kind.FORBID
+		SimCmd.Op.GARRISON:
+			return CityCursor.Kind.MOVE if can_garrison(t) else CityCursor.Kind.FORBID
+		SimCmd.Op.MOVE, SimCmd.Op.RALLY:
+			return CityCursor.Kind.MOVE
+	if Ids.kind(own[0]) != Ids.Kind.UNIT or t == 0:
+		return CityCursor.Kind.DEFAULT
+	if is_enemy(t) or (has_builder("raid") and is_raid_target(t) and not _filter(_own_units(), UnitStats.MOUNTED, true).is_empty()):
+		return CityCursor.Kind.ATTACK
+	if not _own_workers().is_empty():
+		if needs_hands(t):
+			return CityCursor.Kind.BUILD
+		if gatherable(t):
+			return CityCursor.Kind.GATHER
+	return CityCursor.Kind.DEFAULT

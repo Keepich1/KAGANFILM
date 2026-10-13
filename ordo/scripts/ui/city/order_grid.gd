@@ -45,7 +45,8 @@ func setup(p_hud: CityHud) -> void:
 
 ## Приказы: [{op, label, key, enabled}]
 func show_orders(list: Array[Dictionary]) -> void:
-	var sig := "o"
+	var armed := hud.input.armed if hud.input else SimCmd.Op.NONE
+	var sig := "o%d|" % armed
 	for o in list:
 		sig += "%d%s;" % [int(o["op"]), str(o["enabled"])]
 	if sig == _sig:
@@ -54,10 +55,14 @@ func show_orders(list: Array[Dictionary]) -> void:
 	var n := mini(list.size(), _buttons.size())
 	for i in n:
 		var o: Dictionary = list[i]
+		var op := int(o["op"])
 		var key := String(o.get("key", ""))
-		_fill(i, UiTheme.order_icon(int(o["op"])), "" if key == "ПКМ" else key,
-			"%s%s" % [o.get("label", ""), (" (%s)" % key) if key != "" else ""], bool(o.get("enabled", true)),
-			{"op": int(o["op"])})
+		var tip := "%s%s" % [o.get("label", ""), (" (%s)" % key) if key != "" else ""]
+		if op in RtsInput.ARMABLE:
+			tip += "\n" + tr("Кнопка: затем ЛКМ по карте")
+		_fill(i, UiTheme.order_icon(op), "" if key == "ПКМ" else key, tip, bool(o.get("enabled", true)), {"op": op})
+		# взведённый приказ — кнопка горит золотом
+		_buttons[i].modulate = Color(1.35, 1.18, 0.8) if op == armed else Color.WHITE
 	_clear_from(n)
 
 
@@ -89,6 +94,7 @@ func show_build(list: Array[Dictionary]) -> void:
 func _fill(i: int, icon: Texture2D, key: String, tip: String, enabled: bool, meta: Dictionary) -> void:
 	var b := _buttons[i]
 	b.visible = true
+	b.modulate = Color.WHITE
 	b.disabled = not enabled
 	b.tooltip_text = tip
 	b.set_meta("act", meta)
@@ -102,6 +108,7 @@ func _clear_from(n: int) -> void:
 	for i in range(n, _buttons.size()):
 		var b := _buttons[i]
 		b.disabled = true
+		b.modulate = Color.WHITE
 		b.tooltip_text = ""
 		b.set_meta("act", {})
 		(b.get_node("Icon") as TextureRect).texture = null

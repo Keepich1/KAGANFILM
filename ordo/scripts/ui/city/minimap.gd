@@ -154,13 +154,20 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
+			# взведённый приказ с кнопки — в точку карты, иначе камера туда
+			if mb.pressed and hud.input and hud.input.armed != SimCmd.Op.NONE:
+				hud.input.fire_armed(map_to_world(mb.position), mb.shift_pressed)
+				accept_event()
+				return
 			_drag = mb.pressed
 			if mb.pressed:
 				hud.look_at_world(map_to_world(mb.position))
 			accept_event()
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			if hud.input:
-				hud.input.order_at(map_to_world(mb.position), mb.shift_pressed)
+			if hud.input and hud.input.armed != SimCmd.Op.NONE:
+				hud.input.disarm()
+			elif hud.input:
+				hud.input.order_at(map_to_world(mb.position), mb.shift_pressed, false, mb.ctrl_pressed)
 			accept_event()
 	elif event is InputEventMouseMotion and _drag:
 		hud.look_at_world(map_to_world((event as InputEventMouseMotion).position))

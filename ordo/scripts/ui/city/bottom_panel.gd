@@ -16,7 +16,11 @@ var building: CityBuildingPanel
 var tabs: CityBuildTabs
 var grid: CityOrderGrid
 var _info: Control
-var _other: Label
+## Узел или стадо: медальон, имя, сколько осталось / голов, подсказка
+var _other: Control
+var _other_sig := ""
+var _other_amount: Label
+var _orders: Array[Dictionary] = []
 
 
 func setup(p_hud: CityHud) -> void:
@@ -128,8 +132,10 @@ func setup(p_hud: CityHud) -> void:
 	_info.add_child(building)
 	building.setup(hud)
 	building.visible = false
-	_other = UiTheme.label("", UiTheme.head_bold(), 26, true)
-	_other.position = Vector2(8, 8)
+	_other = Control.new()
+	_other.name = "Other"
+	_other.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_other.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_info.add_child(_other)
 	# справа: вкладки и сетка
 	var right := Control.new()
@@ -146,7 +152,7 @@ func setup(p_hud: CityHud) -> void:
 	tabs.size = Vector2(RIGHT_W, 30)
 	right.add_child(tabs)
 	tabs.setup()
-	tabs.tab_changed.connect(func(_t: StringName) -> void: hud.refresh_now())
+	tabs.tab_changed.connect(func(_t: StringName) -> void: hud.refresh_now(true))
 	grid = CityOrderGrid.new()
 	grid.position = Vector2(1, 38)
 	grid.size = Vector2(RIGHT_W, 172)
@@ -154,7 +160,8 @@ func setup(p_hud: CityHud) -> void:
 	grid.setup(hud)
 
 
-func refresh(info: Dictionary, sel: PackedInt32Array) -> void:
+## heavy — спросить сетку приказов заново (смена выделения, вкладки; раз в секунду)
+func refresh(info: Dictionary, sel: PackedInt32Array, heavy := true) -> void:
 	var kind := String(info.get("kind", "none"))
 	building.visible = kind == "building"
 	cards.visible = kind == "units" or kind == "none"
@@ -162,16 +169,60 @@ func refresh(info: Dictionary, sel: PackedInt32Array) -> void:
 	match kind:
 		"building":
 			building.show_panel(info.get("panel", hud.query.building_panel(sel[0]) if not sel.is_empty() else {}))
-		"node":
-			_other.text = "%s\n%s" % [info.get("name", ""), tr("Осталось: %d") % int(info.get("amount", 0))]
-		"herd":
-			_other.text = "%s\n%s" % [info.get("name", ""), tr("Голов: %d") % int(info.get("heads", 0))]
+		"node", "herd":
+			_show_other(info, sel[0] if not sel.is_empty() else 0)
 		_:
 			cards.show_info(info)
 	var p := hud.player
 	if tabs.current == &"orders":
-		grid.show_orders(hud.query.orders_for(p, sel) if hud.selection_is_own() else ([] as Array[Dictionary]))
+		if heavy:
+			_orders = hud.query.orders_for(p, sel) if hud.selection_is_own() else ([] as Array[Dictionary])
+		grid.show_orders(_orders)
 	else:
 		grid.show_build(hud.query.build_menu(p, tabs.current))
-	if minimap.is_visible_in_tree():
-		pass
+
+
+## Узел (жила, лес, глина) или стадо: медальон со значком ресурса, имя, остаток / головы, что делать
+func _show_other(info: Dictionary, h: int) -> void:
+	var kind := String(info.get("kind", ""))
+	var sig := "%s|%d" % [kind, h]
+	var q := hud.query
+	var defs := q.defs()
+	if sig != _other_sig:
+		_other_sig = sig
+		for ch in _other.get_children():
+			ch.queue_free()
+		var icon: Texture2D = null
+		var team := -1
+		var hint := ""
+		if kind == "node" and q.nodes() and q.nodes().valid(h):
+			icon = UiTheme.res_icon(defs, q.nodes().res[q.nodes().slot(h)])
+			hint = tr("Выберите работников и щёлкните ПКМ сюда — добывать")
+		elif kind == "herd" and q.herds() and q.herds().valid(h):
+			var hs := q.herds().slot(h)
+			var back := defs.h_backing[q.herds().htype[hs]]
+			icon = UiTheme.res_icon(defs, back) if back >= 0 else UiTheme.icon("bld", "pen")
+			var o := q.herds().owner[hs]
+			team = q.players().team[o] if o >= 0 else -1
+			hint = tr("Своё стадо пасут работники (ПКМ); чужое угоняют всадники") if team >= 0 else ""
+		var roundel := CityRoundel.new()
+		roundel.color = UiTheme.TEAM[team % 4] if team >= 0 else Color("#7a5a32")
+		roundel.icon = icon
+		roundel.position = Vector2(4, 6)
+		roundel.size = Vector2(112, 112)
+		_other.add_child(roundel)
+		var nm := UiTheme.label(String(info.get("name", "")), UiTheme.head_bold(), 30, true)
+		nm.position = Vector2(134, 4)
+		_other.add_child(nm)
+		_other_amount = UiTheme.label("", UiTheme.text(700), 22, true)
+		_other_amount.position = Vector2(136, 48)
+		_other.add_child(_other_amount)
+		var hl := UiTheme.label(hint, UiTheme.italic(500), 18, true)
+		hl.position = Vector2(136, 86)
+		hl.add_theme_color_override("font_color", UiTheme.INK_SOFT)
+		_other.add_child(hl)
+	if kind == "node":
+		var amount := int(info.get("amount", 0))
+		_other_amount.text = tr("Осталось: без конца") if amount < 0 else tr("Осталось: %d") % amount
+	else:
+		_other_amount.text = tr("Голов: %d") % int(info.get("heads", 0))
