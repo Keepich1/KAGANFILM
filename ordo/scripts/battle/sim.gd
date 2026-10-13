@@ -34,9 +34,19 @@ enum Formation { LINE, COLUMN, SQUARE, LOOSE }
 enum Order { HOLD, MOVE, ATTACK }
 enum Status { READY, FLEE }
 enum Gait { WALK, TROT, RUN }
-enum Life { ALIVE, DYING, DEAD }
-enum Act { NONE, AIM, MELEE, CHEER }
+enum Life { ALIVE, DYING, DEAD, FREE }          # FREE — слот свободен («Город», R1)
+enum Act { NONE, AIM, MELEE, CHEER, WORK }      # WORK — работа: вид в u_work (AnimSpec.WORK_*)
 enum Role { TROOPER, OFFICER, BANNER, GENERAL }
+
+# ---------------------------------------------------------------- «Город» (ARCHITECTURE §6.2): объявления M0.
+# Поведение — у CORE (R1–R18); всё по умолчанию = срез, test_sim сверяет ту же контрольную сумму.
+enum Stance { AGGRESSIVE, DEFENSIVE, HOLD, PASSIVE }
+enum Victory { BATTLE, NONE }
+enum FleeMode { DIR, HOME }
+const MAX_TEAMS := 4
+const ST_BLOCK := 1; const ST_WALL := 2; const ST_GATE := 4; const ST_TOWER := 8
+const ST_FIELD := 16; const ST_HQ := 32; const ST_SITE := 64          # флаги структур
+const MOD_ATK := 0; const MOD_SPEED := 1; const MOD_STAM := 2; const MOD_MORALE := 3; const MOD_RANGE := 4; const MOD_N := 5
 
 # ---------------------------------------------------------------- баланс (ТЗ 4)
 const MORALE_FLEE_INF := 28.0
@@ -180,9 +190,66 @@ var sq_volley_seen := PackedInt32Array()  # о какой шеренге уже 
 var sq_cry_t := PackedFloat32Array()      # последний клич (у полководца)
 var sq_single := PackedInt32Array()       # одиночка: полководец, не бежит
 
-var side_init := PackedInt32Array([0, 0])
-var side_flee_t := PackedFloat32Array([0.0, 0.0])
-var general := PackedInt32Array([-1, -1])   # юнит-полководец стороны
+var side_init := PackedInt32Array([0, 0, 0, 0])               # по MAX_TEAMS
+var side_flee_t := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+var general := PackedInt32Array([-1, -1, -1, -1])   # юнит-полководец стороны
+
+# ---------------------------------------------------------------- «Город»: настройки (по умолчанию = срез)
+var victory_mode := Victory.BATTLE
+var flee_mode := FleeMode.DIR
+var corpse_steps := -1                  # −1 — тела не исчезают (срез); город: 30 с × 30
+var team_home := PackedVector2Array()   # цели бегства FleeMode.HOME
+
+# юниты: новые массивы (растут в _new_unit со значениями по умолчанию)
+var u_gen := PackedInt32Array()         # 1..4095
+var u_owner := PackedInt32Array()       # игрок (по умолчанию = сторона)
+var u_killer := PackedInt32Array()      # индекс убийцы в ядре, −1
+var u_hurt_step := PackedInt32Array()   # шаг последнего урона, −1
+var u_sleep := PackedByteArray()        # 1 — спит (R12)
+var u_work := PackedFloat32Array()      # вид работы Act.WORK, −1 — нет
+var u_garrison := PackedInt32Array()    # структура гарнизона, −1 (этап 2)
+
+# отряды: новые массивы
+var sq_gen := PackedInt32Array()
+var sq_owner := PackedInt32Array()
+var sq_stance := PackedInt32Array()
+var sq_path: Array[PackedVector2Array] = []
+var sq_wp := PackedInt32Array()         # следующая точка пути
+var sq_breach_st := PackedInt32Array()  # структура, которую ломать у точки sq_breach_wp, −1
+var sq_breach_wp := PackedInt32Array()
+var sq_st_target := PackedInt32Array()  # цель-структура, −1
+var sq_enemy := PackedInt32Array()      # ближайший вражеский отряд (раз за шаг, настоящие отряды)
+var sq_trail: Array[PackedVector2Array] = []   # последние 8 точек якоря (ворота: бойцы идут по следу)
+
+# зеркало структур (индекс = слот здания ECON)
+var st_hw := 0
+var st_ref := PackedInt32Array()
+var st_team := PackedInt32Array()
+var st_flags := PackedInt32Array()
+var st_alive := PackedInt32Array()
+var st_gar_cap := PackedInt32Array()
+var st_gar_n := PackedInt32Array()
+var st_cx := PackedFloat32Array()       # центр, полуразмеры, курс, высота площадки
+var st_cz := PackedFloat32Array()
+var st_hx := PackedFloat32Array()
+var st_hz := PackedFloat32Array()
+var st_rot := PackedFloat32Array()
+var st_top := PackedFloat32Array()
+
+# сетки земли (от NAV; пусто — путь Terrain.is_water, как в срезе)
+var _blk_static := PackedByteArray()    # 1 — непроходимо (обрыв, глубокая вода)
+var _spd := PackedByteArray()           # скорость ×16 на клетку 4 м (мелкая вода 0,55 → 9)
+
+# множители по игрокам [owner * MOD_N + k], по умолчанию 1.0
+var own_mods := PackedFloat32Array()
+
+# буферы, которые забирает CombatPortBattle (заполняются за шаг)
+var ev_dead := PackedInt32Array()       # пары (u, killer)
+var ev_st_b := PackedInt32Array()
+var ev_st_dmg := PackedFloat32Array()
+var ev_st_by := PackedInt32Array()
+var ev_arrived := PackedInt32Array()    # отряды, у которых закончился MOVE
+var ev_repath := PackedInt32Array()     # отряды, которым нужен новый путь
 
 var _head := PackedInt32Array()
 var _next := PackedInt32Array()
@@ -341,6 +408,16 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float) -> int:
 	sq_cry_t.append(-1000.0)
 	sq_single.append(0)
 	_so_key.append(-1)
+	sq_gen.append(1)
+	sq_owner.append(side)
+	sq_stance.append(Stance.AGGRESSIVE)
+	sq_path.append(PackedVector2Array())
+	sq_wp.append(0)
+	sq_breach_st.append(-1)
+	sq_breach_wp.append(-1)
+	sq_st_target.append(-1)
+	sq_enemy.append(-1)
+	sq_trail.append(PackedVector2Array())
 	return s
 
 
@@ -372,6 +449,13 @@ func _new_unit(s: int, type_i: int, role: int, slot: int) -> int:
 	_so_x.append(0.0)
 	_so_y.append(0.0)
 	_so_key[s] = -1
+	u_gen.append(1)
+	u_owner.append(sq_owner[s])
+	u_killer.append(-1)
+	u_hurt_step.append(-1)
+	u_sleep.append(0)
+	u_work.append(-1.0)
+	u_garrison.append(-1)
 	return u
 
 

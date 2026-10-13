@@ -1,6 +1,6 @@
 class_name SimStepper
 extends RefCounted
-## Шаги боя для вида (BattleView): ведёт ScenarioClash вместо его собственного _process
+## Шаги боя для вида (BattleView): ведёт SimDriver (ScenarioClash, GameDriver) вместо его собственного _process
 ## (тот же счёт времени: накопитель, скорость, пауза, не больше 12 шагов за кадр).
 ##
 ## Малый бой — шаги на главном потоке, ровно как раньше. Большой (от THREAD_MIN юнитов) —
@@ -20,7 +20,7 @@ const THREAD_MIN := 600
 const MAX_STEPS := 12
 const DT := BattleSim.DT
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 ## auto — фон для больших боёв, on — всегда, off — никогда
 var mode := "auto"
 ## Фон включён сейчас
@@ -66,7 +66,7 @@ var _listeners := {}              # имя → [[Callable, флаги], ...]
 var _relay := false
 
 
-func _init(p_scenario: ScenarioClash) -> void:
+func _init(p_scenario: SimDriver) -> void:
 	scenario = p_scenario
 	_main_tid = OS.get_main_thread_id()
 	var tree := Engine.get_main_loop() as SceneTree
@@ -162,8 +162,7 @@ func _update_mode() -> void:
 
 ## После этого шага сценарий начнёт бой заново (новый BattleSim) — такой шаг только здесь
 func _restarts_next() -> bool:
-	var sc := scenario
-	return not sc._ended and sc.sim.time + DT >= ScenarioClash.END_TIME
+	return scenario.restarts_next()
 
 
 func _step_here() -> void:

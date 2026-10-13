@@ -13,7 +13,8 @@ extends RefCounted
 ##   missile — урон выстрела/стрелы; range, min_range — м; reload — с; ammo — запас (-1 — без счёта)
 ##   acc_near, acc_far — точность вблизи и на пределе дальности; splash — радиус, м; vs_building — множитель
 ##   flags — биты ниже; formations — доступные построения (BattleSim.Formation)
-##   cost — {food, wood, stone, gold}; time — время найма, с
+##   cost — {food, wood, stone, gold}; time — время найма, с (старое зеркало UnitEcon — источник правды
+##   там, вместе с конём кыпчакских всадников; test_defs сверяет)
 ##   visual — вид юнита для толпы (UnitRegistry/CrowdLayer), "" — модели пока нет
 ##   radius — радиус пятна на земле, м; mass — «вес» при расталкивании
 ## Значения, которых нет в ТЗ (рукопашная стрелков, перезарядка пушки, точность луков),
@@ -94,12 +95,12 @@ const UNITS := {
 		"hp": 280, "speed": 7.6, "walk": 0.5, "armour": 7, "attack": 24, "reach": 1.8, "charge": 3.2, "vs_cav": 1.0,
 		"missile": 0, "range": 0, "min_range": 0, "reload": 0, "ammo": -1, "acc_near": 0.0, "acc_far": 0.0,
 		"splash": 0, "vs_building": 1.0, "flags": MOUNTED, "formations": _CAV,
-		"cost": {}, "time": 0, "visual": "", "radius": 0.95, "mass": 7.0},
+		"cost": {"food": 100, "gold": 100}, "time": 18, "visual": "", "radius": 0.95, "mass": 7.0},
 	"lashkarboshi": {"name": "Лашкарбоши", "faction": "kokand", "role": "полководец",
 		"hp": 280, "speed": 7.6, "walk": 0.5, "armour": 7, "attack": 24, "reach": 1.8, "charge": 3.2, "vs_cav": 1.0,
 		"missile": 0, "range": 0, "min_range": 0, "reload": 0, "ammo": -1, "acc_near": 0.0, "acc_far": 0.0,
 		"splash": 0, "vs_building": 1.0, "flags": MOUNTED | GENERAL, "formations": _NONE,
-		"cost": {}, "time": 0, "visual": "", "radius": 1.0, "mass": 7.0},
+		"cost": {"food": 150, "gold": 150}, "time": 30, "visual": "", "radius": 1.0, "mass": 7.0},
 	# ---------------------------------------------------------------- Кыпчаки (ТЗ 3.2)
 	"malchy": {"name": "Малчы", "faction": "kipchak", "role": "работник",
 		"hp": 65, "speed": 4.0, "walk": 0.62, "armour": 0, "attack": 5, "reach": 1.2, "charge": 1.0, "vs_cav": 1.0,
@@ -153,7 +154,7 @@ const UNITS := {
 		"hp": 290, "speed": 7.8, "walk": 0.5, "armour": 7, "attack": 25, "reach": 1.8, "charge": 3.2, "vs_cav": 1.0,
 		"missile": 0, "range": 0, "min_range": 0, "reload": 0, "ammo": -1, "acc_near": 0.0, "acc_far": 0.0,
 		"splash": 0, "vs_building": 1.0, "flags": MOUNTED | GENERAL, "formations": _NONE,
-		"cost": {"food": 100, "gold": 100}, "time": 18, "visual": "kip_kolbashchy", "radius": 1.05, "mass": 7.0},
+		"cost": {"food": 150, "gold": 150}, "time": 30, "visual": "kip_kolbashchy", "radius": 1.05, "mass": 7.0},
 }
 
 ## Знаменосец отряда рисуется своим видом (флаг в руке), характеристики — как у бойцов

@@ -1,6 +1,6 @@
 class_name BattleView
 extends Node3D
-## Отображение боя: симуляция (ScenarioClash) и жизнь лагеря (BattleAmbient) → слои толпы,
+## Отображение боя: симуляция (SimDriver: ScenarioClash, GameDriver) и жизнь лагеря (BattleAmbient) → слои толпы,
 ## по одному слою на вид юнита, каждый кадр.
 ##
 ## Слой — настоящая толпа CrowdLayer (scripts/units/crowd_layer.gd), если она есть в проекте,
@@ -55,7 +55,7 @@ const DYING := BattleSim.Life.DYING
 ## Рисовать запасными фигурами, даже если настоящая толпа есть
 @export var force_debug := false
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 var ambient: BattleAmbient
 ## unit_id → слой (CrowdLayer или BattleDebugLayer)
 var layers := {}
@@ -114,7 +114,7 @@ var _hoz := 0.0
 
 
 func _ready() -> void:
-	scenario = get_node_or_null(scenario_path) as ScenarioClash
+	scenario = get_node_or_null(scenario_path) as SimDriver
 	ambient = get_node_or_null(ambient_path) as BattleAmbient
 	if not force_debug and ResourceLoader.exists(CROWD_LAYER_PATH):
 		_crowd_script = load(CROWD_LAYER_PATH) as Script

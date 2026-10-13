@@ -36,7 +36,7 @@ var customs := PackedColorArray()
 var time := 0.0
 
 var _rng: BattleRng
-var _scenario: ScenarioClash
+var _scenario: SimDriver
 var _acc := 0.0
 # по актёрам
 var _kind := PackedInt32Array()      # 0 овца, 1 конь, 2 малчы, 3 страж
@@ -60,7 +60,7 @@ var _ready_done := false
 
 
 func _ready() -> void:
-	_scenario = get_node_or_null(scenario_path) as ScenarioClash
+	_scenario = get_node_or_null(scenario_path) as SimDriver
 	_build()
 
 

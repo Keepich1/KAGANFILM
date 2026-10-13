@@ -19,7 +19,7 @@ const SPEEDS := [0.25, 0.5, 1.0, 2.0, 4.0]
 ## Делать свою камеру текущей при запуске (выключить, если камерой управляет сборка)
 @export var take_camera := true
 
-var scenario: ScenarioClash
+var scenario: SimDriver
 var cine: Camera3D
 var rts: RtsCamera
 var _speed_i := 2
@@ -31,7 +31,7 @@ var _series_busy := false
 
 
 func _ready() -> void:
-	scenario = get_node_or_null(scenario_path) as ScenarioClash
+	scenario = get_node_or_null(scenario_path) as SimDriver
 	cine = get_node_or_null(cine_camera_path) as Camera3D
 	rts = get_node_or_null(rts_camera_path) as RtsCamera
 	var ordo := get_node_or_null("/root/Ordo")
