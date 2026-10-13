@@ -78,7 +78,7 @@ def chep(lod=0):
     sides = q(lod, 6, 4)
     parts = [berm(-1.7, 1.7, 1.2, 0.34, lod)]
     for k, (x, z, h, r, lean) in enumerate(_chep_logs(lod)):
-        parts.append(G.ground_ao(log_post(x, z, h, r, sides, tip=0.42, seed=k, lean=lean, sink=0.1, simple_tip=True),
+        parts.append(G.ground_ao(log_post(x, z, h, r, sides, tip=0.42, seed=k, lean=lean, sink=0.05, simple_tip=True),
                                   0.6, 0.3))
         if lod == 0 and k in (1, 4, 7):
             parts.append(felt_wrap((x + lean[0] * 0.85, h - 0.42, z + lean[1] * 0.85), r, 0.26, 5))
@@ -93,7 +93,7 @@ def chep_site(lod=0):
     parts = [berm(-1.7, 1.7, 1.2, 0.22, lod)]
     logs = _chep_logs(lod, h_scale=0.38)
     for k, (x, z, h, r, lean) in enumerate(logs[:3]):
-        parts.append(log_post(x, z, h, r, q(lod, 6, 4), tip=0.0, seed=k, sink=0.1))
+        parts.append(log_post(x, z, h, r, q(lod, 6, 4), tip=0.0, seed=k, sink=0.05))
     for i in range(q(lod, 5, 3)):
         y = 0.17 + (i // 3) * 0.28
         z = -0.9 - (i % 3) * 0.3 + (i // 3) * 0.15
@@ -112,7 +112,7 @@ def chep_ruin(lod=0):
     for k in (0, 1, 2, 7, 8):
         x, z, h, r, lean = logs[k]
         hh = rs.uniform(0.35, 0.95) if k not in (0, 8) else rs.uniform(1.6, 2.4)
-        st = log_post(x, z, hh, r, q(lod, 6, 4), tip=0.12, seed=k + 40, sink=0.1, simple_tip=True)
+        st = log_post(x, z, hh, r, q(lod, 6, 4), tip=0.12, seed=k + 40, sink=0.05, simple_tip=True)
         parts.append(char(st, 0.55, top_y=hh, soft=0.5))
     for (a, b) in (((-0.4, 0.12, 0.2), (0.3, 0.13, 2.6)), ((0.5, 0.11, 0.1), (-0.6, 0.12, 2.3))):
         parts.append(char(P.log(a, b, 0.15, lod), 0.6))
@@ -271,7 +271,7 @@ def darbaza_ruin(lod=0):
                 if rs.random() < 0.25:
                     continue
                 hh = rs.uniform(0.3, 1.5) if zi == 0 else rs.uniform(0.6, 2.4)
-                st = log_post(sx * x, z, hh, 0.16, q(lod, 6, 4), tip=0.1, seed=300 + i + zi * 10 + (sx > 0) * 50, sink=0.1)
+                st = log_post(sx * x, z, hh, 0.16, q(lod, 6, 4), tip=0.1, seed=300 + i + zi * 10 + (sx > 0) * 50, sink=0.05)
                 parts.append(char(st, 0.5, top_y=hh, soft=0.6))
         parts.append(char(log_post(sx * hp, -0.55, 2.2 + 0.4 * sx, 0.2, q(lod, 7, 5), tip=0.1, seed=11), 0.55, top_y=2.6))
     # рухнувшая балка поперёк прохода
@@ -319,7 +319,7 @@ def munara(lod=0):
     for i, (sx, sz) in enumerate(corners):
         x0, z0 = _post_xz(sx, sz, 0)
         x1, z1 = _post_xz(sx, sz, Ht)
-        parts.append(G.ground_ao(G.pole((x0, -0.1, z0), (x1, Ht, z1), 0.19, 0.15, sides=sides, region="bark"), 0.8, 0.35))
+        parts.append(G.ground_ao(G.pole((x0, -0.05, z0), (x1, Ht, z1), 0.19, 0.15, sides=sides, region="bark"), 0.8, 0.35))
         cap = G.disc_uv(0.15, sides, "logend")
         parts.append(cap.translate(x1, Ht, z1))
         # камни у подножия
@@ -426,7 +426,7 @@ def munara(lod=0):
     step = CHEP_PITCH / CHEP_LOGS
     xs = [(k - 8) * step for k in range(17)]
     for k, (x, z, h, r, lean) in enumerate(_chep_logs(lod, seed=33, xs=xs)):
-        parts.append(G.ground_ao(log_post(x, z, h, r, q(lod, 6, 4), tip=0.42, seed=k + 60, lean=lean, sink=0.1,
+        parts.append(G.ground_ao(log_post(x, z, h, r, q(lod, 6, 4), tip=0.42, seed=k + 60, lean=lean, sink=0.05,
                                           simple_tip=True), 0.6, 0.3))
     # латунное яблоко и вымпел на макушке (древко — по оси Y модели)
     top_pole = top_y - 0.05
@@ -454,7 +454,7 @@ def munara_site(lod=0):
         x0, z0 = _post_xz(sx, sz, 0)
         hh = 3.35 + rs.uniform(-0.15, 0.2)
         x1, z1 = _post_xz(sx, sz, hh)
-        parts.append(G.ground_ao(G.pole((x0, -0.1, z0), (x1, hh, z1), 0.19, 0.17, sides=q(lod, 7, 5), region="bark"), 0.8, 0.35))
+        parts.append(G.ground_ao(G.pole((x0, -0.05, z0), (x1, hh, z1), 0.19, 0.17, sides=q(lod, 7, 5), region="bark"), 0.8, 0.35))
         parts.append(G.disc_uv(0.17, q(lod, 7, 5), "logend").translate(x1, hh, z1))
     for i in range(4):
         a, b = corners[i], corners[(i + 1) % 4]
@@ -506,7 +506,7 @@ def munara_ruin(lod=0):
                                                          "back": "wood", "left": "wood", "right": "wood"})
     parts.append(scorch(floor.rotate_x(-24).rotate_y(12).translate(0.3, 0.75, -0.3), 5, 0.45, 1.2))
     # кусок шатра и обломки бруствера
-    parts.append(scorch(felt_sheet(-2.8, 1.6, 1.4, 1.1, 0.35, "felt_white", q(lod, 8, 6), 9, 20), 9, 0.4))
+    parts.append(char(scorch(felt_sheet(-2.8, 1.6, 1.4, 1.1, 0.35, "felt_white", q(lod, 8, 6), 9, 20), 9, 0.4), 0.65))
     parts.append(char(P.wattle_panel((1.2, 0.0, 2.6), (3.4, 0.0, 2.2), 0.9, lod, lean=-0.6), 0.5))
     for i in range(q(lod, 7, 3)):
         a = rs.uniform(0, 2 * math.pi)

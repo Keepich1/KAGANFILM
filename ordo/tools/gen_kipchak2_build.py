@@ -68,7 +68,8 @@ def standard(h, lod=0, seed=0, pennant=(2.0, 0.62), hair=True, stones=True):
     pen = None
     if pennant:
         w, ph = pennant
-        pen = G.white(P.pennant(w, ph, q(lod, 10, 5), q(lod, 2, 1)).translate(0.04, h - 1.25 - ph, 0))
+        drop = 1.25 if hair else 0.2
+        pen = G.white(P.pennant(w, ph, q(lod, 10, 5), q(lod, 2, 1)).translate(0.04, h - drop - ph, 0))
     return finish(parts), pen
 
 
@@ -278,7 +279,7 @@ def ken_ruin(lod=0):
     """Разорённый кен: алачык сгорел (осевший войлок, торчат жерди), двуколка перевёрнута,
     корзины рассыпаны, руда растащена."""
     rs = np.random.default_rng(221)
-    parts = [scorch(felt_sheet(-1.75, -1.35, 1.7, 1.5, 0.6, "felt_grey", q(lod, 9, 6), 3, 25), 3, 0.35, 0.7)]
+    parts = [char(scorch(felt_sheet(-1.75, -1.35, 1.7, 1.5, 0.6, "felt_grey", q(lod, 9, 6), 3, 25), 3, 0.35, 0.7), 0.65)]
     for k in range(q(lod, 6, 3)):
         a = math.radians(60 * k + rs.uniform(-10, 10))
         p0 = (-1.75 + 1.3 * math.sin(a), 0.05, -1.35 + 1.3 * math.cos(a))
@@ -297,7 +298,7 @@ def ken_ruin(lod=0):
         parts.append(G.lump(rs.uniform(0.08, 0.16), 0.08, rs.uniform(0.08, 0.14), 4, 2, "stones", seed=300 + i, amount=0.3)
                      .translate(x, 0, z))
     std, _ = standard(4.2, lod, seed=5, pennant=None, hair=False, stones=False)
-    parts.append(char(std.rotate_z(84).translate(-3.25, 0.12, 2.95), 0.55))
+    parts.append(char(std.rotate_z(-84).translate(-3.25, 0.12, 2.95), 0.55))
     return [("KenRuin", finish(parts), "opaque"), ("Ground", ash_patch(3.0, 2.6, lod), "cutout")]
 
 
@@ -463,7 +464,7 @@ def jooker_ruin(lod=0):
         parts.append(char(G.pole((x, -0.05, z), (x, h, z), 0.1, 0.09, sides=q(lod, 6, 4), region="bark"), 0.5))
         parts.append(G.lump(0.3, 0.12, 0.3, q(lod, 6, 4), 2, "hay", seed=40 + i, amount=0.3).translate(x + 0.4, 0, z + 0.2))
     std, _ = standard(6.6, lod, seed=9, pennant=None, stones=False)
-    std.rotate_x(86).rotate_y(40)
+    std.rotate_x(86).rotate_y(200)
     parts.append(char(std.translate(-0.45, 0.06 - std.P[:, 1].min(), 3.25), 0.6))
     return [("JookerRuin", finish(parts), "opaque"), ("Ground", ash_patch(4.4, 4.0, lod), "cutout")]
 
@@ -667,7 +668,7 @@ def kurultai_ruin(lod=0):
         h = rs.uniform(0.6, 2.0)
         post = G.box(0.17, h, 0.17, {"front": "frame", "back": "frame", "left": "frame", "right": "frame"})
         parts.append(char(post.rotate_y(math.degrees(a)).translate(x, -0.03, z), 0.5, top_y=h, soft=0.6))
-    parts.append(scorch(felt_sheet(0.3, 0.2, 3.0, 2.7, 1.1, "koshma", q(lod, 10, 7), 11, 15), 11, 0.4, 0.9))
+    parts.append(char(scorch(felt_sheet(0.3, 0.2, 3.0, 2.7, 1.1, "koshma", q(lod, 10, 7), 11, 15), 11, 0.35, 0.9), 0.6))
     for i, ang in enumerate(KUR_TUGS):
         a = math.radians(ang)
         at = (KUR_TUG_R * math.sin(a), 0.0, KUR_TUG_R * math.cos(a))
@@ -676,7 +677,7 @@ def kurultai_ruin(lod=0):
             parts.append(char(std.translate(*at), 0.55))
             continue
         std, _ = standard(6.4, lod, seed=20 + i, pennant=None, stones=False)
-        std.rotate_x(86).rotate_y(ang + rs.uniform(60, 120))
+        std.rotate_x(86).rotate_y(ang + 180 + rs.uniform(-25, 25))     # валится внутрь, на свою площадку
         parts.append(char(std.translate(at[0], 0.06 - std.P[:, 1].min(), at[2]), 0.6))
     car = G.quad((-1.7, 0.035, 1.25), (1.7, 0.035, 1.25), (1.7, 0.035, -1.25), (-1.7, 0.035, -1.25), "saddlecloth")
     parts.append(scorch(car.rotate_y(28).translate(1.8, 0, 4.2), 2, 0.5))

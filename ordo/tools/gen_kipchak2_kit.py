@@ -47,6 +47,8 @@ def write_model(out_dir, name, nodes, groups=None):
         nm, m, kind = n[0], n[1], n[2]
         if m is None or not m.tris:
             continue
+        oy = float(n[3][1]) if len(n) > 3 and n[3] is not None else 0.0
+        m.P[:, 1] = np.maximum(m.P[:, 1], -0.049 - oy)   # вкопанное — не глубже 5 см (ТЗ 11.6)
         gl_nodes.append((nm, m, MAT[kind]))
         if len(n) > 3 and n[3] is not None:
             offs[nm] = [float(v) for v in n[3]]
@@ -108,7 +110,7 @@ def local(m: Mesh, origin) -> Mesh:
 
 # ================================================================ брёвна
 
-def log_post(x, z, h, r, sides=6, tip=0.0, seed=0, lean=(0.0, 0.0), sink=0.06, region="bark", flat_tip=True,
+def log_post(x, z, h, r, sides=6, tip=0.0, seed=0, lean=(0.0, 0.0), sink=0.05, region="bark", flat_tip=True,
              simple_tip=False):
     """Вертикальное бревно: кора (вдоль — вся область), затёсанный остриём верх (светлое дерево
     «wood», грани плоские — следы топора). lean — наклон верха (dx, dz) в метрах."""
@@ -324,9 +326,9 @@ def yurt_ruin(spec, lod=0, seed=0):
     G.radial_warp(dome, lambda th, y, r: 1 + 0.08 * np.sin(np.radians(th) * 4 + 1.0) - 0.05 * np.sin(np.radians(th) * 9))
     dome.UV[:, 1] = 1 - dome.UV[:, 1]
     dome.UV[:, 0] *= 0.999
-    G.to_region(dome, "dome")
+    G.to_region(dome, "felt_grey")
     dome.smooth()
-    parts.append(scorch(dome, seed, 0.38, cell=R * 0.4))
+    parts.append(char(scorch(dome, seed, 0.3, cell=R * 0.35), 0.48))
     # тюндюк набок на куче
     tr = spec.tunduk_r
     tun = K.lathe([(tr, 0.0), (tr, 0.1), (tr - 0.1, 0.12), (tr - 0.1, 0.0)], q(lod, 14, 7), 1.0, normals="crease")
@@ -350,7 +352,7 @@ def yurt_ruin(spec, lod=0, seed=0):
     for i in range(q(lod, 4, 2)):
         a = rs.uniform(0, 2 * math.pi)
         rr = R * rs.uniform(1.0, 1.35)
-        parts.append(scorch(felt_sheet(rr * math.sin(a), rr * math.cos(a), rs.uniform(0.5, 0.9), rs.uniform(0.4, 0.7),
-                                       0.12, "felt_white" if i % 2 else "felt_grey", q(lod, 7, 5), seed + i,
-                                       math.degrees(a)), seed + i, 0.5, 0.6))
+        parts.append(char(scorch(felt_sheet(rr * math.sin(a), rr * math.cos(a), rs.uniform(0.5, 0.9), rs.uniform(0.4, 0.7),
+                                            0.12, "felt_white" if i % 2 else "felt_grey", q(lod, 7, 5), seed + i,
+                                            math.degrees(a)), seed + i, 0.45, 0.6), 0.6))
     return finish(parts)
