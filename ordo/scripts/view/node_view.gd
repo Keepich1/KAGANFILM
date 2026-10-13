@@ -107,7 +107,7 @@ func _rebuild_stumps() -> void:
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		var k := BuildingLook.Kit.new()
 		k.cyl(Vector3(0, -0.1, 0), 0.32, 0.26, 0.55, 8, "bark", Color(0.85, 0.75, 0.65))
-		k.cyl(Vector3(0.0, 0.42, 0.0), 0.25, 0.25, 0.02, 8, "logend", Color(1.1, 1.0, 0.9))
+		k.cyl(Vector3(0.0, 0.42, 0.0), 0.25, 0.25, 0.02, 8, "logend", Color(1.0, 0.92, 0.8))
 		k.box(Vector3(0.9, 0.12, 0.2), Vector3(0.7, 0.1, 0.1), "bark", Color(0.8, 0.7, 0.6), 0.5)
 		mm.mesh = k.commit()
 		_stumps.multimesh = mm
@@ -196,7 +196,7 @@ func _placeholder(gold: bool, st: int, seed: int) -> Node3D:
 		var a := rng.range_f(-PI, PI)
 		var r := rng.range_f(1.5, 4.5)
 		var s := rng.range_f(0.12, 0.3)
-		var tint := Color(1.7, 1.3, 0.45) if gold and i % 2 == 0 else Color(0.85, 0.82, 0.8)
+		var tint := Color(1.0, 0.8, 0.3) if gold and i % 2 == 0 else Color(0.85, 0.82, 0.8)
 		k.box(Vector3(sin(a) * r, s * 0.5, cos(a) * r), Vector3(s, s * 0.6, s), "stones", tint, a)
 	var gr := MeshInstance3D.new()
 	gr.mesh = k.commit()

@@ -13,7 +13,7 @@ const SHOTS := [
 	["walls", {"view": Vector4(140, 30, 58, -96), "pitch": 26.0}],
 	["ghost_ok", {"view": Vector4(166, 70, 48, -70), "ghost": ["uy", Vector2(163, 72), 0]}],
 	["ghost_bad", {"view": Vector4(172, 22, 56, -70), "ghost": ["kazarma", Vector2(172, 26), 1],
-		"wall": ["devor", [Vector2(150, -8), Vector2(204, -8)]]}],
+		"wall": ["devor", [Vector2(150, -14), Vector2(204, -14)]]}],
 	["chop", {"work": 0.0, "near": Vector2(166, 30), "dist": 13.0, "yaw": -55.0, "pitch": 20.0}],
 	["dig", {"work": 0.25, "near": Vector2(266, -66), "dist": 15.0, "yaw": -60.0, "pitch": 22.0}],
 	["build", {"work": 0.5, "near": Vector2(214, 8), "dist": 15.0, "yaw": -50.0, "pitch": 22.0}],

@@ -47,11 +47,11 @@ const M := {"earth": 3.0, "stones": 2.0, "planks": 2.0, "lattice": 1.6, "wood": 
 	"adobe": 2.8, "rough": 2.2}
 
 ## Тон глины, извести, дерева (Коканд), войлока (кыпчаки)
-const ADOBE := Color(1.22, 1.08, 0.88)
-const ADOBE_DARK := Color(1.0, 0.86, 0.68)
-const PLASTER := Color(1.45, 1.38, 1.22)
-const WOOD := Color(0.95, 0.85, 0.75)
-const FELT := Color(1.05, 1.02, 0.96)
+const ADOBE := Color(0.93, 0.77, 0.58)
+const ADOBE_DARK := Color(0.76, 0.6, 0.45)
+const PLASTER := Color(1.0, 0.94, 0.82)
+const WOOD := Color(0.8, 0.68, 0.56)
+const FELT := Color(1.0, 0.97, 0.92)
 const SHADE := Color(0.55, 0.5, 0.48)
 
 static var _mesh_cache := {}
@@ -87,6 +87,7 @@ static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE) -> Nod
 		sc.material_override = kit_material()
 		sc.set_instance_shader_parameter("site", 1.0)
 		root.add_child(sc)
+		_add_cap(root, defs, btype, 0.0)
 		set_progress(root, 0.0)
 	elif state == BuildingTable.State.RUIN and not exact:
 		_to_rise(body)
@@ -98,7 +99,40 @@ static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE) -> Nod
 		rb.material_override = kit_material()
 		rb.set_instance_shader_parameter("scorch", 0.55)
 		root.add_child(rb)
+		_add_cap(root, defs, btype, 0.85)
+		var cap := root.get_node_or_null("Cap") as Node3D
+		if cap:
+			cap.position.y = float(root.get_meta("height")) * 0.34 - 0.04
 	return root
+
+
+## Срез стройки (руины) сверху: плоская крышка по следу на высоте среза — стройка выглядит сплошной
+## растущей кладкой. Круглые постройки и башни — круг; поля, звенья и плотины — без крышки.
+static func _add_cap(root: Node3D, defs: Defs, btype: int, scorch: float) -> void:
+	var kind := defs.b_kind[btype]
+	if kind == Defs.BKind.FIELD or kind == Defs.BKind.LINK or kind == Defs.BKind.WALL or kind == Defs.BKind.DAM:
+		return
+	var sz := defs.b_size[btype]
+	var round := defs.b_flags[btype] & Defs.BF_ROUND != 0 or kind == Defs.BKind.TOWER
+	var key := "cap:%s" % defs.b_ids[btype]
+	var mesh: ArrayMesh = _mesh_cache.get(key)
+	if mesh == null:
+		var k := Kit.new()
+		var reg := "adobe" if defs.b_faction[btype] == "kokand" else "felt_grey"
+		var tint := Color(0.88, 0.7, 0.52) if defs.b_faction[btype] == "kokand" else Color(0.85, 0.8, 0.72)
+		if round:
+			k.cyl(Vector3(0, -0.06, 0), minf(sz.x, sz.y) * 0.4, minf(sz.x, sz.y) * 0.4, 0.06, 16, reg, tint)
+		else:
+			k.box(Vector3(0, -0.03, 0), Vector3(sz.x * 0.5 - 0.35, 0.03, sz.y * 0.5 - 0.35), reg, tint)
+		mesh = k.commit()
+		_mesh_cache[key] = mesh
+	var cap := MeshInstance3D.new()
+	cap.name = "Cap"
+	cap.mesh = mesh
+	cap.material_override = kit_material()
+	cap.set_instance_shader_parameter("scorch", scorch)
+	cap.set_meta("round", round)
+	root.add_child(cap)
 
 
 ## Стройка: срез на доле высоты k (0..1); леса видны, пока k < 1
@@ -108,8 +142,14 @@ static func set_progress(root: Node3D, k: float) -> void:
 		return
 	var h := float(root.get_meta("height", 4.0))
 	# фундамент виден сразу (0,35 м), дальше стены растут
-	_set_inst(body, "clip_h", 0.35 + clampf(k, 0.0, 1.0) * (h - 0.35) * 1.02)
+	var clip := 0.35 + clampf(k, 0.0, 1.0) * (h - 0.35) * 1.02
+	_set_inst(body, "clip_h", clip)
 	_set_inst(body, "base_y", root.global_position.y if root.is_inside_tree() else root.position.y)
+	var cap := root.get_node_or_null("Cap") as Node3D
+	if cap:
+		cap.position.y = clip - 0.02
+		# у круглых кровля сужается — выше стен крышка торчала бы наружу
+		cap.visible = k < 0.97 and (not bool(cap.get_meta("round", false)) or clip < h * 0.55)
 
 
 ## Копоть 0..1 (руина, сильно повреждённое здание)
@@ -385,8 +425,8 @@ static func scaffold_mesh(defs: Defs, btype: int, height: float) -> ArrayMesh:
 		for i in 4:
 			var c := Vector3(hx if i % 2 == 0 else -hx, 0.4, hz if i < 2 else -hz)
 			k.box(c, Vector3(0.06, 0.4, 0.06), "pole", wood)
-		k.box(Vector3(0, 0.6, hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.2, 1.1, 0.9))
-		k.box(Vector3(0, 0.6, -hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.2, 1.1, 0.9))
+		k.box(Vector3(0, 0.6, hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.0, 0.95, 0.8))
+		k.box(Vector3(0, 0.6, -hz), Vector3(hx, 0.015, 0.015), "rope", Color(1.0, 0.95, 0.8))
 	else:
 		# стойки по периметру, ярусы настила, раскосы
 		var nx := maxi(2, int(sz.x / 3.0) + 1)
@@ -449,7 +489,7 @@ static func _house(k: Kit, sz: Vector2, h: float, aivan: bool, tiles: bool) -> v
 	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.25, 0.2, hz + 0.25), "rough", ADOBE_DARK)          # цоколь
 	k.box(Vector3(0, h * 0.5, cz), Vector3(hx, h * 0.5, body_hz), "adobe", ADOBE)               # стены
 	k.box(Vector3(0, h + 0.12, cz), Vector3(hx + 0.35, 0.14, body_hz + 0.35), "rough", ADOBE_DARK)  # кровля
-	k.box(Vector3(0, h + 0.38, cz), Vector3(hx + 0.2, 0.12, body_hz + 0.2), "rough", Color(0.95, 0.82, 0.62))
+	k.box(Vector3(0, h + 0.38, cz), Vector3(hx + 0.2, 0.12, body_hz + 0.2), "rough", Color(0.85, 0.7, 0.52))
 	# торцы балок под кровлей
 	var nb := maxi(2, int(sz.x / 1.2))
 	for i in nb:
@@ -528,8 +568,8 @@ static func _kiln(k: Kit, sz: Vector2) -> void:
 	var hx := sz.x * 0.5 - 0.3
 	var hz := sz.y * 0.5 - 0.3
 	k.box(Vector3(0, 0.2, 0), Vector3(hx + 0.2, 0.2, hz + 0.2), "rough", ADOBE_DARK)
-	k.cyl(Vector3(-hx * 0.35, 0, -hz * 0.2), hz * 0.75, hz * 0.7, 2.4, 14, "adobe", Color(1.1, 0.8, 0.62))
-	k.dome(Vector3(-hx * 0.35, 2.4, -hz * 0.2), hz * 0.7, 1.9, 14, "adobe", Color(1.05, 0.76, 0.6))
+	k.cyl(Vector3(-hx * 0.35, 0, -hz * 0.2), hz * 0.75, hz * 0.7, 2.4, 14, "adobe", Color(0.95, 0.66, 0.5))
+	k.dome(Vector3(-hx * 0.35, 2.4, -hz * 0.2), hz * 0.7, 1.9, 14, "adobe", Color(0.92, 0.64, 0.5))
 	k.cyl(Vector3(-hx * 0.35, 3.6, -hz * 0.2), 0.55, 0.45, 3.4, 8, "rough", Color(0.9, 0.66, 0.52))
 	k.box(Vector3(-hx * 0.35, 0.8, -hz * 0.2 + hz * 0.72), Vector3(0.5, 0.6, 0.05), "rough", SHADE)
 	# навес и штабели кирпича
@@ -537,7 +577,7 @@ static func _kiln(k: Kit, sz: Vector2) -> void:
 		k.cyl(Vector3(hx * 0.4 + (i % 2) * hx * 0.5, 0, (i / 2) * hz * 1.2 - hz * 0.6), 0.1, 0.09, 2.8, 6, "pole", WOOD)
 	k.box(Vector3(hx * 0.65, 2.85, 0), Vector3(hx * 0.42, 0.08, hz * 0.85), "planks", WOOD)
 	for i in 3:
-		k.box(Vector3(hx * 0.65, 0.3 + i * 0.32, -hz * 0.3 + i * 0.4), Vector3(0.7, 0.16, 0.45), "rough", Color(1.15, 0.72, 0.55))
+		k.box(Vector3(hx * 0.65, 0.3 + i * 0.32, -hz * 0.3 + i * 0.4), Vector3(0.7, 0.16, 0.45), "rough", Color(0.95, 0.6, 0.45))
 
 
 ## Бозор: ряды лавок с навесами

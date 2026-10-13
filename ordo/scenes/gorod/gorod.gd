@@ -11,9 +11,11 @@ extends Node3D
 ##   --skip=С            промотать город на С секунд при запуске (без отрисовки)
 ##   --series=DIR        серия кадров проверки вида (виды камер ниже) в папку DIR; --only=a,b — часть серии
 ##   --stress=N          нагрузка: довести юнитов до N и построек до 200 (замер вида)
+##   --view=x,z,d,yaw    камера стратегии в эту точку (расстояние, азимут)
 ##   --perf_log          раз в секунду в консоль: время вида по частям, вызовы отрисовки, кадр
 ##   --perf_frames=N     замер N кадров, итог в консоль и выход (с --stress)
 ##   --perf_cpu          время вида — процессорное время потока (чужие процессы не мешают)
+##   --perf_warm=N       сколько первых кадров не считать (загрузка, шейдеры), по умолчанию 30
 
 signal series_done
 
@@ -37,6 +39,7 @@ var _wait := 0
 var _perf_log := false
 var _perf_frames := 0
 var _perf_n := 0
+var _perf_warm := 30
 var _perf_sum := {}
 var _perf_max := {}
 var _log_t := 0.0
@@ -48,12 +51,18 @@ func _ready() -> void:
 	if _ordo and _ordo.has_arg("skip") and driver.sim:
 		for i in int(float(_ordo.arg("skip")) * 30.0):
 			driver.step()
+	if _ordo and _ordo.has_arg("view"):
+		# --view=x,z,расстояние,азимут — камера стратегии сразу туда
+		var v := String(_ordo.arg("view")).split_floats(",")
+		if v.size() == 4:
+			camera.go_to(Vector4(v[0], v[1], v[2], v[3]), true)
 	if _ordo and _ordo.has_arg("stress"):
 		GorodStress.populate(CityView.query_of(driver) as FakeCity, int(_ordo.arg("stress")), 200)
 	if _ordo:
 		_perf_log = _ordo.has_arg("perf_log")
 		_perf_frames = int(_ordo.arg("perf_frames", "0"))
 		CityView.cpu_clock = _ordo.has_arg("perf_cpu")
+		_perf_warm = int(_ordo.arg("perf_warm", "30"))
 		if _perf_log or _perf_frames > 0:
 			RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	if _ordo and _ordo.has_arg("series"):
@@ -168,7 +177,7 @@ func _perf(delta: float) -> void:
 	vals[&"draw_calls"] = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	CityView.frame_ms.clear()
 	_perf_n += 1
-	if _perf_n > 30:      # первые кадры — загрузка и компиляция шейдеров
+	if _perf_n > _perf_warm:      # первые кадры — загрузка и компиляция шейдеров
 		for k in vals:
 			_perf_sum[k] = float(_perf_sum.get(k, 0.0)) + float(vals[k])
 			_perf_max[k] = maxf(float(_perf_max.get(k, 0.0)), float(vals[k]))
@@ -176,14 +185,14 @@ func _perf(delta: float) -> void:
 	if _perf_log and _log_t >= 1.0:
 		_log_t = 0.0
 		print("[город скорость] ", _perf_text())
-	if _perf_frames > 0 and _perf_n >= _perf_frames + 30:
-		print("[город итог] кадров %d, юнитов %d, построек %d" % [_perf_n - 30, driver.sim.n, _buildings_count()])
+	if _perf_frames > 0 and _perf_n >= _perf_frames + _perf_warm:
+		print("[город итог] кадров %d, юнитов %d, построек %d" % [_perf_n - _perf_warm, driver.sim.n, _buildings_count()])
 		print("[город итог] ", _perf_text())
 		get_tree().quit()
 
 
 func _perf_text() -> String:
-	var n := maxi(_perf_n - 30, 1)
+	var n := maxi(_perf_n - _perf_warm, 1)
 	var parts := PackedStringArray()
 	for k in [&"view_total", &"view_units", &"view_buildings", &"view_nodes", &"view_herds", &"view_fields",
 			&"view_select", &"view_overlay", &"view_cityfx", &"fx", &"render_cpu", &"draw_calls", &"frame"]:
