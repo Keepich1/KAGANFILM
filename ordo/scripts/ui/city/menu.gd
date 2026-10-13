@@ -10,30 +10,35 @@ signal closed
 
 const W := 460.0
 const H := 430.0
-const HELP_W := 1060.0
-const HELP_H := 640.0
+const HELP_W := 1240.0
+const HELP_H := 690.0
+const ROW := 40.0
+const KEY_W := 214.0
 
 ## Памятка: [клавиши, что делают] по двум столбцам (ТЗ §10, ARCHITECTURE §14, ECONOMY §1.7, §2.6, §4.1)
 const HELP_LEFT := [
 	["Выбор и приказы", ""],
 	["ЛКМ", "выбрать; рамка — несколько"],
 	["Двойной щелчок", "все такие же на экране"],
-	["ПКМ", "идти, бить, добывать, строить, чинить"],
+	["ПКМ", "идти, бить, добывать, строить"],
 	["ПКМ и протянуть", "линия строя и разворот"],
 	["Двойной ПКМ", "бегом / галопом"],
-	["Shift", "в очередь; Ctrl+ПКМ — простая атака"],
+	["Shift", "в очередь"],
+	["Ctrl+ПКМ", "простая атака, без набега"],
 	["F · H · G", "строй · стой · качып атуу"],
-	["R · V · U", "стрельба / рукопашная · клич · отряд"],
-	["K · Shift+K", "свернуть юрту · весь лагерь; K с арбами — развернуть"],
+	["R · V · U", "огонь / рукопашная · клич · отряд"],
+	["K · Shift+K", "свернуть юрту · весь лагерь"],
+	["K с арбами", "развернуть лагерь у курсора"],
 ]
 const HELP_RIGHT := [
 	["Город и камера", ""],
-	["B, буквы", "«Хозяйство» и постройки на вкладке"],
-	["Колесо, R", "повернуть постройку; Shift — ставить ещё"],
-	["«.» · N · Tab", "свободный работник · тревога · наложения"],
-	["V у Урды", "Ҳашар"],
-	["Ctrl+1…9 · 1…9", "запомнить группу · вызвать (дважды — камера)"],
-	["WASD, Q/E, колесо", "камера; края экрана, средняя кнопка"],
+	["B, буквы", "«Хозяйство» и постройки"],
+	["Колесо, R", "повернуть постройку"],
+	["Shift+ЛКМ", "поставить ещё одну"],
+	["«.» · N", "свободный работник · тревога"],
+	["V у Урды · Tab", "Ҳашар · наложения на карту"],
+	["Ctrl+1…9 · 1…9", "запомнить · вызвать группу"],
+	["WASD · Q/E", "двигать · вращать камеру"],
 	["F5–F8", "виды камеры"],
 	["P · + / − · M", "пауза · скорость · звук"],
 	["Del · Esc · F10", "снести · отмена · меню"],
@@ -86,12 +91,12 @@ func setup(p_hud: CityHud) -> void:
 	ht.size = Vector2(HELP_W, 46)
 	ht.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help.add_child(ht)
-	_column(HELP_LEFT, Vector2(54, 88))
-	_column(HELP_RIGHT, Vector2(HELP_W * 0.5 + 18, 88))
+	_column(HELP_LEFT, Vector2(64, 90))
+	_column(HELP_RIGHT, Vector2(HELP_W * 0.5 + 24, 90))
 	var back := Button.new()
 	back.text = tr("Назад")
 	back.focus_mode = Control.FOCUS_NONE
-	back.position = Vector2(HELP_W * 0.5 - 100, HELP_H - 84)
+	back.position = Vector2(HELP_W * 0.5 - 100, HELP_H - 80)
 	back.size = Vector2(200, 52)
 	back.add_theme_font_override("font", UiTheme.head_bold())
 	back.add_theme_font_size_override("font_size", 22)
@@ -128,24 +133,25 @@ func _paper(w: float, h: float) -> NinePatchRect:
 
 func _column(rows: Array, at: Vector2) -> void:
 	var y := at.y
+	var col_w := HELP_W * 0.5 - 80.0
 	for r: Array in rows:
 		if r[1] == "":
 			var head := UiTheme.label(tr(r[0]), UiTheme.head_bold(), 26, true)
 			head.position = Vector2(at.x, y)
 			_help.add_child(head)
-			y += 44.0
+			y += 46.0
 			continue
 		var key := UiTheme.label(tr(r[0]), UiTheme.text(800), 19, true)
 		key.position = Vector2(at.x, y)
-		key.size = Vector2(176, 26)
+		key.size = Vector2(KEY_W - 8.0, 28)
 		key.add_theme_color_override("font_color", UiTheme.GOLD)
 		_help.add_child(key)
 		var what := UiTheme.label(tr(r[1]), UiTheme.text(500), 19, true)
-		what.position = Vector2(at.x + 182, y)
-		what.size = Vector2(HELP_W * 0.5 - 250, 26)
-		what.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		what.position = Vector2(at.x + KEY_W, y)
+		what.size = Vector2(col_w - KEY_W, 28)
+		what.clip_text = true
 		_help.add_child(what)
-		y += 46.0
+		y += ROW
 
 
 func is_open() -> bool:

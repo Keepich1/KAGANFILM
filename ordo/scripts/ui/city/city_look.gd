@@ -5,11 +5,13 @@ extends Node3D
 ##   tools/shot.sh res://scenes/test/ui_city.tscn out.png --at=6 -- --faction=kipchak --sel=building
 ## Параметры:
 ##   --faction=kokand|kipchak   за кого играем (игрок 0 / 1 в FakeCity)
-##   --sel=none|squad|workers|building|hq|single   что выделить к кадру
+##   --sel=none|squad|workers|building|hq|single|node|herd   что выделить к кадру
 ##   --bg=live|still|<путь.png>  live — мир и юниты (медленно на процессоре); still — кадр среза под интерфейсом
 ##   --tab=orders|economy|fort  открытая вкладка
 ##   --place=<id постройки>     показать режим постройки (призрак)
 ##   --skip=секунды             сразу промотать поддельный город (таймер набега, записки, стройки)
+##   --menu=main|help           открыть меню / памятку клавиш
+##   --armed=<приказ>           взвести кнопку сетки (move, attack_move, gather, assist, rally)
 
 const STILLS := {"kokand": "res://docs/shots/03_rts.jpg", "kipchak": "res://docs/shots/02_camp_life.jpg"}
 ## Виды камеры по сторонам: (x, z, расстояние, азимут)
@@ -27,6 +29,8 @@ var _sel_done := false
 var _t := 0.0
 var _place := ""
 var _tab := "orders"
+var _menu := ""
+var _armed := ""
 
 
 func _ready() -> void:
@@ -37,6 +41,8 @@ func _ready() -> void:
 	_sel_mode = arg.call("sel", "squad" if faction == "kokand" else "building")
 	_place = arg.call("place", "")
 	_tab = arg.call("tab", "orders")
+	_menu = arg.call("menu", "")
+	_armed = arg.call("armed", "")
 	var bg: String = arg.call("bg", "live")
 	if bg == "live":
 		add_child(load("res://scenes/world/world.tscn").instantiate())
@@ -116,6 +122,12 @@ func _process(delta: float) -> void:
 			input.begin_place(defs.building(StringName(_place)))
 			var v: Vector4 = VIEWS[faction]
 			input.placement.move(Vector2(v.x + 10.0, v.y - 6.0))
+		if _armed != "":
+			input.order_button(SimCmd.Op.get(_armed.to_upper(), SimCmd.Op.NONE))
+		if _menu != "":
+			hud.open_menu()
+			if _menu == "help":
+				hud.menu.show_help()
 
 
 ## Выделение к кадру
@@ -152,4 +164,21 @@ func _preset_selection() -> void:
 					break
 			if hs.is_empty():
 				hs.append(q.players().hq_b[player])
+		"node":
+			# ближайшая к виду жила (не дерево)
+			var nt := q.nodes()
+			var v: Vector4 = VIEWS[faction]
+			var best := 1e9
+			for n in nt.hw:
+				if nt.ntype[n] >= 0 and nt.scatter_ref[n] < 0 and nt.amount_milli[n] != 0:
+					var d := Vector2(nt.x[n], nt.z[n]).distance_to(Vector2(v.x, v.y))
+					if d < best:
+						best = d
+						hs = PackedInt32Array([nt.handle(n)])
+		"herd":
+			var ht := q.herds()
+			for h in ht.hw:
+				if ht.state[h] != HerdTable.State.FREE and ht.owner[h] == player:
+					hs.append(ht.handle(h))
+					break
 	selection.set_selection(hs)
