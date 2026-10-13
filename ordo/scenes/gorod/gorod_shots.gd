@@ -163,7 +163,13 @@ static func setup(scene: GorodScene, s: Array) -> void:
 		var sim := q.battle()
 		var at: Vector2 = Vector2(sim.u_x[u], sim.u_z[u]) if u >= 0 else cfg.get("near", Vector2.ZERO)
 		print("[город] кадр %s: работник %d в (%.1f, %.1f)" % [s[0], u, at.x, at.y])
-		view = Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), _clear_yaw(q, at, float(cfg.get("yaw", -60.0))))
+		var yaw := _clear_yaw(q, at, float(cfg.get("yaw", -60.0)))
+		var tgt := _work_target(q, aux, at)
+		if tgt.is_finite():
+			# камера со стороны работника, цель (дерево, жила) — за ним и чуть в стороне
+			var away := at - tgt
+			yaw = rad_to_deg(atan2(away.x, away.y)) + 35.0
+		view = Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), yaw)
 	if pitch >= 0.0:
 		var shot := scene.get_node("Cameras/CamShot") as Camera3D
 		var f := Vector3(view.x, Terrain.height_at(view.x, view.y), view.y)
@@ -273,6 +279,24 @@ static func _worker(q: GameQuery, aux: float, near: Vector2) -> int:
 			continue
 		bd = d
 		best = u
+	return best
+
+
+## Цель работы у точки p: дерево (рубит) или жила (копает); нет — Vector2.INF
+static func _work_target(q: GameQuery, aux: float, p: Vector2) -> Vector2:
+	if aux >= AnimSpec.WORK_BUILD - 0.01:
+		return Vector2.INF
+	var nt := q.nodes()
+	var tree := aux < AnimSpec.WORK_DIG - 0.01
+	var best := Vector2.INF
+	var bd := 12.0 * 12.0
+	for n in nt.hw:
+		if nt.ntype[n] < 0 or (nt.scatter_ref[n] >= 0) != tree:
+			continue
+		var c := Vector2(nt.x[n], nt.z[n])
+		if c.distance_squared_to(p) < bd:
+			bd = c.distance_squared_to(p)
+			best = c
 	return best
 
 

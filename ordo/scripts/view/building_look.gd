@@ -489,49 +489,61 @@ static func _mesh_instances(root: Node) -> Array[MeshInstance3D]:
 static func parts_for(defs: Defs, btype: int, lod := 0, stage := 2) -> Array:
 	var path := model_path(defs, btype, BuildingTable.State.ACTIVE, stage)
 	if path.ends_with(".glb"):
-		var p := path if lod == 0 else path.get_basename() + "_lod1.glb"
-		if lod > 0 and not _exists(p):
-			return []
-		var key := "parts:" + p
-		if _mesh_cache.has(key):
-			return _mesh_cache[key]
-		var n := instance_model(p, 0.0, false)
-		var out: Array = []
-		for mi in _mesh_instances(n):
-			if mi.mesh == null or not mi.visible or String(mi.name) == "LOD1":
-				continue
-			# двор/пятно земли Коканда — только вблизи (вдали — земля мира): на группу вызовом меньше
-			if lod > 0 and String(mi.name).begins_with("Ground"):
-				continue
-			# материалы — в копию меша (у MultiMesh нет своих материалов на поверхность)
-			var m := mi.mesh.duplicate() as Mesh
-			for s in m.get_surface_count():
-				var mat := mi.get_active_material(s)
-				if m is ArrayMesh:
-					(m as ArrayMesh).surface_set_material(s, mat)
-			out.append({"mesh": m, "xform": _rel_xform(n, mi), "material": null, "var": _var_of(n, mi),
-				"spin": String(mi.name).begins_with("Wheel"),
-				"shadow": mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF})
-		n.free()
-		out = merge_parts(out)
-		if lod > 0:
-			# вдали тень — только у самой большой части (флаги, навесы, колёса — без тени)
-			var main := -1
-			var best := -1.0
-			for i in out.size():
-				var v := ((out[i].mesh as Mesh).get_aabb().size as Vector3)
-				if bool(out[i].shadow) and v.x * v.y * v.z > best:
-					best = v.x * v.y * v.z
-					main = i
-			for i in out.size():
-				if i != main and int(out[i]["var"]) == 0:
-					out[i].shadow = false
-		_mesh_cache[key] = out
-		return out
+		return parts_of(path, lod)
 	if lod > 0:
 		return []
 	return [{"mesh": mesh_for(defs, btype), "xform": Transform3D(), "material": kit_material(), "var": 0,
 		"spin": false, "shadow": not is_flat(defs, btype)}]
+
+
+## Столб на конце линии стены (<имя>_end.glb, как KokandWallLine): путь ("" — нет)
+static func end_path(defs: Defs, btype: int) -> String:
+	var n := model_name(defs, btype)
+	var p := _dir(defs, btype) + n + "_end.glb"
+	return p if n != "" and _exists(p) else ""
+
+
+## Части glb для MultiMesh (кэш): lod 1 — файл <имя>_lod1.glb ([] — нет его)
+static func parts_of(path: String, lod := 0) -> Array:
+	var p := path if lod == 0 else path.get_basename() + "_lod1.glb"
+	if lod > 0 and not _exists(p):
+		return []
+	var key := "parts:" + p
+	if _mesh_cache.has(key):
+		return _mesh_cache[key]
+	var n := instance_model(p, 0.0, false)
+	var out: Array = []
+	for mi in _mesh_instances(n):
+		if mi.mesh == null or not mi.visible or String(mi.name) == "LOD1":
+			continue
+		# двор/пятно земли Коканда — только вблизи (вдали — земля мира): на группу вызовом меньше
+		if lod > 0 and String(mi.name).begins_with("Ground"):
+			continue
+		# материалы — в копию меша (у MultiMesh нет своих материалов на поверхность)
+		var m := mi.mesh.duplicate() as Mesh
+		for s in m.get_surface_count():
+			var mat := mi.get_active_material(s)
+			if m is ArrayMesh:
+				(m as ArrayMesh).surface_set_material(s, mat)
+		out.append({"mesh": m, "xform": _rel_xform(n, mi), "material": null, "var": _var_of(n, mi),
+			"spin": String(mi.name).begins_with("Wheel"),
+			"shadow": mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF})
+	n.free()
+	out = merge_parts(out)
+	if lod > 0:
+		# вдали тень — только у самой большой части (флаги, навесы, колёса — без тени)
+		var main := -1
+		var best := -1.0
+		for i in out.size():
+			var v := ((out[i].mesh as Mesh).get_aabb().size as Vector3)
+			if bool(out[i].shadow) and v.x * v.y * v.z > best:
+				best = v.x * v.y * v.z
+				main = i
+		for i in out.size():
+			if i != main and int(out[i]["var"]) == 0:
+				out[i].shadow = false
+	_mesh_cache[key] = out
+	return out
 
 
 ## Слить части с одним материалом, двором и тенью в один меш (SurfaceTool.append_from с переносом в

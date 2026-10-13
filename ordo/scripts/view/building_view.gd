@@ -10,6 +10,8 @@ extends Node3D
 ## заместители (полив — параметр экземпляра «wet»).
 ## Поле (дала) с моделью — стадия урожая (BuildingLook: <имя>_s0/_s1/_s2): «лалми» (воды меньше
 ## половины) — всходы, полив без работников — зелёное, полив с работниками — спелое.
+## Стена: на концах линий — круглые столбы <имя>_end.glb (как KokandWallLine), конец — точка звена, у
+## которой (ближе END_SNAP) нет конца другого звена того же типа; изменилось звено — столбы типа заново.
 ## Дым (трубы, тандыры, печь — метки обёртки арта; тюндюки юрт) — один GPUParticles3D на группу
 ## (точки выпуска — по постройкам), дальше SMOKE_RANGE не рисуется. Плоское (поля, арыки, вода,
 ## двор, крышки срезов, обломки) теней не отбрасывает.
@@ -31,6 +33,8 @@ const SMOKE_RANGE := 320.0
 const SMOKE_MAX := 1400
 ## Стадия урожая полей сверяется раз в столько кадров
 const FIELD_EVERY := 30
+## Концы звеньев ближе — одна линия стены (звенья внахлёст, углы), м
+const END_SNAP := 1.2
 const FIRE := preload("res://scenes/camp/campfire.tscn")
 const FREE := BuildingTable.State.FREE
 const SITE := BuildingTable.State.SITE
@@ -128,6 +132,8 @@ func sync() -> void:
 	var prog := bt.progress
 	for b in hw:
 		if gen[b] != _gen[b] or state[b] != _state[b] or btype[b] != _btype[b]:
+			_touch_walls(_btype[b])
+			_touch_walls(btype[b])
 			_drop(b)
 			_burn[b] = 0
 			_gen[b] = gen[b]
@@ -347,6 +353,39 @@ func _rebuild_group(key: String, bt: BuildingTable) -> void:
 			mmis.append(mi)
 			if bool(p.get("spin", false)):
 				spin.append({"mm": mm, "xs": xs})
+	# столбы на концах линий стены
+	var endp := BuildingLook.end_path(defs, ty) if defs.b_kind[ty] == Defs.BKind.WALL else ""
+	if endp != "":
+		var ends := wall_ends(ty, bt)
+		var posts: Array[Transform3D] = []
+		for i in slots.size():
+			for e: Vector2 in ends.get(slots[i], []):
+				posts.append(Transform3D(base[i].basis, Vector3(e.x, Terrain.height_at(e.x, e.y), e.y)))
+		if not posts.is_empty():
+			var has_l1 := BuildingLook.parts_of(endp, 1).size() > 0
+			for lod in 2:
+				var eparts := BuildingLook.parts_of(endp, lod)
+				for pi in eparts.size():
+					var p: Dictionary = eparts[pi]
+					var mm := MultiMesh.new()
+					mm.transform_format = MultiMesh.TRANSFORM_3D
+					mm.mesh = p.mesh
+					mm.instance_count = posts.size()
+					for j in posts.size():
+						mm.set_instance_transform(j, posts[j] * (p.xform as Transform3D))
+					var mi := MultiMeshInstance3D.new()
+					mi.name = "MM_%s_E%d_L%d" % [key.replace(":", "_"), pi, lod]
+					mi.multimesh = mm
+					if not bool(p.get("shadow", true)):
+						mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					if has_l1:
+						mi.visibility_range_begin = lod_distance if lod == 1 else 0.0
+						mi.visibility_range_end = lod_distance if lod == 0 else 0.0
+						mi.visibility_range_begin_margin = 4.0 if lod == 1 else 0.0
+						mi.visibility_range_end_margin = 4.0 if lod == 0 else 0.0
+						mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+					add_child(mi)
+					mmis.append(mi)
 	# дым (трубы, тандыры, печь, тюндюки): один выпуск на группу — светлый и тёмный отдельно
 	for dark: bool in [false, true]:
 		var pts := PackedVector3Array()
@@ -368,6 +407,45 @@ func _rebuild_group(key: String, bt: BuildingTable) -> void:
 		_spinning.erase(key)
 	elif not _spinning.has(key):
 		_spinning.append(key)
+
+
+## Звено стены типа ty изменилось: столбы на концах линий у всех групп типа — заново
+func _touch_walls(ty: int) -> void:
+	if ty < 0 or defs.b_kind[ty] != Defs.BKind.WALL or BuildingLook.end_path(defs, ty) == "":
+		return
+	for k: String in _groups:
+		if int(_groups[k].btype) == ty and not _dirty.has(k):
+			_dirty.append(k)
+
+
+## Концы линий стены типа ty: слот → концы звена без соседа (сетка 1 м по концам звеньев)
+func wall_ends(ty: int, bt: BuildingTable) -> Dictionary:
+	var grid := {}
+	for b in bt.hw:
+		if bt.btype[b] != ty or bt.state[b] == FREE or bt.state[b] == PACKED:
+			continue
+		for e: Vector2 in [Vector2(bt.ax[b], bt.az[b]), Vector2(bt.bx[b], bt.bz[b])]:
+			var k := Vector2i(floori(e.x), floori(e.y))
+			if not grid.has(k):
+				grid[k] = []
+			(grid[k] as Array).append([b, e])
+	var out := {}
+	var r := ceili(END_SNAP)
+	for k: Vector2i in grid:
+		for it: Array in grid[k]:
+			var b: int = it[0]
+			var e: Vector2 = it[1]
+			var joined := false
+			for dx in range(-r, r + 1):
+				for dz in range(-r, r + 1):
+					for o: Array in grid.get(k + Vector2i(dx, dz), []):
+						if int(o[0]) != b and (o[1] as Vector2).distance_to(e) < END_SNAP:
+							joined = true
+			if not joined:
+				if not out.has(b):
+					out[b] = []
+				(out[b] as Array).append(e)
+	return out
 
 
 ## Колёса мельниц: поворот вокруг своей оси X (как KokandBuilding)

@@ -231,6 +231,28 @@ func _test_counts(city: FakeCity) -> void:
 		else:
 			var f := v.node_of(tg).get_node_or_null("Fire")
 			_check(f == null or f.is_queued_for_deletion(), "%s починили — огонь погас" % id)
+	# концы линий стены: столбы <имя>_end у звеньев без соседа
+	var dv := d.building(&"devor")
+	if BuildingLook.end_path(d, dv) != "":
+		var ends := v.wall_ends(dv, bt)
+		var n_links := 0
+		var n_ends := 0
+		for k in ends:
+			n_ends += (ends[k] as Array).size()
+		for b0 in bt.hw:
+			if bt.btype[b0] == dv and bt.state[b0] != BuildingTable.State.FREE:
+				n_links += 1
+		_check(n_links == 0 or (n_ends >= 2 and n_ends < n_links * 2), "стена: концы линий %d у %d звеньев" % [n_ends, n_links])
+		var posts := 0
+		for c in v.get_children():
+			if c is MultiMeshInstance3D and String(c.name).begins_with("MM_%d_" % dv) and "_E0_L0" in String(c.name) \
+					and not c.is_queued_for_deletion():
+				posts += (c as MultiMeshInstance3D).multimesh.instance_count
+		var want_posts := 0
+		for k in ends:
+			if bt.state[k] == BuildingTable.State.ACTIVE:
+				want_posts += (ends[k] as Array).size()
+		_check(posts == want_posts, "стена: столбов на концах %d = %d" % [posts, want_posts])
 	# дым юрт MultiMesh: один выпуск на группу, точек — по юртам группы
 	var smokes := 0
 	var points := 0
