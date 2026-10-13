@@ -299,14 +299,73 @@ func place_site(p: int, btype: int, center: Vector2, rot_q: int, workers: Packed
 	if not can_pay(p, cost):
 		_not_enough(p, cost, SimCmd.Op.BUILD)
 		return -Err.NO_RES
+	# ворота и башня на своей стене (place.on_wall): место — по стене, звенья под ними уходят
+	var ws := _wall_snap(p, btype, center)
+	if not ws.is_empty():
+		center = ws["center"]
+		if _is_gate(btype):
+			rot_q = _gate_rot_q(ws["a"], ws["b"])
 	pay(p, cost)
+	if not ws.is_empty():
+		for lh: int in (ws["removes"] as PackedInt32Array):
+			_remove_link(lh)
 	var b := _new_building(p, btype, center, rot_q, BuildingTable.State.SITE)
+	if not ws.is_empty() and _is_gate(btype):
+		var B := buildings
+		var ga: Vector2 = ws["a"]
+		var gb: Vector2 = ws["b"]
+		B.rot[b] = float(ws["rot"])
+		B.ax[b] = ga.x
+		B.az[b] = ga.y
+		B.bx[b] = gb.x
+		B.bz[b] = gb.y
 	_place_world(b)
 	_start_site(b, defs.b_build_ticks[btype])
 	var h := buildings.handle(b)
 	events.push(SimEvents.Ev.SITE_PLACED, p, h, btype, 0, center)
 	wk.send_builders(self, p, workers, h)
 	return h
+
+
+## Ворота (on_wall "align") и башня (on_wall "replace") у своей стены: NavApi.snap_on_wall — {center, rot, a, b,
+## removes}; {} — постройка не для стены или стены рядом нет (ставится как обычная)
+func _wall_snap(p: int, btype: int, center: Vector2) -> Dictionary:
+	if nav == null or String(defs.b_place[btype].get("on_wall", "")) == "":
+		return {}
+	var s := nav.snap_on_wall(p, btype, center)
+	if int(s.get("why", NavApi.Why.NOT_ON_WALL)) != NavApi.Why.OK:
+		return {}
+	if not _is_gate(btype) and (s.get("removes", PackedInt32Array()) as PackedInt32Array).is_empty():
+		return {}
+	return s
+
+
+func _is_gate(btype: int) -> bool:
+	return defs.b_kind[btype] == Defs.BKind.GATE or String(defs.b_place[btype].get("on_wall", "")) == "align"
+
+
+## Четверть оборота ворот по линии стены a→b (ось X модели — вдоль стены), без тригонометрии
+func _gate_rot_q(a: Vector2, b: Vector2) -> int:
+	return 0 if absf(b.x - a.x) >= absf(b.y - a.y) else 1
+
+
+## Звено своей стены под воротами или башней уходит тихо: без руины, события и возврата цены
+func _remove_link(lh: int) -> void:
+	var B := buildings
+	if not B.valid(lh):
+		return
+	var l := B.slot(lh)
+	var kind := defs.b_kind[B.btype[l]]
+	if kind != Defs.BKind.WALL and kind != Defs.BKind.LINK:
+		return
+	_unplace_world(l)
+	wk.on_building_gone(self, l)
+	B.workers_n[l] = 0
+	b_slots[l] = 0
+	if net.is_link(B.btype[l]):
+		net.link_removed(self, l)
+	B.release(l)
+	_drops_dirty = true
 
 
 ## Причина отказа постройки до цены: 0 — можно; иначе Err (Err.NOT_ALLOWED …) или 100 + NavApi.Why.
@@ -746,6 +805,11 @@ func in_territory(p: int, pos: Vector2) -> bool:
 	return false
 
 
+## В зоне воды своей сети (24 м от арыка или тўғона с водой) — для NavApi.check_place (правило water_zone)
+func water_zone_at(p: int, pos: Vector2) -> bool:
+	return p >= 0 and p < players.count and net.in_any_zone(self, p, pos)
+
+
 func wall_link_at(p: int, pos: Vector2, r: float) -> int:
 	var B := buildings
 	var best := 0
@@ -1035,9 +1099,9 @@ func _mirror(b: int) -> void:
 	# арык не мешает ходить и не ломается — в ядро не идёт
 	if defs.b_kind[bt] == Defs.BKind.LINK and B.flags[b] & Defs.BF_WALKABLE:
 		return
-	var half := half_of(b)
-	if defs.b_kind[bt] == Defs.BKind.WALL:
-		half = defs.b_size[bt] * 0.5
+	# поворот несёт B.rot (rot_q · 90° или курс звена/ворот), поэтому полуразмеры — без перестановки (как у вида);
+	# переставленные half_of при rot_q нечётном повернули бы прямоугольник ядра дважды
+	var half := defs.b_size[bt] * 0.5
 	var active := B.state[b] == BuildingTable.State.ACTIVE
 	port.structure_set(B.handle(b), B.team[b], Vector2(B.x[b], B.z[b]), half, B.rot[b], st_flags(bt, active),
 		defs.b_platform_h[bt], defs.b_gar_cap[bt])

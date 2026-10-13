@@ -135,7 +135,7 @@ func footprint_why(g: NavGrid, player: int, btype: int, center: Vector2, r: Rect
 		var fd: Array = Terrain.info().get("ford", []) if not g.flat else []
 		if fd.size() >= 2 and center.distance_squared_to(Vector2(float(fd[0]), float(fd[1]))) < FORD_R * FORD_R:
 			return NavApi.Why.NOT_ALLOWED
-	if bool(place.get("water_zone", false)) and not _in_water_zone(g, center):
+	if bool(place.get("water_zone", false)) and not _in_water_zone(g, center, player):
 		return NavApi.Why.NOT_NEAR
 	var near: Dictionary = place.get("near", {})
 	if not near.is_empty() and g.econ != null and g.econ.nodes != null:
@@ -235,9 +235,13 @@ func _can_pay(g: NavGrid, player: int, cost: PackedInt32Array) -> bool:
 
 
 ## Зона воды ECON (water_grid, квадратная сетка на всю карту; пусто — без проверки)
-func _in_water_zone(g: NavGrid, p: Vector2) -> bool:
+func _in_water_zone(g: NavGrid, p: Vector2, player := -1) -> bool:
 	if g.econ == null:
 		return true
+	# точная зона ECON (расстояние до своего арыка или тўғона с водой), если есть: сетка воды 8 м грубее
+	# и у края зоны говорила «нет», когда ECON говорил «да» (приказ и призрак расходились с правилом 24 м)
+	if player >= 0 and g.econ.has_method("water_zone_at"):
+		return bool(g.econ.call("water_zone_at", player, p))
 	var wg := g.econ.water_grid()
 	if wg.is_empty():
 		return true
