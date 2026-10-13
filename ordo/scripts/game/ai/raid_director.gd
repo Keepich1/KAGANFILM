@@ -28,6 +28,7 @@ const RETREAT_MAX_T := 3600      # отход дольше 2 мин — оста
 const MIN_GAP_T := 900           # между концом набега и следующей волной не меньше 30 с
 const DEFENDER_PTS := 50         # охранник в risk_r, деци-очки
 const HQ_PTS := 10               # ставка — последняя цель
+const HERD_GIVE_UP_T := 600      # стадо стоит у загона 20 с после первого приказа — охраняют, бросаем
 
 var state := Phase.PEACE
 var wave := 0                    # номер последней волны (1…)
@@ -54,6 +55,7 @@ var _edges := PackedVector2Array()
 var _bounds := Rect2(-512, -512, 1024, 1024)
 var _cursor := 0
 var _orders := {}                # отряд → цель (описатель), порядок вставки детерминирован
+var _herd_t := {}                # стадо → такт первого приказа на угон
 var _buf := PackedInt32Array()
 var _growth_milli := 1250
 var _losses_milli := 400
@@ -191,6 +193,7 @@ func _muster(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 			k += 1
 	wave_units.clear()
 	_orders.clear()
+	_herd_t.clear()
 	size0 = 0
 	survivors = 0
 	_cursor = gq.events().head
@@ -239,7 +242,10 @@ func _strike(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 	for u in _buf:
 		if gq.unit_owner(u) == enemy:
 			workers.append(u)
-	var herds := _herds_near(gq, c)
+	var herds := PackedInt32Array()
+	for hh in _herds_near(gq, c):
+		if tick - int(_herd_t.get(hh, tick)) < HERD_GIVE_UP_T:
+			herds.append(hh)
 	var blds := _buildings_near(gq, c)
 	# угнанное стадо уже идёт за нашими — уводим добычу
 	if _has_loot(gq):
@@ -271,6 +277,8 @@ func _strike(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 					pick = hh
 					break
 			strikes_herd += 1
+			if not _herd_t.has(pick):
+				_herd_t[pick] = tick
 			var H := gq.herds()
 			var hs := H.slot(pick)
 			emit(out, SimCmd.move(PackedInt32Array([s]), Vector2(H.x[hs], H.z[hs]), true))
