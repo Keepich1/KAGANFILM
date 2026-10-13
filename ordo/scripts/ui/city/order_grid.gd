@@ -60,7 +60,9 @@ func show_orders(list: Array[Dictionary]) -> void:
 		var tip := "%s%s" % [o.get("label", ""), (" (%s)" % key) if key != "" else ""]
 		if op in RtsInput.ARMABLE:
 			tip += "\n" + tr("Кнопка: затем ЛКМ по карте")
-		_fill(i, UiTheme.order_icon(op), "" if key == "ПКМ" else key, tip, bool(o.get("enabled", true)), {"op": op})
+		# в углу кнопки места мало: «Shift+K» → «↑K» (полностью — в подсказке)
+		_fill(i, UiTheme.order_icon(op), "" if key == "ПКМ" else key.replace("Shift+", "↑"), tip,
+			bool(o.get("enabled", true)), {"op": op})
 		# взведённый приказ — кнопка горит золотом
 		_buttons[i].modulate = Color(1.35, 1.18, 0.8) if op == armed else Color.WHITE
 	_clear_from(n)

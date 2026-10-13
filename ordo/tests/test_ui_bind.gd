@@ -543,6 +543,16 @@ func _test_side(p: int) -> void:
 		if ch is CityRoundel:
 			medal = ch
 	SimHarness.check(medal != null and medal.portrait != null, "в медальоне ставки — портрет из модели (assets/ui/portraits/bld_*.png)")
+	if fid == "kipchak":
+		var extra := String(hud.bottom.building._extra.text)
+		SimHarness.check(extra.contains(tr("золото")) and not extra.contains(tr("камень")),
+			"ставка кыпчаков принимает только свои ресурсы (без камня): «%s»" % extra.replace("\n", " / "))
+		# Shift+K в углу кнопки — «↑K»
+		var pk := ""
+		for i in CityOrderGrid.COLS * CityOrderGrid.ROWS:
+			if int(hud.bottom.grid.action_at(i).get("op", -1)) == SimCmd.Op.PACK_ALL:
+				pk = (hud.bottom.grid._buttons[i].get_node("Key") as Label).text
+		SimHarness.check(pk == "↑K", "клавиша «Свернуть лагерь» в углу кнопки: «%s»" % pk)
 	var trains := 0
 	for ch in hud.bottom.building.get_children():
 		if ch is Button and ch.size.x >= CityBuildingPanel.TRAIN and ch.name != "Ability":

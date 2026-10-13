@@ -322,15 +322,32 @@ func info_lines(defs: Defs, d: Dictionary) -> PackedStringArray:
 	if defs.b_pop_cap[bt] > 0:
 		lines.append(tr("+%d населения") % defs.b_pop_cap[bt])
 	if defs.b_accepts[bt] != 0:
+		# только ресурсы стороны хозяина (её балка, FactionDefs.ui_res): у кыпчаков нет камня
+		var own_res := _owner_res(defs, int(d.get("handle", 0)))
 		var acc := PackedStringArray()
 		for r in defs.R:
-			if defs.b_accepts[bt] & (1 << r) and defs.r_enabled[r] != 0:
+			if defs.b_accepts[bt] & (1 << r) and defs.r_enabled[r] != 0 and (own_res.is_empty() or own_res.has(r)):
 				acc.append(tr(defs.r_name[r]).to_lower())
-		lines.append(tr("Принимает: %s") % ", ".join(acc))
+		if not acc.is_empty():
+			lines.append(tr("Принимает: %s") % ", ".join(acc))
 	if int(d.get("tax_min", 0)) > 0:
 		lines.append(tr("Подать: %d золота в минуту, пока есть Бозор") % int(d["tax_min"]))
 	alarm.append_array(lines)
 	return alarm
+
+
+## Ресурсы стороны хозяина здания (FactionDefs.ui_res); пусто — не знаем (без интерфейса, чужое без хозяина)
+func _owner_res(defs: Defs, b_h: int) -> PackedInt32Array:
+	if hud == null or b_h == 0:
+		return PackedInt32Array()
+	var bt := hud.query.buildings()
+	if not bt.valid(b_h):
+		return PackedInt32Array()
+	var o := bt.owner[bt.slot(b_h)]
+	var pt := hud.query.players()
+	if o < 0 or o >= pt.count:
+		return PackedInt32Array()
+	return defs.f_ui_res[pt.faction[o]]
 
 
 ## Состояние умения по панели ECON {active_s, ready_s}: «действует 0:20» / «через 1:10» / «готово»
