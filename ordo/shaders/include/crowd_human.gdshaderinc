@@ -26,6 +26,8 @@ const int WK_MACE = 4;
 const int WK_STAFF = 5;
 const int WK_NONE = 6;
 
+const int WK_TOOL = 7;              // работник с инструментами (UnitRegistry weapon "tool")
+
 const int IK_NONE = 0;
 const int IK_SHIELD = 1;
 const int IK_RAMROD = 2;
@@ -36,6 +38,14 @@ const float H_STRIDE_WALK = 1.5;
 const float H_STRIDE_RUN = 2.6;
 // Мешок на плече (точка в позе покоя, см. gen_units.sack)
 const vec3 H_SACK_PT = vec3(-0.17, 1.58, -0.05);
+// Инструменты работников — отдельные части (tools/gen_units_work.py), видна та, что нужна работе.
+// Хват в правой кисти (HP_HAND_R) в позе покоя, ось инструмента +Y, лезвие/боёк в +Z.
+// Бревно на плече держится за точку H_LOAD_PT. Невидимые сжимаются в точку (как оружие при бегстве).
+const int H_TOOL_AXE = 17;     // топор: рубит (WORK, z = 0)
+const int H_TOOL_HOE = 18;     // кетмень: копает (z = 0.25)
+const int H_TOOL_HAMMER = 19;  // молот / колотушка: строит (z = 0.5)
+const int H_TOOL_LOAD = 20;    // бревно на плече: несёт дерево (z = 0.875); мешок (z = 0.75) — часть ITEM
+const vec3 H_LOAD_PT = vec3(-0.2, 1.565, -0.06);
 
 struct HPose {
 	vec3 root_rot;
@@ -62,6 +72,9 @@ struct HPose {
 	float skirt;
 	float flare;
 	float speed;
+	int t_part;      // видимый инструмент (H_TOOL_*), -1 — никакой
+	mat3 t_rot;
+	vec3 t_pos;
 };
 
 HPose hp_rest() {
@@ -90,6 +103,9 @@ HPose hp_rest() {
 	p.skirt = 0.85;
 	p.flare = 0.0;
 	p.speed = 0.0;
+	p.t_part = -1;
+	p.t_rot = mat3(1.0);
+	p.t_pos = HP_HAND_R;
 	return p;
 }
 
@@ -251,6 +267,132 @@ void hp_kneel(inout HPose p) {
 	p.pel_off = vec3(0.0, -0.42, -0.04);
 	p.knee_r = vec3(-0.1, -1.0, 0.6);
 	p.skirt = 0.6;
+}
+
+// ---------------------------------------------------------------- инструменты работников
+
+// Инструмент part: хват pos (оси торса C), ось dir (к бойку), zref — куда смотрит лезвие/боёк
+void hp_tool_t(inout HPose p, int part, Xf C, vec3 pos, vec3 dir, vec3 zref) {
+	p.t_part = part;
+	p.t_pos = xf_pt(C, pos);
+	p.t_rot = basis_yz(C.b * dir, C.b * zref);
+}
+
+// То же в осях модели
+void hp_tool_m(inout HPose p, int part, vec3 pos, vec3 dir, vec3 zref) {
+	p.t_part = part;
+	p.t_pos = pos;
+	p.t_rot = basis_yz(dir, zref);
+}
+
+// Точка на рукояти на расстоянии along от хвата
+vec3 hp_tp(HPose p, float along) {
+	return p.t_pos + p.t_rot[1] * along;
+}
+
+// Мах в вертикальной плоскости (кетмень, молот): лезвие поворачивается вместе с рукоятью
+vec3 hp_swing_z(vec3 dir) {
+	return vec3(0.0, -dir.z, dir.y);
+}
+
+vec3 mix3(vec3 a, vec3 b, vec3 c, vec3 d, float k1, float k2, float k3) {
+	return mix(mix(mix(a, b, k1), c, k2), d, k3);
+}
+
+// Работа с инструментом (у кого он есть: деҳқон, малчы). aux — вид работы (AnimSpec WORK).
+// Тело уже поставлено (стойка / колено / шаг) — здесь торс, руки и инструмент.
+void hp_work_tool(inout HPose p, int wk, float ph, float aux, float var) {
+	float cyc = fract(ph);
+	p.w_vis = 0.0;  // посох малчы на время работы убран
+	p.i_vis = 0.0;
+	if (aux < 0.125) {
+		// рубит дерево: наискось из-за правого плеча в ствол впереди слева, топор застревает, рывок назад
+		float wind = seg01(cyc, 0.04, 0.44);
+		float hitk = snap(cyc, 0.46, 0.57);
+		float back = seg01(cyc, 0.68, 0.98);
+		float tw = -0.5 * wind * (1.0 - hitk) + 0.28 * hitk * (1.0 - back);
+		p.chest_rot = vec3(0.06 - 0.1 * wind * (1.0 - hitk) + 0.16 * hitk * (1.0 - back), tw, 0.05 * wind * (1.0 - hitk));
+		p.pel_rot.y = 0.35 * tw;
+		p.head_rot = vec3(0.12 + 0.15 * hitk * (1.0 - back), -0.6 * tw, 0.0);
+		hp_stance(p, vec3(0.16, 0.0, 0.22), vec3(-0.2, 0.0, -0.1));
+		p.pel_off = vec3(0.0, -0.07 - 0.04 * hitk * (1.0 - back), 0.0);
+		Xf C = hp_chest(p);
+		vec3 r_pos = vec3(-0.1, 1.02, 0.3);
+		vec3 r_dir = vec3(0.3, 0.5, 0.81);
+		vec3 w_pos = vec3(-0.26, 1.56, 0.02);
+		vec3 w_dir = vec3(-0.32, 0.62, -0.72);
+		vec3 h_pos = vec3(0.02, 1.2, 0.42);
+		vec3 h_dir = vec3(0.55, 0.04, 0.83);
+		vec3 pos = mix3(r_pos, w_pos, h_pos, r_pos, wind, hitk, back);
+		vec3 dir = normalize(mix3(r_dir, w_dir, h_dir, r_dir, wind, hitk, back));
+		vec3 n = normalize(cross(normalize(w_dir), normalize(h_dir)));
+		hp_tool_t(p, H_TOOL_AXE, C, pos, dir, cross(n, dir));
+		p.hand_r = hp_tp(p, 0.0);
+		p.hand_l = hp_tp(p, -0.11);
+		p.elbow_r = C.b * vec3(-0.9, -0.5, -0.3);
+		p.elbow_l = C.b * vec3(0.7, -0.7, -0.2);
+	} else if (aux < 0.375) {
+		// копает кетменём: взмах над головой, удар в землю перед собой, подтягивает землю к ногам
+		float raise = seg01(cyc, 0.02, 0.38);
+		float hitk = snap(cyc, 0.4, 0.5);
+		float pull = seg01(cyc, 0.6, 0.9);
+		p.chest_rot = vec3(mix(mix(mix(0.62, 0.12, raise), 0.74, hitk), 0.62, pull), 0.0, 0.0);
+		p.head_rot = vec3(mix(0.1, -0.25, raise * (1.0 - hitk)) + 0.2 * hitk, 0.0, 0.0);
+		hp_stance(p, vec3(0.17, 0.0, 0.16), vec3(-0.18, 0.0, -0.13));
+		p.pel_off = vec3(0.0, -0.09, -0.04);
+		vec3 g_pull = vec3(-0.03, 0.9, 0.3);
+		vec3 d_pull = vec3(-0.02, -0.82, 0.56);
+		vec3 g_raise = vec3(-0.07, 1.62, 0.22);
+		vec3 d_raise = vec3(0.0, 0.75, -0.66);
+		vec3 g_hit = vec3(-0.02, 0.86, 0.38);
+		vec3 d_hit = vec3(0.0, -0.75, 0.66);
+		vec3 pos = mix3(g_pull, g_raise, g_hit, g_pull, raise, hitk, pull);
+		vec3 dir = normalize(mix3(d_pull, d_raise, d_hit, d_pull, raise, hitk, pull));
+		hp_tool_m(p, H_TOOL_HOE, pos, dir, hp_swing_z(dir));
+		p.hand_r = hp_tp(p, 0.0);
+		p.hand_l = hp_tp(p, 0.15);
+		Xf C = hp_chest(p);
+		p.elbow_r = C.b * vec3(-1.0, -0.6, -0.2);
+		p.elbow_l = C.b * vec3(1.0, -0.6, -0.2);
+	} else if (aux < 0.625) {
+		// строит: на колене, два удара молотом за цикл по колу; левая рука держит кол
+		float hm = fract(cyc * 2.0);
+		float up = seg01(hm, 0.0, 0.52) * (1.0 - snap(hm, 0.58, 0.7));
+		p.chest_rot = vec3(0.55 - 0.12 * up, -0.08 * up, 0.0);
+		p.head_rot = vec3(0.25, 0.0, 0.0);
+		vec3 tgt = vec3(-0.02, 0.3, 0.44);
+		vec3 d_hit = normalize(vec3(0.05, -0.3, 0.95));
+		vec3 g_hit = tgt - d_hit * 0.4;
+		vec3 g_up = vec3(-0.16, 1.18, 0.18);
+		vec3 d_up = normalize(vec3(0.0, 0.85, -0.52));
+		vec3 pos = mix(g_hit, g_up, up);
+		vec3 dir = normalize(mix(d_hit, d_up, up));
+		hp_tool_m(p, H_TOOL_HAMMER, pos, dir, hp_swing_z(dir));
+		p.hand_r = hp_tp(p, 0.0);
+		p.hand_l = vec3(0.1, 0.42, 0.44);
+		Xf C = hp_chest(p);
+		p.elbow_r = C.b * vec3(-1.0, -0.2, -0.3);
+		p.elbow_l = C.b * vec3(1.0, -0.4, 0.0);
+	} else {
+		Xf C = hp_chest(p);
+		hp_swing_arms(p, C, ph, 0.32, 0.1, true, false);
+		if (aux >= 0.8125 && wk == WK_TOOL) {
+			// несёт бревно на правом плече, придерживает спереди
+			p.t_part = H_TOOL_LOAD;
+			p.t_rot = C.b;
+			p.t_pos = xf_pt(C, H_LOAD_PT);
+			p.hand_r = xf_pt(C, vec3(-0.17, 1.6, 0.24));
+			p.elbow_r = C.b * vec3(-0.7, -1.0, 0.2);
+			p.chest_rot.z += 0.04;
+		} else {
+			// несёт мешок на правом плече
+			p.hand_r = xf_pt(C, vec3(-0.18, 1.58, 0.12));
+			p.elbow_r = C.b * vec3(-0.6, -1.0, 0.0);
+			p.i_vis = 1.0;
+			p.i_rot = C.b;
+			p.i_pos = xf_pt(C, H_SACK_PT);
+		}
+	}
 }
 
 HPose human_pose(int st, float ph, float aux, float var, float t) {
@@ -507,6 +649,8 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			p.hand_l = xf_pt(C, vec3(0.24, 1.86 - 0.07 * pump, 0.14));
 			p.elbow_l = C.b * vec3(1.0, 0.0, -0.3);
 		}
+	} else if (st == HS_WORK && (wk == WK_STAFF || wk == WK_TOOL)) {
+		hp_work_tool(p, wk, ph, aux, var);
 	} else if (st == HS_WORK) {
 		float cyc = fract(ph);
 		if (aux < 0.125) {
@@ -613,6 +757,20 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 			vec3 hr = moving ? p.hand_r + vec3(-0.02, 0.18, 0.08) : xf_pt(C, vec3(-0.3, 1.02, 0.14));
 			hp_weapon_m(p, hr, hr - tip, vec3(0.0, 0.0, 1.0));
 			p.hand_r = hr;
+		} else if (wk == WK_TOOL) {
+			// деҳқон: кетмень на правом плече (идёт), опирается на кетмень (стоит)
+			if (moving) {
+				hp_tool_t(p, H_TOOL_HOE, C, vec3(-0.19, 1.22, 0.24), normalize(vec3(-0.02, 0.45, -0.89)),
+					vec3(0.0, -1.0, 0.0));
+				p.hand_r = hp_tp(p, 0.0);
+				p.elbow_r = C.b * vec3(-0.6, -1.0, 0.1);
+			} else {
+				vec3 g = xf_pt(C, vec3(-0.27, 1.02, 0.2));
+				hp_tool_m(p, H_TOOL_HOE, g, normalize(vec3(-0.04, -1.0, 0.1)), vec3(0.0, -0.2, 1.0));
+				p.hand_r = g;
+				p.elbow_r = C.b * vec3(-0.8, -0.4, -0.3);
+			}
+			p.w_vis = 0.0;
 		} else if (wk == WK_MACE) {
 			// булава на плече
 			hp_weapon_t(p, C, vec3(-0.22, 1.12, 0.2), vec3(0.0, 0.85, -0.5), vec3(0.0, 0.5, 1.0));
@@ -638,6 +796,13 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 	}
 	if (st == HS_FLEE && item_kind != IK_SHIELD) {
 		p.i_vis = 0.0;
+	}
+	if (wk == WK_TOOL && st != HS_WORK && p.t_part < 0 && st != HS_FLEE) {
+		// бой, клич, смерть: в руке топор (бой) или кетмень — по положению «оружия»
+		p.t_part = (st == HS_MELEE || st == HS_BRACE) ? H_TOOL_AXE : H_TOOL_HOE;
+		p.t_pos = p.w_pos;
+		p.t_rot = p.w_rot;
+		p.w_vis = 0.0;
 	}
 	return p;
 }
@@ -699,6 +864,9 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 			vec3 wl = transpose(p.w_rot) * wind_m;
 			v = cloth_flutter(v, vec3(HP_HAND_R.x, v.y, HP_HAND_R.z - 0.02), wgt, wl, t, var * 31.0);
 		}
+	} else if (part >= H_TOOL_AXE && part <= H_TOOL_LOAD) {
+		float vis = part == p.t_part ? 1.0 : 0.0;
+		X = xf_grip(p.t_rot, p.t_pos, part == H_TOOL_LOAD ? H_LOAD_PT : HP_HAND_R, vis);
 	} else if (part == H_ITEM) {
 		if (item_kind == IK_SACK) {
 			X = xf_grip(p.i_rot, p.i_pos, H_SACK_PT, p.i_vis);

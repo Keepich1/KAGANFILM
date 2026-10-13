@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/kipchak2/kipchak_building.gd" id="1"]
+
+[node name="Darbaza" type="Node3D"]
+script = ExtResource("1")
+kind = "darbaza"
+metadata/kind = "darbaza"
+metadata/footprint = Vector2(6.4, 2.4)
+metadata/side = "kipchak"
+metadata/passage_width = 2.8
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="Pass_In" type="Marker3D" parent="Markers"]
+transform = Transform3D(-1, 0, 1.22465e-16, 0, 1, 0, -1.22465e-16, 0, -1, 0, 0, -1.8)
+
+[node name="Pass_Out" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 0, 1.8)
