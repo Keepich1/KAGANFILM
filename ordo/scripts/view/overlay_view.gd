@@ -19,6 +19,9 @@ const TEXT := Color(0.95, 0.9, 0.8)
 const FONT_TEXT := "res://assets/ui/fonts/alegreya/Alegreya-VariableFont_wght.ttf"
 const FONT_TITLE := "res://assets/ui/fonts/cormorant_unicase/CormorantUnicase-SemiBold.ttf"
 const FLOAT_S := 1.8
+## Слияние одинаковых надписей: ближе MERGE_M метров и моложе MERGE_S секунд
+const MERGE_M := 14.0
+const MERGE_S := 0.6
 ## Полоски строек и повреждённых построек — ближе этого расстояния камеры, м
 const BAR_RANGE := 220.0
 
@@ -31,7 +34,7 @@ var defs: Defs
 var _sel: SelectionView
 var _font: Font
 var _title: Font
-var _floats: Array = []       # [pos3, text, color, t]
+var _floats: Array = []       # [pos3, text, color, t, сколько слито]
 
 
 func _ready() -> void:
@@ -53,11 +56,17 @@ func set_query(q: GameQuery) -> void:
 	_floats.clear()
 
 
-## Всплывающая надпись на бумаге над точкой мира (добыча, доставка, «Построено»)
+## Всплывающая надпись на бумаге над точкой мира (добыча, доставка, «Построено»).
+## Та же надпись рядом (MERGE_M) и только что (MERGE_S) — не второй клочок, а «×2» на первом
+## (звенья стены достраиваются одно за другим — один «Построено ×6»)
 func float_text(pos: Vector3, text: String, color := INK) -> void:
+	for f: Array in _floats:
+		if f[1] == text and float(f[3]) < MERGE_S and (f[0] as Vector3).distance_squared_to(pos) < MERGE_M * MERGE_M:
+			f[4] = int(f[4]) + 1
+			return
 	if _floats.size() > 40:
 		_floats.pop_front()
-	_floats.append([pos, text, color, 0.0])
+	_floats.append([pos, text, color, 0.0, 1])
 
 
 func _process(delta: float) -> void:
@@ -209,19 +218,32 @@ func _bar(r: Rect2, k: float, col: Color) -> void:
 	draw_line(f.position, f.position + Vector2(f.size.x, 0), col.lightened(0.35), 1.0)
 
 
-## Всплывающие надписи: клочок бумаги, поднимается и тает
+## Всплывающие надписи: клочок бумаги, поднимается и тает. Клочки не накрывают друг друга:
+## младший, наехавший на уже нарисованный, встаёт над ним (до 6 ступеней)
 func _draw_floats(cam: Camera3D) -> void:
-	for f: Array in _floats:
+	var placed: Array[Rect2] = []
+	for i in range(_floats.size() - 1, -1, -1):
+		var f: Array = _floats[i]
 		var k := float(f[3]) / FLOAT_S
 		var pos: Vector3 = f[0] + Vector3(0, 2.5 + k * 3.0, 0)
 		if cam.is_position_behind(pos):
 			continue
 		var s := cam.unproject_position(pos)
-		var text: String = f[1]
+		var text: String = f[1] if int(f[4]) < 2 else "%s ×%d" % [f[1], f[4]]
 		var fs := 15
 		var sz := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		var a := 1.0 - smoothstep(0.65, 1.0, k)
 		var r := Rect2(s - Vector2(sz.x * 0.5 + 7, sz.y * 0.5 + 3), Vector2(sz.x + 14, sz.y + 6))
+		for _step in 6:
+			var hit := -1
+			for j in placed.size():
+				if placed[j].grow(1.0).intersects(r):
+					hit = j
+					break
+			if hit < 0:
+				break
+			r.position.y = placed[hit].position.y - r.size.y - 3.0
+		placed.append(r)
 		var paper := PAPER
 		paper.a *= a
 		draw_rect(r, paper)

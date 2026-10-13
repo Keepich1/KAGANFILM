@@ -274,6 +274,15 @@ func _test_misc(city: FakeCity) -> void:
 	_check(NodeView.stage_of(0, 4000000) == 0, "выработана — 0")
 	_check(CityFx.amount_text(400) == "0,4" and CityFx.amount_text(3000) == "3" and CityFx.amount_text(12500) == "12",
 		"надписи доставки: 0,4 / 3 / 12 (не «+0»)")
+	# звенья стены достроены разом — один клочок «Построено ×3», дальняя надпись — свой
+	var ov := OverlayView.new()
+	for i in 3:
+		ov.float_text(Vector3(i * 3.2, 0, 0), "Построено")
+	ov.float_text(Vector3(60, 0, 0), "Построено")
+	var fl: Array = ov.get("_floats")
+	_check(fl.size() == 2 and int(fl[0][4]) == 3 and int(fl[1][4]) == 1,
+		"надписи: одинаковые рядом слиты (×%s), дальняя — своя (%d клочков)" % [fl[0][4] if fl.size() > 0 else 0, fl.size()])
+	ov.free()
 	if ResourceLoader.exists(NodeView.DEPOSIT_SCENE % "gold"):
 		var nv := NodeView.new()
 		nv.set_query(city)
