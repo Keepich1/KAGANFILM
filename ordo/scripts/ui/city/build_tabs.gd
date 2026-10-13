@@ -37,7 +37,19 @@ func setup() -> void:
 func select(tab: StringName) -> void:
 	if not _buttons.has(tab):
 		return
-	(_buttons[tab] as Button).set_pressed_no_signal(true)
+	# set_pressed_no_signal не снимает другие кнопки группы — снимаем сами (иначе с клавиш B / Esc
+	# горели две вкладки сразу)
+	for id: StringName in _buttons:
+		(_buttons[id] as Button).set_pressed_no_signal(id == tab)
 	if tab != current:
 		current = tab
 		tab_changed.emit(tab)
+
+
+## Нажатые (горящие) вкладки — тесты: всегда ровно одна, открытая
+func pressed_tabs() -> Array[StringName]:
+	var out: Array[StringName] = []
+	for id: StringName in _buttons:
+		if (_buttons[id] as Button).button_pressed:
+			out.append(id)
+	return out

@@ -505,6 +505,7 @@ func _test_side(p: int) -> void:
 	for i in mini(menu.size(), CityOrderGrid.COLS * CityOrderGrid.ROWS):
 		ok = ok and int(hud.bottom.grid.action_at(i).get("btype", -1)) == int(menu[i]["btype"])
 	SimHarness.check(ok, "вкладка «Хозяйство» = build_menu (%d построек)" % menu.size())
+	SimHarness.check(hud.bottom.tabs.pressed_tabs() == [&"economy"], "горит одна вкладка — открытая: %s" % str(hud.bottom.tabs.pressed_tabs()))
 	# кнопка постройки → режим постройки
 	(hud.bottom.grid._buttons[0] as Button).emit_signal("pressed")
 	var inp: RtsInput = made[2]
