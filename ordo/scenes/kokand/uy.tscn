@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/kokand/kokand_building.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kokand/uy.glb" id="2"]
+
+[node name="Uy" type="Node3D"]
+script = ExtResource("1")
+kind = "uy"
+footprint = Vector2(8, 8)
+metadata/footprint = Vector2(8, 8)
+metadata/kind = "uy"
+metadata/side = "kokand"
+
+[node name="Model" parent="." instance=ExtResource("2")]
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="Door" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -1.7, 0, 4.6)
+
+[node name="Smoke_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 2.6, 1.5, 2.6)
+metadata/amount = 6
+metadata/variant = 1
+
+[node name="Fire_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 1, -2)
