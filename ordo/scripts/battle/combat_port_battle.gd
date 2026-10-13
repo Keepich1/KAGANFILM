@@ -458,8 +458,12 @@ func step() -> void:
 	sim.step()
 	_ensure()
 	for s in sim.take_repath():
-		if s < sim.squads and sim.sq_used[s] == 1 and _o_kind[s] != K.NONE:
+		if s >= sim.squads or sim.sq_used[s] == 0:
+			continue
+		if _o_kind[s] != K.NONE:
 			_repath(s)
+		elif sim.sq_wp[s] < 0 and _o_ticket[s] == 0:
+			sim.order_hold(s)  # путь просить не к чему (приказ погас) — стоять
 	_drain()
 
 

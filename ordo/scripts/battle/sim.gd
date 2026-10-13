@@ -262,6 +262,9 @@ var sq_stuck := PackedInt32Array()      # шагов якорь-одиночка
 var sq_dorm := PackedByteArray()        # 1 — одиночка спит: шаг отряда и центр пропускаются (R12)
 var _real_sq := PackedInt32Array()      # настоящие отряды (город: поиск ближайшего вражеского отряда)
 var _rs_dirty := true
+var _br_order := PackedInt32Array()     # пролом: приказ до него (вернётся, когда постройка падёт)
+var _br_target := PackedInt32Array()
+var _br_st := PackedInt32Array()
 
 # зеркало структур (индекс = слот здания ECON)
 var st_hw := 0
@@ -812,7 +815,7 @@ func _grow_squads(cap: int) -> void:
 			sq_init, sq_alive, sq_cx, sq_cz, sq_speed, sq_lag, sq_melee, sq_charge_ok, sq_couched, sq_impacted,
 			sq_fire_target, sq_fire_dist, sq_volley_rank, sq_volley_t, sq_volley_seen, sq_cry_t, sq_single,
 			_so_key, sq_gen, sq_owner, sq_stance, sq_wp, sq_breach_st, sq_breach_wp, sq_st_target, sq_enemy,
-			sq_used, sq_stuck, sq_dorm, _sq_act, _sq_still]:
+			sq_used, sq_stuck, sq_dorm, _sq_act, _sq_still, _br_order, _br_target, _br_st]:
 		a.resize(cap)
 	sq_members.resize(cap)
 	sq_path.resize(cap)
@@ -1043,6 +1046,9 @@ func set_path(s: int, pts: PackedVector2Array, breach_st := -1, breach_wp := -1)
 	path.clear()
 	path.append_array(pts)
 	sq_wp[s] = 0
+	var cur := sq_breach_st[s]
+	if cur >= 0 and sq_st_target[s] == cur and breach_st != cur:
+		_breach_undo(s)  # шёл на пролом, новый путь — без него: прежний приказ
 	sq_breach_st[s] = breach_st
 	sq_breach_wp[s] = breach_wp
 	sq_stuck[s] = 0
@@ -1060,6 +1066,36 @@ func set_path(s: int, pts: PackedVector2Array, breach_st := -1, breach_wp := -1)
 ## Приказ отдан, путь ещё не пришёл: якорь стоит (приказ MOVE остаётся)
 func await_path(s: int) -> void:
 	sq_wp[s] = -1
+
+
+## Пролом: отряд ломает постройку пути (sq_breach_st); прежний приказ запомнен — когда постройка
+## падёт (structure_clear), он вернётся, путь — заново (ev_repath)
+func _breach_start(s: int) -> void:
+	var st := sq_breach_st[s]
+	if st >= st_hw or st_alive[st] == 0:
+		sq_breach_st[s] = -1  # уже снесена: идём дальше
+		sq_breach_wp[s] = -1
+		return
+	_br_order[s] = sq_order[s]
+	_br_target[s] = sq_target[s]
+	_br_st[s] = sq_st_target[s]
+	sq_order[s] = Order.ATTACK
+	sq_target[s] = -1
+	sq_st_target[s] = st
+	sq_melee[s] = 0
+	for u in sq_members[s]:
+		u_target[u] = -1
+
+
+## Пролом окончен (постройка пала или путь сменился): прежний приказ и цель
+func _breach_undo(s: int) -> void:
+	sq_order[s] = _br_order[s]
+	sq_target[s] = _br_target[s]
+	var old := _br_st[s]
+	sq_st_target[s] = old if old >= 0 and old < st_hw and st_alive[old] == 1 else -1
+	sq_melee[s] = 0
+	sq_breach_st[s] = -1
+	sq_breach_wp[s] = -1
 
 
 ## Работа (R15): Act.WORK + u_work = aux (AnimSpec.WORK_*); aux < 0 — снять. Не будит спящего.
@@ -1517,8 +1553,18 @@ func structure_clear(st: int) -> void:
 	_st_live -= 1
 	for s in squads:
 		if sq_used[s] == 1 and (sq_st_target[s] == st or sq_breach_st[s] == st):
-			if collect_events and sq_breach_st[s] == st:
-				ev_repath.append(s)
+			if sq_breach_st[s] == st:
+				if collect_events:
+					ev_repath.append(s)
+				sq_breach_st[s] = -1
+				sq_breach_wp[s] = -1
+				if sq_st_target[s] == st:
+					# пролом готов: прежний приказ, путь — заново (порт просит его к запомненной цели)
+					_breach_undo(s)
+					if collect_events:
+						sq_wp[s] = -1  # ждёт новый путь от порта
+					_wake_squad(s)
+					continue
 			if sq_st_target[s] == st:
 				sq_st_target[s] = -1
 				if sq_order[s] == Order.ATTACK and sq_target[s] < 0:
@@ -1740,7 +1786,21 @@ func _squads_city() -> void:
 	list.sort()
 	# список отрядов шага не меняется в шаге (form/disband — только снаружи)
 	for s: int in list:
-		if sq_single[s] == 1 or _sq_act[s] == 1:
+		if sq_single[s] == 1:
+			# одиночка: то же, что _update_centroid (прямая копия), без вызова
+			var m := sq_members[s]
+			if m.size() == 1:
+				var u0 := m[0]
+				if u_life[u0] == Life.ALIVE:
+					sq_alive[s] = 1
+					sq_cx[s] = u_x[u0]
+					sq_cz[s] = u_z[u0]
+					sq_speed[s] = sqrt(u_vx[u0] * u_vx[u0] + u_vz[u0] * u_vz[u0])
+				else:
+					sq_alive[s] = 0
+			else:
+				_update_centroid(s)
+		elif _sq_act[s] == 1:
 			_update_centroid(s)
 			_sq_still[s] = 0
 		elif _sq_still[s] == 0:
@@ -2359,6 +2419,13 @@ func _squad_step(s: int) -> void:
 				if wp < last:
 					tx = p.x
 					tz = p.y
+			# пролом (§9 NAV): якорь у точки перед вражеской постройкой — ломать её (R8)
+			var bst := sq_breach_st[s]
+			if bst >= 0 and sq_st_target[s] != bst and last >= 0:
+				var bw := mini(maxi(sq_breach_wp[s], 0), last)
+				var bp := path[bw]
+				if wp > bw or (bp.x - sq_x[s]) * (bp.x - sq_x[s]) + (bp.y - sq_z[s]) * (bp.y - sq_z[s]) < 4.0 * WP_REACH * WP_REACH:
+					_breach_start(s)
 	var ox := sq_x[s]
 	var oz := sq_z[s]
 	sq_vx[s] = 0.0
@@ -2379,7 +2446,7 @@ func _squad_step(s: int) -> void:
 		var want := atan2(dx, dz)
 		if fast:
 			# одиночка (R2): разворот 8 рад/с без ожидания; якорь на поводке у бойца
-			sq_h[s] = rotate_toward(sq_h[s], want, SINGLE_TURN * DT)
+			sq_h[s] += clampf(angle_difference(sq_h[s], want), -SINGLE_TURN * DT, SINGLE_TURN * DT)
 			var stepd := minf(dist, spd * DT)
 			var m0 := sq_members[s][0]
 			var lx := u_x[m0] - sq_x[s]
@@ -2564,6 +2631,10 @@ func _units_think() -> void:
 	var has_mods := own_mods.size() > 0
 	var has_spd := _spd.size() > 0
 	var obstacles := _st_live > 0 or _blk_static.size() > 0
+	var go := _g_origin
+	var gmax := _g_n - 1
+	var gn := _g_n
+	var gro := _grid_origin
 	# город — только бодрые (спящих будит _wake_pass), срез — все по номеру
 	for u: int in (_aw if sleep_on else _all_units()):
 		if u_life[u] != Life.ALIVE:
@@ -2575,11 +2646,18 @@ func _units_think() -> void:
 		var s := u_squad[u]
 		var ti := u_type[u]
 		var mounted := t_flags[ti] & UnitStats.MOUNTED != 0
-		var vmax := t_speed[ti] * _tired(s)
+		# то же, что t_speed × _tired(s) × _spd_at / вода (без вызовов: горячий цикл)
+		var stam := sq_stam[s]
+		var vmax := t_speed[ti] * (1.0 if stam >= STAMINA_TIRED else 0.7 + 0.3 * stam / STAMINA_TIRED)
 		if has_spd:
-			vmax *= _spd_at(u_x[u], u_z[u])
-		elif not _surely_dry(u_x[u], u_z[u]) and Terrain.is_water(u_x[u], u_z[u]):
-			vmax *= 0.55
+			var sgx := floori((u_x[u] - gro.x) / _CELL)
+			var sgz := floori((u_z[u] - gro.y) / _CELL)
+			if sgx >= 0 and sgz >= 0 and sgx < _grid_w and sgz < _grid_h:
+				vmax *= _spd[sgz * _grid_w + sgx] / 16.0
+		else:
+			var dc := _dry[clampi(int((u_z[u] - go) / _CELL), 0, gmax) * gn + clampi(int((u_x[u] - go) / _CELL), 0, gmax)]
+			if dc != 1 and (dc == 2 or not _surely_dry(u_x[u], u_z[u])) and Terrain.is_water(u_x[u], u_z[u]):
+				vmax *= 0.55
 		if has_mods:
 			vmax *= owner_mod(u_owner[u], MOD_SPEED)
 		var x := u_x[u]
@@ -2684,8 +2762,8 @@ func _units_think() -> void:
 			spd = vmax * 0.8
 			_try_melee_st(u, sst, sp)
 		else:
-			# место в строю: скорость якоря + поправка к месту
-			var p2 := slot_point(s, u)
+			# место в строю: скорость якоря + поправка к месту (одиночка — сам якорь: смещение 0)
+			var p2 := Vector2(sq_x[s], sq_z[s]) if sq_single[s] == 1 else slot_point(s, u)
 			if obstacles and sq_single[s] == 0 and (sq_vx[s] != 0.0 or sq_vz[s] != 0.0) \
 					and point_blocked(p2.x, p2.y, u_side[u]):
 				p2 = _trail_target(s, x, z)
@@ -3217,7 +3295,8 @@ func _integrate() -> void:
 		elif sq_status[u_squad[u]] == Status.READY:
 			want = sq_h[u_squad[u]]
 		var rate := (2.6 if mounted else 5.0) * (1.6 if sp < 1.0 else 1.0)
-		u_h[u] = rotate_toward(u_h[u], want, rate * DT)
+		var hstep := rate * DT
+		u_h[u] += clampf(angle_difference(u_h[u], want), -hstep, hstep)  # rotate_toward без вызова
 		if sleep_on and sp < 0.05:
 			_try_sleep(u)
 	if sleep_on:
@@ -3333,8 +3412,14 @@ func _separate_city() -> void:
 		var zu := u_z[u]
 		var cx := clampi(int((xu - go) / _CELL), 0, gmax)
 		var cz := clampi(int((zu - go) / _CELL), 0, gmax)
-		for gz in range(maxi(cz - 1, 0), mini(cz + 1, gmax) + 1):
-			for gx in range(maxi(cx - 1, 0), mini(cx + 1, gmax) + 1):
+		# только клетки ближе lim (+1 м: хэш — по позициям конца прошлого шага), не дальше соседних
+		var pad := lim + 1.0
+		var x0 := maxi(clampi(int((xu - pad - go) / _CELL), 0, gmax), cx - 1)
+		var x1 := mini(clampi(int((xu + pad - go) / _CELL), 0, gmax), cx + 1)
+		var z0 := maxi(clampi(int((zu - pad - go) / _CELL), 0, gmax), cz - 1)
+		var z1 := mini(clampi(int((zu + pad - go) / _CELL), 0, gmax), cz + 1)
+		for gz in range(z0, z1 + 1):
+			for gx in range(x0, x1 + 1):
 				var v := _head[gz * gn + gx]
 				while v >= 0:
 					if v == u or (v < u and _aw_on[v] == 1 and u_sleep[v] == 0):

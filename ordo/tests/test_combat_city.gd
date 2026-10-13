@@ -4,7 +4,7 @@ extends SceneTree
 ## • 5000 случайных spawn/kill/remove/шагов: описатели гаснут, n ограничен, смерть — одна запись;
 ## • отряд из 100 + офицер + знамя собирается из одиночек и распускается обратно;
 ## • 1000 одиночек без дела ≤ 2 мс/шаг (сон); свалка 1213 в городе не медленнее, чем в срезе;
-## • за 60 с ходьбы через постройки и закрытые клетки никто не стоит внутри;
+## • за 60 с ходьбы через постройки и закрытые клетки никто не стоит внутри; пролом сквозь постройку;
 ## • урон по постройке ±10% от формулы (рукопашная и мушкеты);
 ## • работники (DEFENSIVE) не гонятся дальше 6 м; спящие просыпаются от врага;
 ## • прибытие — одна запись на приказ; два прогона — одна сумма; сохранение и загрузка — та же сумма.
@@ -19,6 +19,7 @@ func _init() -> void:
 	_test_lifecycle()
 	_test_form_disband()
 	_test_obstacles()
+	_test_breach()
 	_test_structure_dps()
 	_test_defensive_and_sleep()
 	_test_events()
@@ -321,6 +322,51 @@ func _inside(sim: BattleSim, st: int, x: float, z: float) -> bool:
 	var dx := x - sim.st_cx[st]
 	var dz := z - sim.st_cz[st]
 	return absf(dx * c - dz * sn) < sim.st_hx[st] - 0.01 and absf(dx * sn + dz * c) < sim.st_hz[st] - 0.01
+
+
+# ================================================================= пролом
+
+func _test_breach() -> void:
+	print("[пролом: путь сквозь вражескую постройку]")
+	var bnav := BreachNav.new()
+	var port := _make_port({}, bnav)
+	var sim := port.sim
+	var base := SimHarness.flat_spot()
+	var b := _bh(9)
+	# постройка команды 0 поперёк дороги; обхода нет — путь кыпчаков ломает её (NAV §9 c)
+	port.structure_set(b, 0, base, Vector2(3, 10), 0.0, BattleSim.ST_BLOCK)
+	bnav.breach_h = b
+	bnav.breach_pt = base + Vector2(-6, 0)
+	var sh := port.spawn_squad(1, 1, &"chabuulchu", 20, base + Vector2(-40, 0), PI / 2, &"", 0, 10)
+	var goal := base + Vector2(30, 0)
+	port.move(PackedInt32Array([sh]), goal, true)
+	var hp := 60000   # санти-HP постройки (её ведёт ECON; здесь — тест)
+	var hits := 0
+	var broke := false
+	var arrived := false
+	var inside := 0
+	for t in 2400:
+		_tick(port)
+		var hs := port.take_structure_hits()
+		for i in range(0, hs.size(), 3):
+			if hs[i] == b:
+				hits += 1
+				hp -= hs[i + 1]
+		if not broke:
+			for u in sim.sq_members[Ids.slot(sh)]:
+				if sim.u_life[u] == BattleSim.Life.ALIVE and _inside(sim, 9, sim.u_x[u], sim.u_z[u]):
+					inside += 1
+			if hp <= 0:
+				broke = true
+				bnav.breach_h = 0   # обход больше не нужен: путь прямо
+				port.structure_clear(b)
+		for h in port.take_arrivals():
+			arrived = arrived or h == sh
+		if arrived:
+			break
+	SimHarness.check(hits > 0 and broke, "у точки пролома ломают постройку (%d ударов)" % hits)
+	SimHarness.check(inside == 0, "сквозь целую постройку не прошли (%d)" % inside)
+	SimHarness.check(arrived and port.pos(sh).distance_to(goal) < 8.0, "постройка пала — прежний приказ, дошли до цели")
 
 
 # ================================================================= урон по постройкам
@@ -663,6 +709,22 @@ func _melee(city: bool) -> float:
 			sim.take_dead()
 		best = minf(best, (_cpu_us() - t0) / 300.0 / 1000.0)
 	return best
+
+
+## Навигация для теста: путь через точку перед постройкой breach_h (пролом), пока она стоит
+class BreachNav extends NavStub:
+	var breach_h := 0
+	var breach_pt := Vector2.ZERO
+
+	func _straight(from: Vector2, to: Vector2) -> PathResult:
+		var r := PathResult.new()
+		if breach_h != 0:
+			r.pts.append(breach_pt)
+			r.breach_b = breach_h
+			r.breach_wp = 0
+		r.pts.append(to)
+		r.issued_ver = version
+		return r
 
 
 ## Навигация для теста: прямо к цели, а если прямая задевает препятствие — через угол в обход (как путь NAV)
