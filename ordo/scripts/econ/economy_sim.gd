@@ -704,6 +704,17 @@ func build_menu(p: int, tab: StringName) -> Array[Dictionary]:
 	return qry.build_menu(self, p, tab)
 
 
+## Игрок выбыл (Victory, GAME): таблицы пишет только ECON — players.alive = 0, очереди и работа стоят
+func defeat(p: int) -> void:
+	if p < 0 or p >= players.count:
+		return
+	players.alive[p] = 0
+	var B := buildings
+	for b in B.hw:
+		if B.owner[b] == p and B.q_n[b] > 0:
+			prod.clear_queue(self, b)
+
+
 ## Круг прогресса набега над зданием 0..1 (барымта, талоо, вытаптывание) — для вида и панели
 func raid_progress(b_h: int) -> float:
 	return raid.raid_progress(self, buildings.slot(b_h)) if buildings.valid(b_h) else 0.0
