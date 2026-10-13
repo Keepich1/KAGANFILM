@@ -148,7 +148,8 @@ func _shoot(s: Array) -> void:
 	var img := get_viewport().get_texture().get_image()
 	var path := "%s/%s.png" % [_series_dir, String(s[0])]
 	img.save_png(path)
-	print("[город] кадр: %s t=%.2f, %d мс" % [path, driver.time, Time.get_ticks_msec()])
+	print("[город] кадр: %s t=%.2f, %d мс, вызовов отрисовки %d, юнитов %d" % [path, driver.time, Time.get_ticks_msec(),
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), driver.sim.n])
 	_busy = false
 	_wait = 1
 	if _series.is_empty():
