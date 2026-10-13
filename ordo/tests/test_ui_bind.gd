@@ -2,10 +2,21 @@ extends SceneTree
 ## Привязка интерфейса «Города» к данным (ARCHITECTURE §15, UI): верхняя балка каждой стороны строится из
 ## FactionDefs.ui_res (свои ресурсы: у Коканда ғишт и нет коней, у кыпчаков кони и нет камня; списка в коде нет);
 ## сетка приказов = GameQuery.orders_for, вкладки стройки = build_menu; панель здания — кнопки найма;
-## записки — цвет печати по событию; все строки — по-русски; замер времени обновления.
+## записки — цвет печати по событию; все строки — по-русски; замер времени обновления; новая партия у драйвера
+## (started) — интерфейс и ввод на новом окне чтения, перед чтением — driver.sync().
+## Если в проекте уже есть настоящая игра (GameDriver, GameQueryImpl — главная ветка после слияния GAME),
+## тот же интерфейс проверяется и на ней: приказы мышью доходят до игры и принимаются (без CMD_REJECTED).
 ##   godot --headless --path ordo --script res://tests/test_ui_bind.gd
 
 var city: FakeCity
+
+
+## Драйвер поддельного города с sync() (как GameDriver): считает вызовы
+class SyncDriver extends FakeCityDriver:
+	var syncs := 0
+
+	func sync() -> void:
+		syncs += 1
 
 
 func _init() -> void:
@@ -16,7 +27,277 @@ func _init() -> void:
 	for p in 2:
 		_test_side(p)
 	_test_big_city()
+	_test_restart()
+	_test_real_game()
 	SimHarness.finish(self)
+
+
+## Новая партия у драйвера (сигнал started, новое окно чтения): интерфейс и ввод перестраиваются сами;
+## перед чтением GameQuery — driver.sync() (GameDriver: шаг в фоне)
+func _test_restart() -> void:
+	print("[новая партия, sync драйвера]")
+	var drv := SyncDriver.new()
+	drv.autostart = false
+	root.add_child(drv)
+	drv.start(1)
+	for i in 30:
+		drv.step()
+	var sel := SelectionModel.new()
+	var inp := RtsInput.new()
+	inp.to_world = func(s: Vector2) -> Vector3: return Vector3(s.x * 0.1, 0.0, s.y * 0.1)
+	inp.to_screen = func(w: Vector3) -> Vector2: return Vector2(w.x, w.z) * 10.0
+	inp.view_rect = func() -> Rect2: return Rect2(0, 0, 1920, 1080)
+	inp.setup(drv.query, sel, 0, drv.issue, null, drv)
+	root.add_child(inp)
+	var hud := CityHud.new()
+	root.add_child(hud)
+	hud.setup(drv.query, drv, sel, 0, null, inp)
+	var old := drv.query
+	var mine := old.units_of(0)
+	sel.set_selection(mine.slice(0, 5))
+	sel.set_group(2)
+	inp.begin_place(old.defs().building(&"uy"))
+	drv.syncs = 0
+	hud.refresh_now()
+	inp.order_button(SimCmd.Op.STOP)
+	hud._process(CityHud.MAP_HZ + 0.01)
+	SimHarness.check(drv.syncs >= 4, "перед чтением GameQuery — driver.sync() (%d раз)" % drv.syncs)
+	drv.start(2)
+	SimHarness.check(hud.query == drv.query and inp.query == drv.query and hud.query != old,
+		"новая партия: интерфейс и ввод читают новое окно")
+	SimHarness.check(sel.selected.is_empty() and sel.groups[2].is_empty() and not inp.placement.active(),
+		"выделение, группы и постройка прошлой партии сброшены")
+	SimHarness.check(hud.notes._cursor == drv.query.events().head and hud.notes.visible_notes().is_empty(),
+		"записки читают события новой партии")
+	sel.set_selection(drv.query.units_of(0).slice(0, 3))
+	hud.refresh_now(true)
+	SimHarness.check(hud.info.get("kind") == "units" and hud.bottom.cards.visible, "после новой партии выделение и карточки работают")
+	hud.queue_free()
+	inp.queue_free()
+	drv.queue_free()
+
+
+# ================================================================= настоящая игра (после слияния GAME)
+
+## Экран ↔ мир для пробы на настоящей игре: 2 пикселя на метр, (0, 0) экрана — rg_origin
+const RG_PX := 2.0
+var rg_origin := Vector2.ZERO
+var rg_log: Array[PackedInt32Array] = []
+var rg_t := 100.0
+
+
+func _test_real_game() -> void:
+	var path := _global_class_path(&"GameDriver")
+	if path == "" or _global_class_path(&"GameQueryImpl") == "":
+		print("[настоящая игра] пропущено: GameDriver ещё не в проекте (ветка пакета; после слияния с GAME проверка идёт сама)")
+		return
+	var drv: SimDriver = (load(path) as GDScript).new()
+	drv.set("autostart", false)
+	root.add_child(drv)
+	var sel := SelectionModel.new()
+	var inp := RtsInput.new()
+	var hud := CityHud.new()
+	var first := true
+	for f: StringName in [&"kokand", &"kipchak"]:
+		print("[настоящая игра: %s]" % f)
+		drv.call("start_game", 3, f, 0)        # вторая партия — через started → CityHud.rebind
+		var q: GameQuery = drv.get("query")
+		print("  реализации: ", (drv.get("game") as Object).call("impl_names"))
+		for i in 30:
+			drv.step()
+		var bt := q.buildings()
+		var hq := q.players().hq_b[0]
+		var hqp := Vector2(bt.x[bt.slot(hq)], bt.z[bt.slot(hq)])
+		rg_origin = hqp - Vector2(960, 540) / RG_PX
+		if first:
+			first = false
+			inp.to_world = func(s: Vector2) -> Vector3: return Vector3(rg_origin.x + s.x / RG_PX, 0.0, rg_origin.y + s.y / RG_PX)
+			inp.to_screen = func(w: Vector3) -> Vector2: return (Vector2(w.x, w.z) - rg_origin) * RG_PX
+			inp.view_rect = func() -> Rect2: return Rect2(0, 0, 1920, 1080)
+			var issue := Callable(drv, "issue")
+			inp.setup(q, sel, 0, func(c: PackedInt32Array) -> void:
+				rg_log.append(c)
+				issue.call(c), null, drv)
+			root.add_child(inp)
+			root.add_child(hud)
+			hud.setup(q, drv, sel, 0, null, inp)
+		inp.now_s = rg_t
+		SimHarness.check(hud.query == q and inp.query == q and hud.faction == f, "интерфейс на окне чтения игры (%s)" % hud.faction)
+		var ev := q.events()
+		var cur := ev.head
+		var defs := q.defs()
+		var fi := q.players().faction[0]
+		var want := PackedInt32Array()
+		for r in defs.f_ui_res[fi]:
+			if defs.r_enabled[r] != 0:
+				want.append(r)
+		SimHarness.check(hud.top.shown_res == want, "балка = ui_res стороны: %s" % ", ".join(Array(hud.top.shown_res).map(func(r: int) -> String: return defs.res_ids[r])))
+		# работники: выделение, карточки, сетка = orders_for
+		var workers := PackedInt32Array()
+		var bs := q.battle()
+		for h in q.units_of(0):
+			if bs.t_flags[bs.u_type[q.unit_index(h)]] & UnitStats.WORKER:
+				workers.append(h)
+		sel.set_selection(workers)
+		hud.refresh_now(true)
+		var orders := q.orders_for(0, workers)
+		var ok: bool = not workers.is_empty() and hud.info.get("kind") == "units" and orders.size() >= 3
+		for i in orders.size():
+			ok = ok and int(hud.bottom.grid.action_at(i).get("op", -1)) == int(orders[i]["op"])
+		SimHarness.check(ok, "работники (%d): карточки и сетка = orders_for (%d)" % [workers.size(), orders.size()])
+		# ПКМ по ближайшей жиле → GATHER
+		var N := q.nodes()
+		var node := 0
+		var bd := INF
+		for n in N.hw:
+			if N.ntype[n] >= 0 and N.amount_milli[n] != 0 and defs.n_scatter_kind[N.ntype[n]] < 0:
+				var d := Vector2(N.x[n], N.z[n]).distance_to(hqp)
+				if d < bd:
+					bd = d
+					node = N.handle(n)
+		var np := Vector2(N.x[N.slot(node)], N.z[N.slot(node)])
+		_rg_click(inp, MOUSE_BUTTON_RIGHT, _rg_scr(np))
+		var got := _rg_take()
+		SimHarness.check(got.size() == 1 and got[0][0] == SimCmd.Op.GATHER and SimCmd.arg(got[0], 0) == node,
+			"ПКМ по жиле в %.0f м → GATHER" % bd)
+		# ставка: панель здания, найм
+		sel.set_selection(PackedInt32Array([hq]))
+		hud.refresh_now(true)
+		var trains: Array = q.building_panel(hq).get("trains", [])
+		SimHarness.check(hud.bottom.building.visible and not trains.is_empty(), "ставка — панель здания, найм: %d" % trains.size())
+		hud.train(hq, int(trains[0]["utype"]))
+		got = _rg_take()
+		SimHarness.check(got.size() == 1 and got[0] == SimCmd.train(hq, int(trains[0]["utype"]), 1), "кнопка найма → TRAIN")
+		# «Хозяйство»: первая доступная постройка у ставки → BUILD
+		sel.set_selection(workers)
+		hud.open_tab(&"economy")
+		var placed := false
+		for b: Dictionary in q.build_menu(0, &"economy"):
+			if not b["enabled"]:
+				continue
+			var spot := _rg_spot(q, int(b["btype"]), hqp)
+			if spot == Vector2.INF:
+				continue
+			hud.begin_place(int(b["btype"]))
+			inp.handle(_rg_motion(_rg_scr(spot)))
+			_rg_click(inp, MOUSE_BUTTON_LEFT, _rg_scr(spot))
+			got = _rg_take()
+			placed = got.size() == 1 and got[0][0] == SimCmd.Op.BUILD and SimCmd.arg(got[0], 0) == int(b["btype"])
+			print("  постройка: %s" % b["name"])
+			break
+		SimHarness.check(placed, "вкладка «Хозяйство»: ЛКМ по месту → BUILD")
+		# «Укрепления»: стена ЛКМ-ЛКМ-ПКМ → BUILD_WALL
+		hud.open_tab(&"fort")
+		var walled := false
+		for b: Dictionary in q.build_menu(0, &"fort"):
+			if not b["enabled"] or defs.b_kind[int(b["btype"])] != Defs.BKind.WALL:
+				continue
+			hud.begin_place(int(b["btype"]))
+			var a := hqp + Vector2(40, 30)
+			var c := hqp + Vector2(70, 30)
+			for pt in [a, c]:
+				inp.handle(_rg_motion(_rg_scr(pt)))
+				_rg_click(inp, MOUSE_BUTTON_LEFT, _rg_scr(pt))
+			_rg_click(inp, MOUSE_BUTTON_RIGHT, _rg_scr(c))
+			got = _rg_take()
+			walled = got.size() == 1 and got[0][0] == SimCmd.Op.BUILD_WALL and SimCmd.wall_points(got[0]).size() == 2
+			print("  стена: %s" % b["name"])
+			break
+		SimHarness.check(walled, "вкладка «Укрепления»: стена ЛКМ-ЛКМ-ПКМ → BUILD_WALL")
+		hud.open_tab(&"orders")
+		# 30 с игры: приказы приняты, записка о найме
+		for i in 900:
+			drv.step()
+		hud.notes.poll()
+		hud.refresh_now(true)
+		hud.bottom.minimap.refresh()
+		var rej := PackedStringArray()
+		var r := ev.range_since(cur)
+		for s in range(r.x, r.y):
+			var i := ev.at(s)
+			if ev.e_kind[i] == SimEvents.Ev.CMD_REJECTED and ev.e_player[i] == 0:
+				rej.append("%s/%d" % [SimCmd.name_of(ev.e_a[i]), ev.e_b[i]])
+		SimHarness.check(rej.is_empty(), "игра приняла все приказы интерфейса%s" % ("" if rej.is_empty() else ": отказы " + str(rej)))
+		var green := hud.notes.visible_notes().filter(func(n: Dictionary) -> bool: return n["seal"] == CityNotes.Seal.GREEN)
+		SimHarness.check(not green.is_empty(), "записка о найме: «%s»" % (green[0]["text"] if not green.is_empty() else ""))
+		sel.set_selection(PackedInt32Array())
+		var idle := q.idle_workers(0)
+		inp.handle(_rg_key(KEY_PERIOD))
+		SimHarness.check(sel.selected.size() == mini(1, idle.size()) and (idle.is_empty() or sel.selected[0] == idle[0]),
+			"«.» — свободный работник (свободных %d)" % idle.size())
+		var latin := _latin_texts(hud.root)
+		SimHarness.check(latin.is_empty(), "все надписи по-русски%s" % ("" if latin.is_empty() else ": " + str(latin)))
+		# замеры на настоящем окне чтения
+		var t0 := Time.get_ticks_usec()
+		for i in 30:
+			hud.refresh_now()
+		var ui_ms := (Time.get_ticks_usec() - t0) / 30000.0
+		t0 = Time.get_ticks_usec()
+		for i in 20:
+			hud.bottom.minimap.refresh()
+		var map_ms := (Time.get_ticks_usec() - t0) / 20000.0
+		t0 = Time.get_ticks_usec()
+		for i in 100:
+			q.pick(0, hqp + Vector2(i * 0.3, 5.0), 2.5)
+		var pick_ms := (Time.get_ticks_usec() - t0) / 100000.0
+		print("  замер: панели %.3f мс, миникарта %.3f мс, pick %.3f мс (%d юнитов в игре)" % [ui_ms, map_ms, pick_ms, bs.n])
+		SimHarness.check(ui_ms < 4.0 and map_ms < 4.0, "обновления дешёвые и на настоящей игре")
+	hud.queue_free()
+	inp.queue_free()
+	drv.queue_free()
+
+
+func _global_class_path(cls: StringName) -> String:
+	for c: Dictionary in ProjectSettings.get_global_class_list():
+		if c["class"] == cls:
+			return c["path"]
+	return ""
+
+
+## Место для постройки у точки c (кругами), INF — нет
+func _rg_spot(q: GameQuery, btype: int, c: Vector2) -> Vector2:
+	for r in range(20, 120, 6):
+		for k in 16:
+			var a := TAU * k / 16.0
+			var p := q.snap(btype, c + Vector2(cos(a), sin(a)) * r, 0)
+			if q.check_place(0, btype, p, 0) == NavApi.Why.OK:
+				return p
+	return Vector2.INF
+
+
+func _rg_scr(w: Vector2) -> Vector2:
+	return (w - rg_origin) * RG_PX
+
+
+func _rg_take() -> Array[PackedInt32Array]:
+	var o := rg_log.duplicate()
+	rg_log.clear()
+	return o
+
+
+func _rg_click(inp: RtsInput, button: int, at: Vector2) -> void:
+	rg_t += 1.0
+	inp.now_s = rg_t
+	for pressed in [true, false]:
+		var e := InputEventMouseButton.new()
+		e.button_index = button
+		e.pressed = pressed
+		e.position = at
+		inp.handle(e)
+
+
+func _rg_motion(at: Vector2) -> InputEventMouseMotion:
+	var e := InputEventMouseMotion.new()
+	e.position = at
+	return e
+
+
+func _rg_key(code: int) -> InputEventKey:
+	var e := InputEventKey.new()
+	e.physical_keycode = code
+	e.keycode = code
+	e.pressed = true
+	return e
 
 
 ## Город на 1000+ своих юнитов (ARCHITECTURE §16): рамка, двойной щелчок, сводка выделения и сетка — дёшево

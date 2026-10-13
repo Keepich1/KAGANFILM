@@ -17,6 +17,9 @@ extends CanvasLayer
 ##   input.overlay_toggled.connect(overlay_view.set_enabled)    # Tab — наложения (VIEW)
 ##   hud.restart_requested.connect(...); hud.quit_requested.connect(...)   # меню (иначе перезагрузка / выход)
 ## Меню (≡, F10, Esc при пустом выделении) ставит SimDriver на паузу и выключает ввод, пока открыто.
+## Драйвер начал игру заново (сигнал started, новое окно чтения driver.query) — интерфейс и ввод
+## перестраиваются сами (rebind). Перед чтением GameQuery зовётся driver.sync(), если он есть (GameDriver:
+## шаг в фоне) — поэтому интерфейс читает 4–10 раз в секунду, а не каждый кадр.
 
 signal tab_opened(tab: StringName)
 ## Меню: «Начать заново» / «Выйти» (никто не слушает — перезагрузка сцены / выход из игры)
@@ -25,6 +28,8 @@ signal quit_requested
 
 const UI_HZ := 0.15
 const MAP_HZ := 0.25
+## Записки читают события 10 раз в секунду (курсор событий не теряет ни одного)
+const NOTES_HZ := 0.1
 ## Тяжёлое (чистка выделения от мёртвых, сетка приказов) — при смене выделения/вкладки и раз в HEAVY_S
 const HEAVY_S := 1.0
 ## Большое выделение (больше BIG_SEL описателей) — сводку карточек спрашиваем реже, раз в BIG_INFO_S
@@ -53,7 +58,10 @@ var _t_ui := 0.0
 var _t_map := 0.0
 var _t_heavy := 0.0
 var _t_info := 0.0
+var _t_notes := 0.0
 var _ready_done := false
+## У драйвера есть sync() (GameDriver: дождаться фонового шага перед чтением)
+var _can_sync := false
 var _in_refresh := false
 ## Выделение сменилось с прошлого обновления (сигнал SelectionModel.changed)
 var _sel_dirty := true
@@ -70,6 +78,58 @@ func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camer
 	input = inp
 	layer = 10
 	name = "CityHud"
+	_can_sync = driver != null and driver.has_method("sync")
+	if driver and not driver.started.is_connected(_on_driver_started):
+		driver.started.connect(_on_driver_started)
+	if selection and not selection.changed.is_connected(_on_selection_changed):
+		selection.changed.connect(_on_selection_changed)
+	if input:
+		input.hud = self
+		if not input.armed_changed.is_connected(_on_armed_changed):
+			input.armed_changed.connect(_on_armed_changed)
+	_build()
+
+
+## Новая игра у драйвера (GameDriver.start_game, restart; FakeCityDriver.start): своё окно чтения
+func _on_driver_started(_seed: int) -> void:
+	var q: Variant = driver.get("query")
+	if q is GameQuery and q != query:
+		var lp: Variant = driver.get("local_player")
+		rebind(q as GameQuery, int(lp) if lp != null else player)
+
+
+## Перестроить интерфейс и ввод на новое окно чтения (новая партия): выделение и группы прошлой игры
+## сброшены, записки и метки — тоже; сторона могла смениться — балка и пояс строятся заново
+func rebind(q: GameQuery, p: int) -> void:
+	if menu and menu.visible:
+		menu.close()                  # вернуть паузу и ввод, как были
+	_ready_done = false
+	query = q
+	player = p
+	if selection:
+		for i in selection.groups.size():
+			selection.groups[i] = PackedInt32Array()
+		selection.set_selection(PackedInt32Array())
+	if input:
+		input.rebind(q, p)
+	if root:
+		remove_child(root)
+		root.queue_free()
+	_t_ui = 0.0
+	_t_map = 0.0
+	_t_heavy = 0.0
+	_t_info = 0.0
+	_t_notes = 0.0
+	_sel_dirty = true
+	_build()
+
+
+func _on_armed_changed(_op: int) -> void:
+	refresh_now()
+
+
+## Собрать части интерфейса под сторону игрока (setup и rebind)
+func _build() -> void:
 	faction = StringName(query.defs().f_ids[query.players().faction[player]])
 	root = Control.new()
 	root.name = "Root"
@@ -99,11 +159,6 @@ func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camer
 	menu = CityMenu.new()
 	root.add_child(menu)
 	menu.setup(self)
-	if selection:
-		selection.changed.connect(_on_selection_changed)
-	if input:
-		input.hud = self
-		input.armed_changed.connect(func(_op: int) -> void: refresh_now())
 	CityCursor.apply(CityCursor.Kind.DEFAULT)
 	_ready_done = true
 	refresh_now()
@@ -113,18 +168,29 @@ func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camer
 func _process(delta: float) -> void:
 	if not _ready_done:
 		return
-	notes.poll()
 	notes.tick(delta)
 	_t_ui += delta
 	_t_map += delta
 	_t_heavy += delta
 	_t_info += delta
+	_t_notes += delta
+	if _t_notes >= NOTES_HZ:
+		_t_notes = 0.0
+		sync_driver()
+		notes.poll()
 	if _t_ui >= UI_HZ:
 		_t_ui = 0.0
 		refresh_now()
 	if _t_map >= MAP_HZ:
 		_t_map = 0.0
+		sync_driver()
 		bottom.minimap.refresh()
+
+
+## Дождаться фонового шага драйвера (GameDriver.sync), прежде чем читать GameQuery; без фона — ничего
+func sync_driver() -> void:
+	if _can_sync:
+		driver.call("sync")
 
 
 func _on_selection_changed(_h: PackedInt32Array) -> void:
@@ -140,6 +206,7 @@ func refresh_now(heavy := false) -> void:
 	if not _ready_done or _in_refresh:
 		return
 	_in_refresh = true
+	sync_driver()
 	heavy = heavy or _sel_dirty or _t_heavy >= HEAVY_S
 	if heavy:
 		_t_heavy = 0.0
@@ -265,6 +332,7 @@ func request_quit() -> void:
 func select_card(card: Dictionary, shift := false, double := false) -> void:
 	if selection == null:
 		return
+	sync_driver()
 	var bs := query.battle()
 	var sq := int(card.get("squad", 0))
 	var type_id := String(card.get("type", ""))

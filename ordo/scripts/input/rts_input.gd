@@ -86,6 +86,8 @@ var _cur_t := -10.0
 var _own_cache := PackedInt32Array()
 var _own_flags := 0
 var _own_dirty := true
+## У драйвера есть sync() (GameDriver: шаг в фоне)
+var _can_sync := false
 
 
 func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, cam: Camera3D = null,
@@ -109,6 +111,29 @@ func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, 
 		to_screen = _cam_to_screen
 	if not view_rect.is_valid():
 		view_rect = _view_rect
+	_can_sync = driver != null and driver.has_method("sync")
+
+
+## Новая партия (CityHud.rebind): своё окно чтения; постройка, взведённый приказ, группы и счётчики сброшены
+func rebind(q: GameQuery, p: int) -> void:
+	if placement:
+		placement.cancel()
+	disarm()
+	_lmb = false
+	_rmb = false
+	_boxing = false
+	_lining = false
+	_idle_i = -1
+	_kachyp = false
+	_melee = false
+	_cur_key = ""
+	setup(q, selection, p, issue, camera, driver)
+
+
+## Дождаться фонового шага драйвера (GameDriver.sync) перед чтением GameQuery; без фона — ничего
+func sync_driver() -> void:
+	if _can_sync:
+		driver.call("sync")
 
 
 func set_ghost(g: Object) -> void:
@@ -118,7 +143,12 @@ func set_ghost(g: Object) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if enabled and query and handle(event):
+	if not enabled or query == null:
+		return
+	# движение мыши читает мир только в режиме постройки (призрак)
+	if not (event is InputEventMouseMotion) or placement.active():
+		sync_driver()
+	if handle(event):
 		get_viewport().set_input_as_handled()
 
 
@@ -403,6 +433,7 @@ func issue_cmd(cmd: PackedInt32Array) -> void:
 
 ## ПКМ в точке мира (и с миникарты): приказ по смыслу цели под точкой; plain (Ctrl) — без набега, простая атака
 func order_at(world: Vector2, shift := false, run := false, plain := false) -> void:
+	sync_driver()
 	var own := _own_selection()
 	if own.is_empty():
 		return
@@ -475,6 +506,7 @@ func disarm() -> void:
 func fire_armed(world: Vector2, shift := false) -> bool:
 	if armed == SimCmd.Op.NONE:
 		return false
+	sync_driver()
 	var own := _own_selection()
 	var units := _units_of(own)
 	var target := query.pick(player, world, _pick_r())
@@ -607,6 +639,7 @@ static func has_builder(builder: String) -> bool:
 
 ## Кнопка сетки приказов
 func order_button(op: int) -> void:
+	sync_driver()
 	var own := _own_selection()
 	var units := _units_of(own)
 	match op:
@@ -668,6 +701,7 @@ func order_button(op: int) -> void:
 
 
 func begin_place(btype: int) -> void:
+	sync_driver()
 	disarm()
 	placement.begin(btype)
 	var w := _world(_mouse)
@@ -1043,6 +1077,7 @@ func _update_cursor() -> void:
 		return
 	_cur_key = key
 	_cur_t = now
+	sync_driver()
 	CityCursor.apply(cursor_kind(_mouse))
 
 
