@@ -1,17 +1,18 @@
 #[compute]
 #version 450
-// Живописный фильтр в половине разрешения, шаг 4: мазки (painterly_kuwahara_half) → полный кадр.
-// Увеличение бережное (совместное двустороннее): из четырёх соседних точек половинного кадра
+// Живописный фильтр в уменьшенном кадре, шаг 4: мазки (painterly_kuwahara_half) → полный кадр
+// (уменьшение вдвое или до 1080 точек по высоте — см. painterly_down).
+// Увеличение бережное (совместное двустороннее): из четырёх соседних точек уменьшенного кадра
 // больше весят те, что похожи цветом на исходную точку кадра, — край мазка не расплывается
-// через контур. Мелочь, которой в половинном кадре нет (вспышка, древко, блик): ни одна из
+// через контур. Мелочь, которой в уменьшенном кадре нет (вспышка, древко, блик): ни одна из
 // четырёх точек на неё не похожа — там остаётся исходная точка кадра. Затем тот же тон, что
 // в painterly_kuwahara («Высокое»): цветные тени, тёплый свет, холст и виньетка — в полном разрешении.
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(rgba16f, set = 0, binding = 0) uniform restrict image2D color_image;
-layout(rgba16f, set = 0, binding = 1) uniform restrict readonly image2D src_image;      // половина, «перцептивный»
-layout(rgba16f, set = 0, binding = 2) uniform restrict readonly image2D painted_image;  // половина, мазок + доля
+layout(rgba16f, set = 0, binding = 1) uniform restrict readonly image2D src_image;      // уменьшенный, «перцептивный»
+layout(rgba16f, set = 0, binding = 2) uniform restrict readonly image2D painted_image;  // уменьшенный, мазок + доля
 
 layout(push_constant, std430) uniform Params {
 	vec2 size;
@@ -23,9 +24,9 @@ layout(push_constant, std430) uniform Params {
 	float amount;
 	float shadow_range;
 	float guide_k;      // строгость совпадения цвета при увеличении
+	float inv_x;        // точек уменьшенного кадра на точку кадра по x (0,5 — вдвое)
+	float inv_y;        // то же по y
 	float pad0;
-	float pad1;
-	float pad2;
 } p;
 
 vec3 encode(vec3 c) {
@@ -51,7 +52,7 @@ void main() {
 	}
 	vec4 orig = imageLoad(color_image, uv);
 	vec3 guide = encode(orig.rgb);
-	vec2 hp = (vec2(uv) + 0.5) * 0.5 - 0.5;
+	vec2 hp = (vec2(uv) + 0.5) * vec2(p.inv_x, p.inv_y) - 0.5;
 	ivec2 b = ivec2(floor(hp));
 	vec2 f = hp - vec2(b);
 	vec4 acc = vec4(0.0);

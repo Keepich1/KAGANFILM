@@ -9,7 +9,12 @@ extends CompositorEffect
 ## Включается/выключается свойством enabled. half_res («Среднее», «Низкое» — WorldQuality):
 ## тензор и Кувахара в половине разрешения (shaders/post/painterly_*_half.glsl, painterly_down),
 ## мазки возвращаются в кадр бережным увеличением по цвету исходной точки (painterly_up),
-## тон, холст и виньетка — в полном разрешении. «Высокое» — прежний путь, без изменений.
+## тон, холст и виньетка — в полном разрешении.
+## max_height («Высокое»: 1080): кадр выше этого (монитор 1440p, 4K) считается тем же путём, но
+## уменьшенным не вдвое, а ровно до max_height точек по высоте — мазок того же размера на экране и
+## той же подробности, что на 1080p, а цена Кувахары — как на 1080p (на 1440p втрое меньше:
+## точек в 1,8 раза меньше и ядро в 1,8 раза меньше по площади). Кадр не выше max_height —
+## прежний путь в полном разрешении, без изменений.
 ## Без RenderingDevice (рендер Compatibility) молча ничего не делает.
 
 const CTX := &"ordo_painterly_post"
@@ -34,6 +39,8 @@ const CTX_HALF := &"ordo_painterly_post_half"
 @export_range(0.0, 1.0, 0.01) var vignette := 0.32
 ## Фильтр в половине разрешения (дешевле примерно вчетверо по точкам и по ядру)
 @export var half_res := false
+## Кадр выше стольких точек считается уменьшенным до этой высоты (0 — всегда полный кадр)
+@export_range(0, 4320, 1) var max_height := 0
 ## Строгость совпадения цвета при увеличении мазков (больше — чётче края)
 @export_range(1.0, 200.0, 1.0) var upsample_guide := 40.0
 
@@ -84,8 +91,9 @@ func _render_callback(_type: int, render_data: RenderData) -> void:
 	var size := sb.get_internal_size()
 	if size.x == 0 or size.y == 0:
 		return
-	if half_res and _has(["down", "tensor_half", "blur", "kuwahara_half", "up"]):
-		_render_half(sb, size)
+	var k := work_scale(size.y)
+	if k < 1.0 and _has(["down", "tensor_half", "blur", "kuwahara_half", "up"]):
+		_render_scaled(sb, size, k)
 		return
 	if not _has(["tensor", "blur", "kuwahara"]):
 		return
@@ -152,9 +160,28 @@ func _has(names: Array) -> bool:
 	return true
 
 
-## Половина разрешения: уменьшение → тензор → размытие тензора → Кувахара → увеличение и тон
-func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
-	var hsize := Vector2i((size.x + 1) / 2, (size.y + 1) / 2)
+## Во сколько раз уменьшить кадр высотой height перед Кувахарой: 1 — полный кадр,
+## 0,5 — половина (half_res), между — до max_height точек по высоте (не меньше половины)
+func work_scale(height: int) -> float:
+	if half_res:
+		return 0.5
+	if max_height > 0 and height > max_height:
+		return maxf(float(max_height) / float(height), 0.5)
+	return 1.0
+
+
+## Размер уменьшенного кадра: вдвое — с округлением вверх (как было), иначе — до ближайшей точки
+static func work_size(size: Vector2i, k: float) -> Vector2i:
+	if k <= 0.5:
+		return Vector2i((size.x + 1) / 2, (size.y + 1) / 2)
+	return Vector2i(maxi(roundi(size.x * k), 1), maxi(roundi(size.y * k), 1))
+
+
+## Уменьшенный кадр: уменьшение → тензор → размытие тензора → Кувахара → увеличение и тон
+func _render_scaled(sb: RenderSceneBuffersRD, size: Vector2i, k: float) -> void:
+	var hsize := work_size(size, k)
+	# шаг уменьшения по осям: вдвое — ровно 2 (точка ↔ четыре точки кадра, как было), иначе — доля
+	var step := Vector2(2.0, 2.0) if k <= 0.5 else Vector2(float(size.x) / hsize.x, float(size.y) / hsize.y)
 	if sb.has_texture(CTX, &"src"):
 		sb.clear_context(CTX)
 	if hsize != _half_size or not sb.has_texture(CTX_HALF, &"src"):
@@ -170,9 +197,10 @@ func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
 	var hx := (hsize.x + 7) / 8
 	var hy := (hsize.y + 7) / 8
 	var scale := float(size.y) / 1080.0
-	# мазок того же размера на экране: в точках половинного кадра радиус вдвое меньше (не меньше 1)
-	var radius := maxf(radius_1080 * scale * 0.5, 1.0)
-	var sigma := maxf(scale, 1.0)
+	# мазок того же размера на экране: в точках уменьшенного кадра радиус во столько же раз
+	# меньше (не меньше 1), размытие тензора тоже
+	var radius := maxf(radius_1080 * scale * k, 1.0)
+	var sigma := maxf(2.0 * scale * k, 1.0)
 	for view in sb.get_view_count():
 		var color := sb.get_color_layer(view)
 		var src := sb.get_texture_slice(CTX_HALF, &"src", view, 0, 1, 1)
@@ -181,7 +209,7 @@ func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
 		var painted := sb.get_texture_slice(CTX_HALF, &"painted", view, 0, 1, 1)
 		var cl := _rd.compute_list_begin()
 		_bind(cl, "down", [color, src])
-		_push(cl, PackedFloat32Array([size.x, size.y, hsize.x, hsize.y]))
+		_push(cl, PackedFloat32Array([size.x, size.y, hsize.x, hsize.y, step.x, step.y, 0.0, 0.0]))
 		_rd.compute_list_dispatch(cl, hx, hy, 1)
 		_rd.compute_list_add_barrier(cl)
 		_bind(cl, "tensor_half", [src, tensor])
@@ -206,7 +234,7 @@ func _render_half(sb: RenderSceneBuffersRD, size: Vector2i) -> void:
 			size.x, size.y, hsize.x, hsize.y,
 			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
 			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
-			_grain(sb), vignette, amount, shadow_range, upsample_guide, 0.0, 0.0, 0.0]))
+			_grain(sb), vignette, amount, shadow_range, upsample_guide, 1.0 / step.x, 1.0 / step.y, 0.0]))
 		_rd.compute_list_dispatch(cl, gx, gy, 1)
 		_rd.compute_list_end()
 
