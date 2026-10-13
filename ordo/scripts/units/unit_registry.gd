@@ -8,7 +8,8 @@ extends RefCounted
 ## Поля записи:
 ##   skeleton — "human" | "rider" | "sheep" | "horse" (состояния: AnimSpec.Human / Horse / Sheep;
 ##              у "horse" — AnimSpec.Horse без всадника)
-##   weapon   — "musket" | "saber" | "lance" | "sword" | "mace" | "staff" | "none"
+##   weapon   — "musket" | "saber" | "lance" | "sword" | "mace" | "staff" | "tool" | "none"
+##              ("tool" — работник: топор, кетмень, молот, ноша — по WORK, см. crowd_human.gdshaderinc)
 ##   height   — высота фигуры с шапкой, м (над ней — полоска здоровья)
 ##   top      — самая высокая точка (знамя, копьё), м
 ##   radius   — радиус пятна на земле, м (для расталкивания и выделения)
@@ -35,6 +36,8 @@ const UNITS := {
 		"side": "kipchak", "item": "shield", "banner": false, "name": "Жөө жоокер"},
 	"kip_malchy": {"skeleton": "human", "weapon": "staff", "height": 2.07, "top": 2.07, "radius": 0.35,
 		"side": "kipchak", "item": "sack", "banner": false, "name": "Малчы"},
+	"kok_dehqon": {"skeleton": "human", "weapon": "tool", "height": 1.84, "top": 1.84, "radius": 0.35,
+		"side": "kokand", "item": "sack", "banner": false, "name": "Деҳқон"},
 	"sheep": {"skeleton": "sheep", "weapon": "none", "height": 0.84, "top": 0.84, "radius": 0.45,
 		"side": "neutral", "item": "none", "banner": false, "name": "Кой"},
 	"horse": {"skeleton": "horse", "weapon": "none", "height": 2.06, "top": 2.06, "radius": 0.9,
@@ -43,7 +46,7 @@ const UNITS := {
 
 ## Номера для uniform шейдера толпы (shaders/crowd.gdshader)
 const SKELETON_ID := {"human": 0, "rider": 1, "sheep": 2, "horse": 3}
-const WEAPON_ID := {"musket": 0, "saber": 1, "lance": 2, "sword": 3, "mace": 4, "staff": 5, "none": 6}
+const WEAPON_ID := {"musket": 0, "saber": 1, "lance": 2, "sword": 3, "mace": 4, "staff": 5, "none": 6, "tool": 7}
 const ITEM_ID := {"none": 0, "shield": 1, "ramrod": 2, "sack": 3}
 
 const MODEL_DIR := "res://assets/models/units/"

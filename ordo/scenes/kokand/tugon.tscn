@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/kokand/kokand_building.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kokand/tugon.glb" id="2"]
+
+[node name="Tugon" type="Node3D"]
+script = ExtResource("1")
+kind = "tugon"
+footprint = Vector2(4, 2.6)
+ground_decal = false
+metadata/footprint = Vector2(4, 2.6)
+metadata/kind = "tugon"
+metadata/side = "kokand"
+
+[node name="Model" parent="." instance=ExtResource("2")]
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="WorkSpot_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0.9, 0, 1.2)

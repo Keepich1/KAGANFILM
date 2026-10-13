@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/kipchak2/kipchak_building.gd" id="1"]
+
+[node name="Chep" type="Node3D"]
+script = ExtResource("1")
+kind = "chep"
+metadata/kind = "chep"
+metadata/footprint = Vector2(3.4, 1.2)
+metadata/side = "kipchak"
+metadata/pitch = 3

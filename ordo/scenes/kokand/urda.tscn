@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/kokand/kokand_building.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kokand/urda.glb" id="2"]
+
+[node name="Urda" type="Node3D"]
+script = ExtResource("1")
+kind = "urda"
+footprint = Vector2(18, 18)
+metadata/footprint = Vector2(18, 18)
+metadata/kind = "urda"
+metadata/side = "kokand"
+
+[node name="Model" parent="." instance=ExtResource("2")]
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="Door" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 0, 10.4)
+
+[node name="Spawn" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 3.5, 0, 12.5)
+
+[node name="Banner" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 13.8, 7.75)
+
+[node name="WorkSpot_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -4, 0, 10.6)
+
+[node name="WorkSpot_2" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 4, 0, 10.6)
+
+[node name="Smoke_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 7.1, 3.9, 5.6)
+metadata/amount = 8
+
+[node name="Fire_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 1.5, -5)
+
+[node name="Fire_2" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -4.5, 1, 4)
+metadata/amount = 14
+
+[node name="Fire_3" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 5, 1, -1)
+metadata/amount = 14

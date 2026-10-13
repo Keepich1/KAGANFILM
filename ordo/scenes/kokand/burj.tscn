@@ -1,0 +1,55 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/kokand/kokand_building.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kokand/burj.glb" id="2"]
+
+[node name="Burj" type="Node3D"]
+script = ExtResource("1")
+kind = "burj"
+footprint = Vector2(7, 7)
+metadata/footprint = Vector2(7, 7)
+metadata/kind = "burj"
+metadata/side = "kokand"
+
+[node name="Model" parent="." instance=ExtResource("2")]
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="Slot_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.92388, 0, 0.382683, 0, 1, 0, -0.382683, 0, 0.92388, 0.822769, 8.4, 1.98634)
+
+[node name="Slot_2" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.382683, 0, 0.92388, 0, 1, 0, -0.92388, 0, 0.382683, 1.98634, 8.4, 0.822769)
+
+[node name="Slot_3" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.382683, 0, 0.92388, 0, 1, 0, -0.92388, 0, -0.382683, 1.98634, 8.4, -0.822769)
+
+[node name="Slot_4" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.92388, 0, 0.382683, 0, 1, 0, -0.382683, 0, -0.92388, 0.822769, 8.4, -1.98634)
+
+[node name="Slot_5" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.92388, 0, -0.382683, 0, 1, 0, 0.382683, 0, -0.92388, -0.822769, 8.4, -1.98634)
+
+[node name="Slot_6" type="Marker3D" parent="Markers"]
+transform = Transform3D(-0.382683, 0, -0.92388, 0, 1, 0, 0.92388, 0, -0.382683, -1.98634, 8.4, -0.822769)
+
+[node name="Slot_7" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.382683, 0, -0.92388, 0, 1, 0, 0.92388, 0, 0.382683, -1.98634, 8.4, 0.822769)
+
+[node name="Slot_8" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.92388, 0, -0.382683, 0, 1, 0, 0.382683, 0, 0.92388, -0.822769, 8.4, 1.98634)
+
+[node name="Slot_9" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.591364, 0, -0.806405, 0, 1, 0, 0.806405, 0, 0.591364, -0.75, 8.4, 0.55)
+
+[node name="Slot_10" type="Marker3D" parent="Markers"]
+transform = Transform3D(0.591364, 0, 0.806405, 0, 1, 0, -0.806405, 0, 0.591364, 0.75, 8.4, 0.55)
+
+[node name="Door" type="Marker3D" parent="Markers"]
+transform = Transform3D(-1, 0, 1.22465e-16, 0, 1, 0, -1.22465e-16, 0, -1, 0, 0, -4)
+
+[node name="Banner" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0, 12.6, -2.4)
+
+[node name="Fire_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, 0.6, 2.2, 0.8)

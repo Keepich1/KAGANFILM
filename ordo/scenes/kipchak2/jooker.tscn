@@ -1,0 +1,24 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/kipchak2/kipchak_building.gd" id="1"]
+
+[node name="Jooker" type="Node3D"]
+script = ExtResource("1")
+kind = "jooker"
+metadata/kind = "jooker"
+metadata/footprint = Vector2(12, 10)
+metadata/side = "kipchak"
+
+[node name="Markers" type="Node3D" parent="."]
+
+[node name="Door" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -2.4, 0, 2.55)
+
+[node name="Spawn" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -2.4, 0, 3.65)
+
+[node name="Banner" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -0.45, 6.6, 3.25)
+
+[node name="Smoke_1" type="Marker3D" parent="Markers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, -0, 0, 1, -2.4, 4.95, -1.25)
