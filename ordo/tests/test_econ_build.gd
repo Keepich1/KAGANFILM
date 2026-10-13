@@ -108,7 +108,7 @@ func _rules() -> void:
 	SimHarness.check(e.place_site(p, k.b(&"uy"), Vector2(300, 300), 0, PackedInt32Array()) == -(100 + NavApi.Why.NO_TERRITORY),
 		"далеко от своих построек — «не своя земля»")
 	SimHarness.check(e.place_wall(p, k.b(&"devor"), PackedVector2Array([Vector2(70, 40), Vector2(90, 40)]), PackedInt32Array())
-		== -EconApi.Err.NOT_ALLOWED, "стены — этап 2 (enabled false)")
+		!= -EconApi.Err.NOT_ALLOWED, "стены — в Сб. 1 (пахсу можно класть)")
 	SimHarness.check(e.place_site(p, k.b(&"devor"), Vector2(70, 40), 0, PackedInt32Array()) == -EconApi.Err.INVALID,
 		"звено стены через place_site — INVALID (только BUILD_WALL)")
 	SimHarness.check(e.place_site(p, k.b(&"boz"), Vector2(70, 40), 0, PackedInt32Array()) == -EconApi.Err.NOT_ALLOWED,
@@ -119,8 +119,12 @@ func _rules() -> void:
 		names.append(it["name"])
 	SimHarness.check(menu.size() == 11 and not names.has("Темирчихона"), "меню «Хозяйство» Коканда: 11 построек Сб. 1")
 	var fort := e.build_menu(p, &"fort")
-	SimHarness.check(fort.size() == 1 and fort[0]["name"] == "Бурж" and String(fort[0]["why"]).begins_with("Сначала"),
-		"«Укрепления» в Сб. 1: Бурж «Сначала: Хумдон»")
+	var fort_why := {}
+	for it in fort:
+		fort_why[it["name"]] = String(it["why"])
+	SimHarness.check(fort_why.has("Пахса девор") and fort_why.has("Дарвоза") and fort_why.has("Бурж")
+		and fort_why["Бурж"].begins_with("Сначала"),
+		"«Укрепления» в Сб. 1: пахса, дарвоза, бурж («Сначала: Хумдон»)")
 	k.set_res(p, "wood", 10.0)
 	var uy: Dictionary = e.build_menu(p, &"economy")[0]
 	SimHarness.check(not uy["enabled"] and String(uy["why"]).begins_with("Нужно: 70 дерево"), "нет дерева — «Нужно: 70 дерево»")

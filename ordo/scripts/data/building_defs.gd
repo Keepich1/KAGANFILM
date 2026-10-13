@@ -94,16 +94,16 @@ const BUILDINGS := {
 		"size": Vector2(10, 10), "hp": 1200, "cost": {"wood": 150, "stone": 50}, "build_time": 40,
 		"flags": ["blocks"], "raid_value": 1, "enabled": false},
 	# ================================================================ Коканд — укрепления (ТЗ 6, ECONOMY §2.9)
-	# Башни — в Сб. 1 (решение ведущего 2026-10-13); стены и ворота — этап 2: enabled false
+	# Башни, стены и ворота — в Сб. 1 (решение ведущего 2026-10-13: автор просил стены у каждой стороны)
 	"devor": {"name": "Пахса девор", "faction": "kokand", "tab": "fort", "kind": "wall",
 		"size": Vector2(3.6, 1.8), "hp": 420, "cost": {"wood": 3}, "build_time": 4, "flags": ["blocks"],
-		"link": {"len": 3.6, "overlap": 0.4}, "render": "multimesh", "enabled": false},
+		"link": {"len": 3.6, "overlap": 0.4}, "render": "multimesh", "enabled": true},
 	"tosh": {"name": "Тош девор", "faction": "kokand", "tab": "fort", "kind": "wall",
 		"size": Vector2(3.6, 2.2), "hp": 1200, "cost": {"brick": 6, "stone": 2}, "build_time": 8, "flags": ["blocks"],
-		"requires": ["xumdon"], "link": {"len": 3.6, "overlap": 0.4}, "render": "multimesh", "enabled": false},
+		"requires": ["xumdon"], "link": {"len": 3.6, "overlap": 0.4}, "render": "multimesh", "enabled": true},
 	"darvoza": {"name": "Дарвоза", "faction": "kokand", "tab": "fort", "kind": "gate",
 		"size": Vector2(7.2, 3), "hp": 1600, "cost": {"wood": 40, "stone": 30}, "build_time": 25, "flags": ["blocks"],
-		"place": {"on_wall": "align"}, "enabled": false},
+		"place": {"on_wall": "align"}, "enabled": true},
 	"burj": {"name": "Бурж", "faction": "kokand", "tab": "fort", "kind": "tower",
 		"size": Vector2(7, 7), "hp": 2000, "cost": {"wood": 30, "stone": 30, "brick": 50}, "build_time": 45,
 		"flags": ["blocks"], "requires": ["xumdon"],
@@ -157,10 +157,10 @@ const BUILDINGS := {
 	# Күзөт мунарасы — в Сб. 1; частокол и ворота — этап 2: enabled false
 	"chep": {"name": "Жыгач чеп", "faction": "kipchak", "tab": "fort", "kind": "wall",
 		"size": Vector2(3.4, 1.2), "hp": 260, "cost": {"wood": 5}, "build_time": 3, "flags": ["blocks"],
-		"link": {"len": 3.4, "overlap": 0.4}, "render": "multimesh", "enabled": false},
+		"link": {"len": 3.4, "overlap": 0.4}, "render": "multimesh", "enabled": true},
 	"darbaza": {"name": "Дарбаза", "faction": "kipchak", "tab": "fort", "kind": "gate",
 		"size": Vector2(6.4, 2.4), "hp": 700, "cost": {"wood": 45}, "build_time": 20, "flags": ["blocks"],
-		"place": {"on_wall": "align"}, "enabled": false},
+		"place": {"on_wall": "align"}, "enabled": true},
 	"munara": {"name": "Күзөт мунарасы", "faction": "kipchak", "tab": "fort", "kind": "tower",
 		"size": Vector2(5, 5), "hp": 700, "cost": {"wood": 70}, "build_time": 30, "flags": ["blocks", "packable"],
 		"garrison": {"cap": 6, "range_mult": 1.3, "absorb": 0.55, "stone_range": 32.0, "platform_h": 7.0},
