@@ -293,6 +293,12 @@ func cancel_train(b_h: int, index: int) -> void:
 		input.issue_cmd(SimCmd.cancel_train(b_h, index))
 
 
+## Обмен на базаре: give → take партией amount_milli (одна сторона — золото)
+func trade(b_h: int, give: int, take: int, amount_milli: int) -> void:
+	if input:
+		input.issue_cmd(SimCmd.trade(b_h, give, take, amount_milli))
+
+
 func cycle_speed() -> void:
 	if driver:
 		var speeds := [1.0, 2.0, 3.0, 0.5]

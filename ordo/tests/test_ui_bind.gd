@@ -53,6 +53,45 @@ func _test_panel_extras() -> void:
 		and CityBuildingPanel.ability_state({"active_s": 0, "ready_s": 70}).contains("1:10")
 		and CityBuildingPanel.ability_state({}) == "", "умение: «действует 0:20», «через 1:10»")
 	bp.free()
+	# базар: цены от ECON (trade {r: {sell, buy}}) → кнопки «Продать / Купить» → SimCmd.trade партией 100
+	var made := _make_hud(0)
+	var hud: CityHud = made[0]
+	var sel: SelectionModel = made[1]
+	var log: Array = made[3]
+	# Бозора в начале поддельного города ещё нет: раздел обмена строится по ценам в панели — берём своё
+	# готовое здание без найма (Бозор, иначе любое) и даём ему цены
+	var bz := defs.building(&"bozor")
+	var bt := city.buildings()
+	var bz_h := 0
+	for b in bt.hw:
+		if bt.owner[b] == 0 and bt.state[b] == BuildingTable.State.ACTIVE and defs.b_trains[bt.btype[b]].is_empty() \
+				and (bz_h == 0 or bt.btype[b] == bz):
+			bz_h = bt.handle(b)
+	if bz_h == 0:
+		SimHarness.check(false, "в поддельном городе есть своё готовое здание без найма")
+	else:
+		sel.set_selection(PackedInt32Array([bz_h]))
+		hud.refresh_now(true)
+		var d := city.building_panel(bz_h)
+		var food := defs.res(&"food")
+		var stone := defs.res(&"stone")
+		var gold := defs.res(&"gold")
+		d["trade"] = {food: {"sell": 40, "buy": 110}, stone: {"sell": 50, "buy": -1}}
+		hud.bottom.building.show_panel(d)
+		var sell := hud.bottom.building.get_node_or_null("Trade_food_sell") as Button
+		var buy_stone := hud.bottom.building.get_node_or_null("Trade_stone_buy") as Button
+		SimHarness.check(sell != null and buy_stone != null and buy_stone.disabled and sell.text.contains("40"),
+			"базар: кнопки обмена по ценам ECON («%s»; купить камень — нельзя)" % (sell.text if sell else ""))
+		log.clear()
+		if sell:
+			sell.emit_signal("pressed")
+		var buy := hud.bottom.building.get_node_or_null("Trade_food_buy") as Button
+		if buy:
+			buy.emit_signal("pressed")
+		SimHarness.check(log.size() == 2 and (log[0] as PackedInt32Array) == SimCmd.trade(bz_h, food, gold, 100000)
+			and (log[1] as PackedInt32Array) == SimCmd.trade(bz_h, gold, food, 100000), "«Продать» / «Купить» → TRADE партией 100")
+	hud.queue_free()
+	(made[2] as Node).queue_free()
 
 
 ## Новая партия у драйвера (сигнал started, новое окно чтения): интерфейс и ввод перестраиваются сами;

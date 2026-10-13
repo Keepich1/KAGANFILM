@@ -414,8 +414,11 @@ def gen_seals() -> None:
     S = s * ss
     cols = {"red": ("#9a2018", "#5c0f0b", "#d65a44"), "green": ("#2f6b3a", "#173a1e", "#6aa86a"),
             "gold": ("#b8862a", "#6a4612", "#f0c860")}
+    # зёрна постоянные: прежде было hash(name) — в Python оно своё в каждом запуске; эти числа дают
+    # ровно те печати, что одобрены в кадрах
+    seeds = {"red": 672, "green": 993, "gold": 47}
     for name, (mid, dark, hi) in cols.items():
-        rs = np.random.default_rng(hash(name) % 1000)
+        rs = np.random.default_rng(seeds[name])
         mask = Image.new("L", (S, S), 0)
         md = ImageDraw.Draw(mask)
         cx = cy = S / 2
@@ -896,6 +899,20 @@ def g_bazaar(d, cx, cy, r):
     thick(d, [(cx, cy - r * 0.42), (cx, cy - r * 0.75)], r * 0.06, fill=255)
 
 
+def g_scales(d, cx, cy, r):
+    """Базар: весы-тарози на столбе (не путать с куполом Урды)."""
+    thick(d, [(cx, cy - r * 0.78), (cx, cy + r * 0.72)], r * 0.11)
+    d.polygon([(cx - r * 0.42, cy + r * 0.92), (cx + r * 0.42, cy + r * 0.92), (cx + r * 0.16, cy + r * 0.66),
+               (cx - r * 0.16, cy + r * 0.66)], fill=255)
+    circ(d, cx, cy - r * 0.84, r * 0.11)
+    thick(d, [(cx - r * 0.86, cy - r * 0.62), (cx + r * 0.86, cy - r * 0.62)], r * 0.09)
+    for s in (-1, 1):
+        x = cx + s * r * 0.7
+        thick(d, [(x, cy - r * 0.6), (x - r * 0.27, cy + r * 0.12)], r * 0.045)
+        thick(d, [(x, cy - r * 0.6), (x + r * 0.27, cy + r * 0.12)], r * 0.045)
+        d.chord([x - r * 0.34, cy - r * 0.12, x + r * 0.34, cy + r * 0.36], 0, 180, fill=255)
+
+
 def g_dam(d, cx, cy, r):
     d.rectangle([cx - r * 0.9, cy - r * 0.6, cx + r * 0.9, cy - r * 0.05], fill=255)
     for x in (-0.6, -0.2, 0.2, 0.6):
@@ -1174,7 +1191,7 @@ def gen_icons() -> None:
         save(engrave(mask_of(g, S), "#fff2cc", "#d6aa58", 72), f"unit_{name}.png", ICONS)
     # постройки (кнопки меню стройки)
     blds = {"house": g_house, "yurt": g_yurt, "field": g_field, "mill": g_mill, "store": g_store,
-            "barracks": g_barracks, "stable": g_horseshoe, "cannon_yard": g_cannon, "kiln": g_flame, "bazaar": g_bazaar,
+            "barracks": g_barracks, "stable": g_horseshoe, "cannon_yard": g_cannon, "kiln": g_flame, "bazaar": g_scales,
             "dam": g_dam, "canal": g_canal, "wall": g_wall, "palisade": g_palisade, "gate": g_gate, "tower": g_tower,
             "pen": g_pen, "horse_yard": g_horseyard, "mine": g_mine, "kurultai": g_kurultai, "smithy": g_anvil,
             "felt_yard": g_felt, "hq_kokand": g_bazaar, "hq_kipchak": g_kurultai}

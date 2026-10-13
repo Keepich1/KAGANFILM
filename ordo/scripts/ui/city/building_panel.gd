@@ -9,6 +9,9 @@ const SLOT := 48.0
 const TRAIN := 64.0
 ## Строк о здании на бумаге (остальные — в подсказке)
 const EXTRA_LINES := 3
+## Обмен на базаре: партия (как rules.trade.lot в Сб. 1; панель ECON может дать trade_lot) и ширина столбца
+const TRADE_LOT := 100
+const TRADE_COL := 132.0
 
 var hud: CityHud
 var _sig := ""
@@ -35,7 +38,7 @@ func show_panel(d: Dictionary) -> void:
 	var sig := "%d|%d|" % [int(d.get("handle", 0)), int(d.get("state", 0))]
 	for t: Dictionary in d.get("trains", []):
 		sig += "%d:%s:%s;" % [int(t.get("utype", -1)), str(t.get("enabled", false)), t.get("why", "")]
-	sig += "|%d" % (d.get("queue", []) as Array).size()
+	sig += "|%d|%d|%s" % [(d.get("queue", []) as Array).size(), (d.get("trade", {}) as Dictionary).size(), str(d.has("ability"))]
 	if sig != _sig:
 		_sig = sig
 		_rebuild(d)
@@ -207,11 +210,66 @@ func _rebuild(d: Dictionary) -> void:
 		add_child(an)
 		if d.has("ability"):
 			_ability_state = UiTheme.label("", UiTheme.italic(500), 14, true)
+			_ability_state.name = "AbilityState"
 			_ability_state.position = Vector2(ax - 20.0, 115)
 			_ability_state.size = Vector2(TRAIN + 40.0, 18)
 			_ability_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			_ability_state.add_theme_color_override("font_color", UiTheme.INK_SOFT)
 			add_child(_ability_state)
+	# базар: обмен за золото (своё готовое здание с ценами от ECON)
+	var rates: Dictionary = d.get("trade", {})
+	if not rates.is_empty() and own and int(d.get("state", 0)) == BuildingTable.State.ACTIVE and trains.is_empty():
+		_trade_section(defs, x, rates, int(d.get("trade_lot", TRADE_LOT)))
+
+
+## Обмен на базаре (ECONOMY, Бозор): по ресурсу — значок, «Продать» за золото и «Купить» за золото партией
+## lot. Цены — из панели ECON (trade {r: {sell, buy}}, −1 — нельзя); нет цен — раздела нет.
+func _trade_section(defs: Defs, x: float, rates: Dictionary, lot: int) -> void:
+	var gold := defs.res(&"gold")
+	var tt := UiTheme.label(tr("Обмен по %d") % lot, UiTheme.head_bold(), 19, true)
+	tt.position = Vector2(x, 0)
+	add_child(tt)
+	var keys := rates.keys()
+	keys.sort()
+	var col := 0
+	for r: int in keys:
+		if r == gold or r < 0 or r >= defs.R:
+			continue
+		var pr: Dictionary = rates[r]
+		var cx := x + col * TRADE_COL
+		var ic := TextureRect.new()
+		ic.texture = UiTheme.res_icon(defs, r)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.position = Vector2(cx + (TRADE_COL - 12.0) * 0.5 - 17.0, 26)
+		ic.size = Vector2(34, 34)
+		ic.tooltip_text = tr(defs.r_name[r])
+		ic.mouse_filter = Control.MOUSE_FILTER_PASS
+		add_child(ic)
+		var rows := [[int(pr.get("sell", -1)), r, gold, tr("Продать"), "+%d"], [int(pr.get("buy", -1)), gold, r, tr("Купить"), "−%d"]]
+		for k in rows.size():
+			var row: Array = rows[k]
+			var price: int = row[0]
+			var b := Button.new()
+			b.name = "Trade_%s_%s" % [defs.res_ids[r], "sell" if k == 0 else "buy"]
+			b.position = Vector2(cx, 64 + k * 34)
+			b.size = Vector2(TRADE_COL - 12.0, 30)
+			b.focus_mode = Control.FOCUS_NONE
+			b.add_theme_font_size_override("font_size", 15)
+			b.disabled = price < 0
+			if price >= 0:
+				# монета справа: «Продать +40 ◉» — золото приходит, «Купить −110 ◉» — уходит
+				b.icon = UiTheme.res_icon(defs, gold)
+				b.expand_icon = true
+				b.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+				b.add_theme_constant_override("icon_max_width", 18)
+			b.text = "%s %s" % [row[3], (row[4] as String) % price] if price >= 0 else row[3]
+			b.tooltip_text = (tr("Продать %d %s за %d золота") if k == 0 else tr("Купить %d %s за %d золота")) % [
+				lot, tr(defs.r_name[r]).to_lower(), price] if price >= 0 else tr("Этим здесь не торгуют")
+			var give: int = row[1]
+			var take: int = row[2]
+			b.pressed.connect(func() -> void: hud.trade(_handle, give, take, lot * 1000))
+			add_child(b)
+		col += 1
 
 
 ## Строки о здании по-русски, тревоги впереди. Кроме договорных полей (herd, water, gar, recipe) читает и

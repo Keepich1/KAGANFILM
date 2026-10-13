@@ -690,6 +690,13 @@ func order_button(op: int) -> void:
 		SimCmd.Op.HERD_MOVE:
 			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.HERD:
 				arm(SimCmd.Op.MOVE)          # перегон — ЛКМ по карте
+		SimCmd.Op.TRADE:
+			# обмен — кнопками «Продать / Купить» в панели Бозора
+			if hud:
+				hud.notes.push(tr("Обмен — кнопками в панели базара"), CityNotes.Seal.GOLD)
+		SimCmd.Op.SET_DAM:
+			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
+				dam_button(own[0])
 		SimCmd.Op.SET_RECIPE:
 			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
 				var rc := _next_recipe(own[0])
@@ -698,6 +705,16 @@ func order_button(op: int) -> void:
 		_:
 			if op in ARMABLE and not own.is_empty():
 				arm(op)        # ждёт ЛКМ по карте
+
+
+## Кнопка «Запруда» тўғона: если панель знает, открыт ли он (dam_open), — переключить (SET_DAM);
+## иначе (Сб. 1: тўғон всегда открыт, шлюзы — позже) — записка
+func dam_button(b_h: int) -> void:
+	var panel := query.building_panel(b_h)
+	if panel.has("dam_open"):
+		issue_cmd(SimCmd.set_dam(b_h, not bool(panel["dam_open"])))
+	elif hud:
+		hud.notes.push(tr("Тўғон всегда открыт: шлюзы — позже"), CityNotes.Seal.GOLD)
 
 
 func begin_place(btype: int) -> void:

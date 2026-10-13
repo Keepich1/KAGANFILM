@@ -678,6 +678,16 @@ func _test_hud_extras() -> void:
 	SimHarness.check(RtsInput.has_builder("ability") or (not notes.is_empty() and String(notes[0]["text"]).contains("Ҳашар")),
 		"V у Урды — записка о Ҳашаре: «%s»" % (notes[0]["text"] if not notes.is_empty() else ""))
 	_take()
+	# кнопки настоящей игры (orders_for GAME): «Обмен» — к кнопкам базара, «Запруда» — тўғон открыт (Сб. 1)
+	var tg := _building(0, &"togon")
+	if tg != 0:
+		sel.set_selection(PackedInt32Array([tg]))
+		inp.order_button(SimCmd.Op.SET_DAM)
+		notes = hud.notes.visible_notes()
+		SimHarness.check(_take().is_empty() and String(notes[0]["text"]).contains("шлюзы"), "«Запруда» без dam_open в панели — записка, без приказа")
+	inp.order_button(SimCmd.Op.TRADE)
+	notes = hud.notes.visible_notes()
+	SimHarness.check(_take().is_empty() and String(notes[0]["text"]).contains("базара"), "«Обмен» — записка: кнопки в панели базара")
 	# меню: Esc при пустом выделении и F10; пауза и ввод выключены; Esc закрывает
 	sel.set_selection(PackedInt32Array())
 	inp.handle(_key(KEY_ESCAPE))
