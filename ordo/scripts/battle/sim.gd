@@ -250,6 +250,7 @@ var sq_enemy := PackedInt32Array()      # ближайший вражеский 
 var sq_trail: Array[PackedVector2Array] = []   # последние 8 точек якоря (ворота: бойцы идут по следу)
 var sq_used := PackedByteArray()        # 1 — слот отряда занят, 0 — свободен (R1)
 var sq_stuck := PackedInt32Array()      # шагов якорь-одиночка ждёт своего бойца (упёрся)
+var sq_dorm := PackedByteArray()        # 1 — одиночка спит: шаг отряда и центр пропускаются (R12)
 
 # зеркало структур (индекс = слот здания ECON)
 var st_hw := 0
@@ -593,7 +594,7 @@ func form_squad(officer: int, members: PackedInt32Array, formation := Formation.
 	_so_key[s] = -1
 	_reslot(s)
 	for u in m:
-		u_sleep[u] = 0
+		_wake(u)
 		u_target[u] = -1
 	_update_centroid(s)
 	return s
@@ -623,7 +624,7 @@ func disband_squad(s: int) -> PackedInt32Array:
 		u_squad[u] = ns
 		u_role[u] = Role.OFFICER if t_flags[u_type[u]] & UnitStats.OFFICER != 0 else Role.TROOPER
 		u_slot[u] = 0
-		u_sleep[u] = 0
+		_wake(u)
 		_update_centroid(ns)
 		out.append(u)
 	sq_members[s].clear()
@@ -692,6 +693,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float, owner := -
 	sq_trail[s] = PackedVector2Array()
 	sq_used[s] = 1
 	sq_stuck[s] = 0
+	sq_dorm[s] = 0
 	return s
 
 
@@ -764,7 +766,7 @@ func _grow_squads(cap: int) -> void:
 			sq_init, sq_alive, sq_cx, sq_cz, sq_speed, sq_lag, sq_melee, sq_charge_ok, sq_couched, sq_impacted,
 			sq_fire_target, sq_fire_dist, sq_volley_rank, sq_volley_t, sq_volley_seen, sq_cry_t, sq_single,
 			_so_key, sq_gen, sq_owner, sq_stance, sq_wp, sq_breach_st, sq_breach_wp, sq_st_target, sq_enemy,
-			sq_used, sq_stuck]:
+			sq_used, sq_stuck, sq_dorm]:
 		a.resize(cap)
 	sq_members.resize(cap)
 	sq_path.resize(cap)
@@ -992,6 +994,10 @@ func set_path(s: int, pts: PackedVector2Array, breach_st := -1, breach_wp := -1)
 	sq_breach_st[s] = breach_st
 	sq_breach_wp[s] = breach_wp
 	sq_stuck[s] = 0
+	# путь — от бойцов: якорь, ушедший вперёд (упёрлись), встаёт к ним
+	if sq_alive[s] > 0 and (sq_single[s] == 1 or sq_lag[s] > 6.0):
+		sq_x[s] = sq_cx[s]
+		sq_z[s] = sq_cz[s]
 	if pts.size() > 0 and sq_order[s] == Order.MOVE:
 		var g := pts[pts.size() - 1]
 		sq_tx[s] = g.x
@@ -1026,7 +1032,7 @@ func face(u: int, heading: float) -> void:
 		return
 	if sq_order[s] == Order.HOLD:
 		sq_th[s] = heading
-	u_sleep[u] = 0
+	_wake(u)
 
 
 func _clear_route(s: int) -> void:
@@ -1043,6 +1049,15 @@ func _clear_route(s: int) -> void:
 func _wake_squad(s: int) -> void:
 	for u in sq_members[s]:
 		u_sleep[u] = 0
+	sq_dorm[s] = 0
+
+
+## Разбудить юнита (R12): и его отряд-одиночку
+func _wake(u: int) -> void:
+	u_sleep[u] = 0
+	var s := u_squad[u]
+	if s >= 0:
+		sq_dorm[s] = 0
 
 
 ## Конница: разрешить натиск (копья наперевес на CHARGE_COUCH_DIST от цели)
@@ -1106,7 +1121,8 @@ func cheer(s: int) -> void:
 func _start_cheer(u: int, delay: float) -> void:
 	u_act[u] = Act.CHEER
 	u_act_t[u] = time + delay
-	u_sleep[u] = 0
+	if u_sleep[u] == 1:
+		_wake(u)
 
 
 # ================================================================= запросы
@@ -1522,10 +1538,19 @@ func _bucket_remove(st: int) -> void:
 func step() -> void:
 	time += DT
 	steps += 1
-	for u in n:
-		u_px[u] = u_x[u]
-		u_pz[u] = u_z[u]
-		u_ph[u] = u_h[u]
+	if sleep_enabled:
+		# спящие стоят: их прошлый шаг уже равен этому (_try_sleep)
+		for u in n:
+			if u_sleep[u] == 1:
+				continue
+			u_px[u] = u_x[u]
+			u_pz[u] = u_z[u]
+			u_ph[u] = u_h[u]
+	else:
+		for u in n:
+			u_px[u] = u_x[u]
+			u_pz[u] = u_z[u]
+			u_ph[u] = u_h[u]
 	# хэш собран в конце прошлого шага; заново — только если снаружи что-то менялось (тот же результат)
 	if _hash_dirty:
 		_rebuild_hash()
@@ -1547,20 +1572,12 @@ func step() -> void:
 ## Отряды города: свободные слоты и спящие одиночки пропускаются (R1, R12)
 func _squads_city() -> void:
 	for s in squads:
-		if sq_used[s] == 0:
+		if sq_used[s] == 0 or sq_dorm[s] == 1:
 			continue
-		if sq_single[s] == 1:
-			var m := sq_members[s]
-			if m.size() == 1 and u_sleep[m[0]] == 1:
-				continue
 		_update_centroid(s)
 	for s in squads:
-		if sq_used[s] == 0:
+		if sq_used[s] == 0 or sq_dorm[s] == 1:
 			continue
-		if sq_single[s] == 1:
-			var m := sq_members[s]
-			if m.size() == 1 and u_sleep[m[0]] == 1:
-				continue
 		_squad_step(s)
 
 
@@ -1916,6 +1933,7 @@ func _squad_step(s: int) -> void:
 			u_sleep[u] = 0
 			if u_act[u] == Act.AIM:
 				u_act[u] = Act.NONE
+		sq_dorm[s] = 0
 		rout.emit(s, Vector3(sq_cx[s], 0.0, sq_cz[s]))
 		return
 	# --- движение якоря строя
@@ -1933,6 +1951,15 @@ func _squad_step(s: int) -> void:
 		var lag := sq_lag[s]
 		if lag > 2.5 and sq_couched[s] == 0:
 			spd *= clampf(1.0 - (lag - 2.5) * 0.15, 0.35, 1.0)
+		# город: строй отстал от якоря на пути (упёрся) 2 с — новый путь (R7)
+		if collect_events and sq_order[s] == Order.MOVE and sq_path[s].size() > 0:
+			if lag > 6.0:
+				sq_stuck[s] += 1
+				if sq_stuck[s] >= STUCK_STEPS:
+					sq_stuck[s] = 0
+					ev_repath.append(s)
+			else:
+				sq_stuck[s] = 0
 	var tx := sq_tx[s]
 	var tz := sq_tz[s]
 	var tgt := sq_target[s]
@@ -2152,7 +2179,8 @@ func _fire_control_st(s: int, st: int) -> void:
 		u_act_t[u] = start
 		u_fire_t[u] = start + SHOOT_FIRE_DELAY + rng.range_f(0.0, 0.12)
 		u_aim[u] = -2 - st
-		u_sleep[u] = 0
+		if u_sleep[u] == 1:
+			_wake(u)
 
 
 func _fire_rank(s: int, r: int) -> void:
@@ -2176,7 +2204,8 @@ func _fire_rank(s: int, r: int) -> void:
 		u_act_t[u] = start
 		u_fire_t[u] = start + SHOOT_FIRE_DELAY + rng.range_f(0.0, 0.12)
 		u_aim[u] = aim
-		u_sleep[u] = 0
+		if u_sleep[u] == 1:
+			_wake(u)
 
 
 ## Цель выстрела: враг отряда t напротив стрелка (по боковому смещению), с разбросом
@@ -2216,7 +2245,7 @@ func _units_think() -> void:
 			# спит (R12): будит приказ, урон (сразу), враг рядом (блок 16 м и соседи), толчок с места (2 раза в с)
 			if _bmask_n[_ublk[u]] & ~(1 << u_side[u]) == 0 and ((u + steps) % WAKE_CHECK_STEPS != 0 or not _pushed_off(u)):
 				continue
-			u_sleep[u] = 0
+			_wake(u)
 		var s := u_squad[u]
 		var ti := u_type[u]
 		var mounted := t_flags[ti] & UnitStats.MOUNTED != 0
@@ -2725,7 +2754,8 @@ func _damage(tg: int, dmg: float, attacker: int) -> void:
 	if u_life[tg] != Life.ALIVE:
 		return
 	u_hurt_step[tg] = steps
-	u_sleep[tg] = 0
+	if u_sleep[tg] == 1:
+		_wake(tg)
 	u_hp[tg] -= dmg
 	if u_hp[tg] <= 0.0:
 		_kill(tg, attacker)
@@ -2739,7 +2769,8 @@ func _kill(u: int, attacker: int) -> void:
 	u_hit_t[u] = -1.0
 	u_act[u] = Act.NONE
 	u_couched[u] = 0
-	u_sleep[u] = 0
+	if u_sleep[u] == 1:
+		_wake(u)
 	u_killer[u] = attacker
 	_hash_dirty = true
 	if collect_events:
@@ -2837,11 +2868,17 @@ func _try_sleep(u: int) -> void:
 		return
 	if sq_single[s] == 1 and sq_stam[s] < 100.0:
 		return
-	if absf(angle_difference(u_h[u], sq_h[s])) > 0.05:
+	if absf(angle_difference(u_h[u], sq_h[s])) > 0.02:
 		return
 	u_vx[u] = 0.0
 	u_vz[u] = 0.0
 	u_sleep[u] = 1
+	if sq_single[s] == 1:
+		sq_dorm[s] = 1
+	# спит на месте: прошлый шаг = этот (вид не качает его между ними; шаг начала его пропускает)
+	u_px[u] = u_x[u]
+	u_pz[u] = u_z[u]
+	u_ph[u] = u_h[u]
 
 
 ## Расталкивание: никто не стоит друг в друге (пространственный хэш, одна итерация)
@@ -2953,6 +2990,8 @@ func _separate_city() -> void:
 							u_z[v] += dz * over * kv
 							xu = u_x[u]
 							zu = u_z[u]
+							if u_sleep[v] == 1:
+								_wake(v)  # толкнули спящего — проснётся и вернётся на место
 					v = _next[v]
 
 
