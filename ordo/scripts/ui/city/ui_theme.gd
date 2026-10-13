@@ -148,7 +148,12 @@ static func make(faction: StringName = &"kokand") -> Theme:
 	th.set_stylebox("pressed", "CityTab", box("tab_active", 16, 8))
 	th.set_stylebox("hover_pressed", "CityTab", box("tab_active", 16, 8))
 	th.set_stylebox("disabled", "CityTab", box("tab", 16, 8))
-	th.set_font_size("font_size", "CityTab", 17)
+	th.set_font_size("font_size", "CityTab", 18)
+	# открытая вкладка — самая светлая надпись, закрытые — приглушённые (видно и при 1280×720)
+	th.set_color("font_color", "CityTab", PARCH_DIM)
+	th.set_color("font_hover_color", "CityTab", PARCH)
+	th.set_color("font_pressed_color", "CityTab", Color("#fff6de"))
+	th.set_color("font_hover_pressed_color", "CityTab", Color("#fff6de"))
 	# подсказка — бумажная записка, тушь
 	var tip := box("note", 26, 14)
 	tip.content_margin_left = 20

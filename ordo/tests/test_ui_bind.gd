@@ -27,9 +27,32 @@ func _init() -> void:
 	for p in 2:
 		_test_side(p)
 	_test_big_city()
+	_test_panel_extras()
 	_test_restart()
 	_test_real_game()
 	SimHarness.finish(self)
+
+
+## Добавки панели здания от ECON (сверх договора): тревоги впереди, места у воды, работники, отара без травы
+func _test_panel_extras() -> void:
+	print("[панель здания: добавки ECON]")
+	var defs := city.defs()
+	var bp := CityBuildingPanel.new()
+	var tg := defs.building(&"togon")
+	var lines := bp.info_lines(defs, {"btype": tg, "water_places": {"used": 6, "cap": 8}, "dry_in_s": 40,
+		"workers": {"n": 2, "max": 4}, "raid": 0.5})
+	SimHarness.check(lines.size() >= 4 and lines[0].contains("Разоряют") and lines[1].contains("высохнут")
+		and lines.has(tr("Сув %d/%d — мест у воды") % [6, 8]) and lines.has(tr("Работников: %d / %d") % [2, 4]),
+		"тревоги впереди, «Сув 6/8», «Работников 2/4»: %s" % " | ".join(lines))
+	var kr := defs.building(&"koroo")
+	lines = bp.info_lines(defs, {"btype": kr, "herd": {"heads": 12, "cap": 30, "grass": -1.0}})
+	SimHarness.check(lines.has(tr("Отара: %d / %d голов") % [12, 30]), "отара без сведений о траве — без «трава −100%%»: %s" % " | ".join(lines))
+	var old := bp.info_lines(defs, {"btype": tg, "net": {"used": 3, "places": 8}})
+	SimHarness.check(old.has(tr("Сув %d/%d — мест у воды") % [3, 8]), "старое имя net {used, places} тоже читается")
+	SimHarness.check(CityBuildingPanel.ability_state({"active_s": 20, "ready_s": 0}).contains("0:20")
+		and CityBuildingPanel.ability_state({"active_s": 0, "ready_s": 70}).contains("1:10")
+		and CityBuildingPanel.ability_state({}) == "", "умение: «действует 0:20», «через 1:10»")
+	bp.free()
 
 
 ## Новая партия у драйвера (сигнал started, новое окно чтения): интерфейс и ввод перестраиваются сами;
@@ -165,6 +188,9 @@ func _test_real_game() -> void:
 		hud.refresh_now(true)
 		var trains: Array = q.building_panel(hq).get("trains", [])
 		SimHarness.check(hud.bottom.building.visible and not trains.is_empty(), "ставка — панель здания, найм: %d" % trains.size())
+		if not defs.b_ability[defs.f_hq[fi]].is_empty():
+			var st_lab: Label = hud.bottom.building._ability_state
+			SimHarness.check(st_lab != null and st_lab.text != "", "умение ставки по панели ECON: «%s»" % (st_lab.text if st_lab else ""))
 		hud.train(hq, int(trains[0]["utype"]))
 		got = _rg_take()
 		SimHarness.check(got.size() == 1 and got[0] == SimCmd.train(hq, int(trains[0]["utype"]), 1), "кнопка найма → TRAIN")

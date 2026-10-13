@@ -7,6 +7,8 @@ extends Control
 
 const SLOT := 48.0
 const TRAIN := 64.0
+## Строк о здании на бумаге (остальные — в подсказке)
+const EXTRA_LINES := 3
 
 var hud: CityHud
 var _sig := ""
@@ -17,6 +19,8 @@ var _hp_txt: Label
 var _slots: Array[Dictionary] = []      # {icon: TextureRect, bar: CityBar}
 var _extra: Label
 var _grass: CityBar
+## Состояние умения под кнопкой (по панели ECON: действует / через / готово)
+var _ability_state: Label
 
 
 func setup(p_hud: CityHud) -> void:
@@ -43,6 +47,7 @@ func _rebuild(d: Dictionary) -> void:
 		ch.queue_free()
 	_slots.clear()
 	_grass = null
+	_ability_state = null
 	_handle = int(d.get("handle", 0))
 	var defs := hud.query.defs()
 	var bt := int(d.get("btype", 0))
@@ -72,6 +77,7 @@ func _rebuild(d: Dictionary) -> void:
 	_extra = UiTheme.label("", UiTheme.text(500), 17, true)
 	_extra.position = Vector2(8, 108)
 	_extra.size = Vector2(380, 70)
+	_extra.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_extra)
 	var herd: Dictionary = d.get("herd", {})
 	if not herd.is_empty():
@@ -199,6 +205,84 @@ func _rebuild(d: Dictionary) -> void:
 		an.size = Vector2(TRAIN + 40.0, 18)
 		an.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(an)
+		if d.has("ability"):
+			_ability_state = UiTheme.label("", UiTheme.italic(500), 14, true)
+			_ability_state.position = Vector2(ax - 20.0, 115)
+			_ability_state.size = Vector2(TRAIN + 40.0, 18)
+			_ability_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_ability_state.add_theme_color_override("font_color", UiTheme.INK_SOFT)
+			add_child(_ability_state)
+
+
+## Строки о здании по-русски, тревоги впереди. Кроме договорных полей (herd, water, gar, recipe) читает и
+## добавки панели ECON, если они есть: raid (разоряют), fuel (печь без топлива), dry_in_s (тўғон разрушен),
+## workers {n, max}, water_places {used, cap} (сеть тўғона; старое имя — net {used, places}), otlar {n, cap},
+## tax_min (подать), herd.growth / period_s (приплод). У FakeCity их нет — тогда строки по Defs.
+func info_lines(defs: Defs, d: Dictionary) -> PackedStringArray:
+	var alarm := PackedStringArray()
+	var lines := PackedStringArray()
+	var bt := int(d.get("btype", 0))
+	var raid := float(d.get("raid", 0.0))
+	if raid > 0.0:
+		alarm.append(tr("Разоряют! %d%%") % int(raid * 100.0))
+	if d.has("fuel") and not bool(d["fuel"]):
+		alarm.append(tr("Нет топлива — печь стоит"))
+	if int(d.get("dry_in_s", 0)) > 0:
+		alarm.append(tr("Поля высохнут через %s") % UiTheme.clock(int(d["dry_in_s"]) * 30))
+	var wk: Dictionary = d.get("workers", {})
+	if int(wk.get("max", 0)) > 0:
+		lines.append(tr("Работников: %d / %d") % [int(wk.get("n", 0)), int(wk.get("max", 0))])
+	elif defs.b_work_slots[bt] > 0:
+		lines.append(tr("Работников: до %d") % defs.b_work_slots[bt])
+	var herd: Dictionary = d.get("herd", {})
+	if not herd.is_empty():
+		var s := tr("Отара: %d / %d голов") % [int(herd.get("heads", 0)), int(herd.get("cap", 0))]
+		var grass := float(herd.get("grass", -1.0))
+		if grass >= 0.0:
+			s += tr(" · трава %d%%") % int(grass * 100.0)
+		if int(herd.get("growth", 0)) > 0 and int(herd.get("period_s", 0)) > 0:
+			s += tr(" · приплод +%d за %d с") % [int(herd["growth"]), int(herd["period_s"])]
+		lines.append(s)
+	var water := float(d.get("water", -1.0))
+	if water >= 0.0:
+		lines.append(tr("Полив: есть — урожай полный") if water > 0.5 else tr("Сухо (лалми) — урожай четверть"))
+	# сеть воды тўғона: «Сув 6/8» (занято / мест; ECONOMY §2.3)
+	var wp: Dictionary = d.get("water_places", {})
+	var net: Dictionary = d.get("net", {})
+	var places := int(wp.get("cap", net.get("places", 0)))
+	if places > 0:
+		lines.append(tr("Сув %d/%d — мест у воды") % [int(wp.get("used", net.get("used", 0))), places])
+	var otlar: Dictionary = d.get("otlar", {})
+	if int(otlar.get("cap", 0)) > 0:
+		lines.append(tr("Отлар: %d / %d") % [int(otlar.get("n", 0)), int(otlar.get("cap", 0))])
+	var gar: Dictionary = d.get("gar", {})
+	if int(gar.get("cap", 0)) > 0:
+		lines.append(tr("Гарнизон: %d / %d") % [int(gar.get("n", 0)), int(gar.get("cap", 0))])
+	if String(d.get("recipe", "")) != "":
+		lines.append(tr("Делает: %s") % d["recipe"])
+	if defs.b_pop_cap[bt] > 0:
+		lines.append(tr("+%d населения") % defs.b_pop_cap[bt])
+	if defs.b_accepts[bt] != 0:
+		var acc := PackedStringArray()
+		for r in defs.R:
+			if defs.b_accepts[bt] & (1 << r) and defs.r_enabled[r] != 0:
+				acc.append(tr(defs.r_name[r]).to_lower())
+		lines.append(tr("Принимает: %s") % ", ".join(acc))
+	if int(d.get("tax_min", 0)) > 0:
+		lines.append(tr("Подать: %d золота в минуту, пока есть Бозор") % int(d["tax_min"]))
+	alarm.append_array(lines)
+	return alarm
+
+
+## Состояние умения по панели ECON {active_s, ready_s}: «действует 0:20» / «через 1:10» / «готово»
+static func ability_state(ab: Dictionary) -> String:
+	if ab.is_empty():
+		return ""
+	if int(ab.get("active_s", 0)) > 0:
+		return TranslationServer.translate("действует %s") % UiTheme.clock(int(ab["active_s"]) * 30)
+	if int(ab.get("ready_s", 0)) > 0:
+		return TranslationServer.translate("через %s") % UiTheme.clock(int(ab["ready_s"]) * 30)
+	return TranslationServer.translate("готово")
 
 
 ## Цена значками: [значок ресурса][число] по порядку ресурсов
@@ -243,37 +327,16 @@ func _update(d: Dictionary) -> void:
 	var hpm := maxi(1, int(d.get("hp_max", 1)))
 	_hp_bar.value = float(hp) / hpm
 	_hp_txt.text = "%d / %d" % [hp, hpm]
-	var lines := PackedStringArray()
-	var bt := int(d.get("btype", 0))
-	if defs.b_pop_cap[bt] > 0:
-		lines.append(tr("+%d населения") % defs.b_pop_cap[bt])
-	if defs.b_accepts[bt] != 0:
-		var acc := PackedStringArray()
-		for r in defs.R:
-			if defs.b_accepts[bt] & (1 << r) and defs.r_enabled[r] != 0:
-				acc.append(tr(defs.r_name[r]).to_lower())
-		lines.append(tr("Принимает: %s") % ", ".join(acc))
-	if defs.b_work_slots[bt] > 0:
-		lines.append(tr("Работников: до %d") % defs.b_work_slots[bt])
+	var lines := info_lines(defs, d)
+	# на бумаге — три первых строки (тревоги впереди), все — в подсказке
+	_extra.text = "\n".join(lines.slice(0, EXTRA_LINES))
+	_extra.tooltip_text = "\n".join(lines) if lines.size() > EXTRA_LINES else ""
 	var herd: Dictionary = d.get("herd", {})
-	if not herd.is_empty():
-		lines.append(tr("Отара: %d / %d голов · трава %d%%") % [int(herd.get("heads", 0)), int(herd.get("cap", 0)),
-			int(float(herd.get("grass", 0.0)) * 100.0)])
-		if _grass:
-			_grass.value = float(herd.get("grass", 0.0))
-	var water := float(d.get("water", -1.0))
-	if water >= 0.0:
-		lines.append(tr("Полив: есть — урожай полный") if water > 0.5 else tr("Сухо (лалми) — урожай четверть"))
-	# сеть воды тўғона: «Сув 6/8» (занято / мест; ECONOMY §2.3) — если GameQuery даёт net
-	var net: Dictionary = d.get("net", {})
-	if int(net.get("places", 0)) > 0:
-		lines.append(tr("Сув %d/%d — мест у воды") % [int(net.get("used", 0)), int(net.get("places", 0))])
-	var gar: Dictionary = d.get("gar", {})
-	if int(gar.get("cap", 0)) > 0:
-		lines.append(tr("Гарнизон: %d / %d") % [int(gar.get("n", 0)), int(gar.get("cap", 0))])
-	if String(d.get("recipe", "")) != "":
-		lines.append(tr("Делает: %s") % d["recipe"])
-	_extra.text = "\n".join(lines)
+	if _grass and not herd.is_empty():
+		_grass.value = maxf(0.0, float(herd.get("grass", 0.0)))
+	if _ability_state:
+		var ab: Dictionary = d.get("ability", {})
+		_ability_state.text = ability_state(ab)
 	var queue: Array = d.get("queue", [])
 	for i in _slots.size():
 		var s: Dictionary = _slots[i]
