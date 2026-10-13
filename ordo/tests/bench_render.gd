@@ -17,6 +17,11 @@ extends SceneTree
 ##                               фильтр выключены — на счёт вызовов и треугольников они не влияют,
 ##                               а программный Vulkan с ними считает кадр в разы дольше)
 ##   --out=/abs/file.json        итог в JSON
+##   --gpu_ab=3                  вместо счёта: время кадра видеокарты (viewport_get_measured_render_time_gpu)
+##                               «Высокого» на первой камере, полный кадр — прежние настройки, новые и новые
+##                               с возвратом одной меры (фильтр, сглаживание, тени, туман); столько кругов,
+##                               варианты чередуются, итог — медиана. На программном Vulkan это время
+##                               процессора за работу видеокарты (шумно при занятой машине), но доли мер видны
 ## Числа вызовов и треугольников честны и на программном Vulkan (lavapipe): это счёт отправленного
 ## на видеокарту. Время видеокарты здесь не меряется — его смотреть на F9 у автора.
 ## До замера (загрузка, разогрев боя) 3D не рисуется (Viewport.disable_3d).
@@ -34,6 +39,17 @@ var _full := false
 var _out := ""
 var _results: Array = []
 var _started := false
+var _gpu_rounds := 0
+
+## Варианты --gpu_ab: имя → ключи сравнения WorldQuality (пусто — уровень как есть)
+const GPU_VARIANTS := {
+	"прежнее «Высокое»": {"post_cap": "0", "aa": "msaa", "shadow_atlas": "8192", "fog_grid": "128", "fog_depth": "128"},
+	"новое «Высокое»": {},
+	"новое, фильтр в полном кадре": {"post_cap": "0"},
+	"новое, MSAA 4×": {"aa": "msaa"},
+	"новое, тени 8192": {"shadow_atlas": "8192"},
+	"новое, туман 128³": {"fog_grid": "128", "fog_depth": "128"},
+}
 
 
 func _initialize() -> void:
@@ -61,6 +77,9 @@ func _initialize() -> void:
 				_full = true
 			"out":
 				_out = v
+			"gpu_ab":
+				_gpu_rounds = maxi(1, int(v)) if v != "" else 3
+				_full = true
 	change_scene_to_file(SLICE)
 
 
@@ -95,6 +114,10 @@ func _run() -> void:
 	var ordo := root.get_node_or_null("Ordo")
 	print("[замер] видеокарта: %s, кадр %s" % [RenderingServer.get_video_adapter_name(), root.size])
 	_warm_up(slice)
+	if _gpu_rounds > 0:
+		await _gpu_ab(slice, ordo)
+		quit()
+		return
 	for level in _presets:
 		ordo.call("set_quality", level, false)
 		var sun := slice.get_node_or_null("World/Sun") as DirectionalLight3D
@@ -212,7 +235,7 @@ func _particles() -> int:
 
 
 ## Вклад частей кадра: прячем по одной и смотрим, сколько ушло
-func _parts(slice: Node, level: String, cam_name: String, base: Dictionary) -> void:
+func _parts(slice: Node, level: String, cam_name: String, _base: Dictionary) -> void:
 	var parts := {
 		"земля": ["World/Terrain"], "трава": ["World/Grass"], "деревья и камни": ["World/Scatter"],
 		"вода": ["World/Water"], "туман-полосы": ["World/FogBanks"], "лагерь": ["Camp"],
@@ -230,16 +253,20 @@ func _parts(slice: Node, level: String, cam_name: String, base: Dictionary) -> v
 				nodes.append(n)
 		if nodes.is_empty():
 			continue
+		# парой кадров подряд «с частью» и «без»: бой идёт, толпа и дым меняются от кадра к кадру,
+		# поэтому вычитаем из соседнего кадра, а не из общего замера
+		var with := await _measure(level, cam_name, 1)
 		for n in nodes:
 			n.visible = false
-		var r := await _measure(level, cam_name, 2)
+		var r := await _measure(level, cam_name, 1)
 		for n in nodes:
 			n.visible = true
 		r["part"] = name
+		for k in ["main_draws", "shadow_draws", "main_prims", "shadow_prims"]:
+			r["d_" + k] = int(with[k]) - int(r[k])
 		_results.append(r)
-		print("    %-16s %4d / %4d · %9s / %9s" % [name, int(base.main_draws) - int(r.main_draws),
-			int(base.shadow_draws) - int(r.shadow_draws), _num(int(base.main_prims) - int(r.main_prims)),
-			_num(int(base.shadow_prims) - int(r.shadow_prims))])
+		print("    %-16s %4d / %4d · %9s / %9s" % [name, r.d_main_draws, r.d_shadow_draws, _num(r.d_main_prims),
+			_num(r.d_shadow_prims)])
 
 
 func _num(v: int) -> String:
@@ -267,3 +294,59 @@ func _print_table() -> void:
 		print("| %s | %s | %d / %d / %d | %s / %s / %s | %d / %d | %.1f | %.1f |" % [r.level, r.cam, r.draws, r.main_draws,
 			r.shadow_draws, _num(r.prims), _num(r.main_prims), _num(r.shadow_prims), r.main_objs, r.shadow_objs,
 			r.view_ms, r.fx_ms])
+
+
+## Время видеокарты «Высокого»: варианты по кругу, на каждый — кадр на смену (карта теней и сетка
+## тумана пересоздаются) и кадр замера; итог — медиана по кругам
+func _gpu_ab(slice: Node, ordo: Node) -> void:
+	var cam := slice.find_child(_cams[0], true, false) as Camera3D
+	if cam:
+		cam.make_current()
+	var rid := root.get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(rid, true)
+	var args: Dictionary = ordo.get("_args")
+	var wq := slice.get_node_or_null("World/Quality") as WorldQuality
+	ordo.call("set_quality", "high", false)
+	root.disable_3d = false
+	var times := {}
+	for name in GPU_VARIANTS:
+		times[name] = PackedFloat32Array()
+	# первый круг — разогрев (шейдеры, толпа раскладывается по LOD), не считается
+	for round in _gpu_rounds + 1:
+		for name in GPU_VARIANTS:
+			for k in ["post_cap", "aa", "shadow_atlas", "fog_grid", "fog_depth"]:
+				args.erase(k)
+			var over: Dictionary = GPU_VARIANTS[name]
+			for k in over:
+				args[k] = over[k]
+			# только мир (WorldQuality): set_quality перезапустил бы частицы эффектов — дым пропал бы
+			if wq:
+				wq.apply("high")
+			else:
+				ordo.call("set_quality", "high", false)
+			for i in 2:
+				await RenderingServer.frame_post_draw
+			var ms := RenderingServer.viewport_get_measured_render_time_gpu(rid)
+			if round > 0:
+				times[name].append(ms)
+			print("[замер] круг %d · %-30s видеокарта %.1f мс" % [round, name, ms])
+	print("")
+	print("| вариант «Высокого» (%s, %s) | видеокарта, медиана мс | к прежнему |" % [_cams[0], root.size])
+	print("|---|---|---|")
+	var base := _median(times["прежнее «Высокое»"])
+	for name in GPU_VARIANTS:
+		var m := _median(times[name])
+		print("| %s | %.1f | %+.0f %% |" % [name, m, (m / base - 1.0) * 100.0 if base > 0.0 else 0.0])
+		_results.append({"variant": name, "gpu_ms": m, "runs": Array(times[name])})
+	if _out != "":
+		var f := FileAccess.open(_out, FileAccess.WRITE)
+		if f:
+			f.store_string(JSON.stringify(_results, "  "))
+
+
+func _median(a: PackedFloat32Array) -> float:
+	if a.is_empty():
+		return 0.0
+	var b := a.duplicate()
+	b.sort()
+	return b[b.size() / 2]
