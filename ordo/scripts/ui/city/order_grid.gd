@@ -30,10 +30,10 @@ func setup(p_hud: CityHud) -> void:
 		ic.size = Vector2(CELL - 14, CELL - 14)
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(ic)
-		var key := UiTheme.label("", UiTheme.text(800), 13)
+		var key := UiTheme.label("", UiTheme.text(800), 15)
 		key.name = "Key"
-		key.position = Vector2(CELL - 22, CELL - 22)
-		key.size = Vector2(18, 16)
+		key.position = Vector2(CELL - 27, CELL - 23)
+		key.size = Vector2(24, 19)
 		key.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		key.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
 		b.add_child(key)

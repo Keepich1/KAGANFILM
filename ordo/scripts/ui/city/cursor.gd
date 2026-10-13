@@ -22,3 +22,12 @@ static func apply(kind: int) -> void:
 	if kind == Kind.DEFAULT:
 		# кнопки и записки — тот же наконечник
 		Input.set_custom_mouse_cursor(t, Input.CURSOR_POINTING_HAND, HOTSPOT)
+
+
+## Вернуть системный курсор (выход из «Города»: главное меню, «Сражение» — без наконечника и его вариантов)
+static func reset() -> void:
+	current = -1
+	if DisplayServer.get_name() == "headless":
+		return
+	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
+	Input.set_custom_mouse_cursor(null, Input.CURSOR_POINTING_HAND)

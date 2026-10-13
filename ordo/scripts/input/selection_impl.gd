@@ -48,26 +48,32 @@ func click(world: Vector2, shift: bool, r := 2.5) -> int:
 ## Рамка (экранный прямоугольник): свои юниты внутри, отряды целиком. to_world (экран → мир, Vector3) —
 ## если задан и все углы рамки попадают в землю, юниты вне мирового прямоугольника под рамкой (+ запас)
 ## отсекаются без проекции на экран: рамка по 1000 юнитам стоит доли миллисекунды, а не десятки.
+## Массивы ядра — в локальные один раз за вызов (CONTRACT §10.2 п. 9: у BattleCore чтение свойства копирует массив).
 func box(rect: Rect2, shift: bool, to_screen: Callable, to_world := Callable()) -> int:
 	rect = rect.abs()
 	var bs := query.battle()
 	var found := PackedInt32Array()
-	var seen_sq := {}
-	var cull := _ground_rect(rect, to_world)
-	for u in _own_indices(bs):
-		if cull.size.x > 0.0 and bs != null and not cull.has_point(Vector2(bs.u_x[u], bs.u_z[u])):
-			continue
-		var h := query.unit_handle(u)
-		var p := _screen_of(bs, u, to_screen)
-		if not rect.has_point(p):
-			continue
-		if bs != null:
-			var s := bs.u_squad[u]
+	if bs != null:
+		var ux := bs.u_x
+		var uz := bs.u_z
+		var usq := bs.u_squad
+		var life := bs.u_life
+		var single := bs.sq_single
+		var members := bs.sq_members
+		var seen_sq := {}
+		var cull := _ground_rect(rect, to_world)
+		for u in _own_indices(bs):
+			var x := ux[u]
+			var z := uz[u]
+			if cull.size.x > 0.0 and not cull.has_point(Vector2(x, z)):
+				continue
+			if not rect.has_point(_screen_at(x, z, to_screen)):
+				continue
+			var s := usq[u]
 			if seen_sq.has(s):
 				continue
 			seen_sq[s] = true
-		for x in expand(h):
-			found.append(x)
+			found.append_array(_squad_handles(u, s, single, members, life))
 	if shift and _all_own(model.selected) and _units_only(model.selected):
 		model.add(found)
 	elif not found.is_empty() or not shift:
@@ -81,10 +87,13 @@ func same_type(h: int, view: Rect2, to_screen: Callable) -> int:
 	var u0 := query.unit_index(h)
 	if bs == null or u0 < 0 or RtsInput.owner_of(query, h) != player:
 		return 0
-	var t := bs.u_type[u0]
+	var types := bs.u_type
+	var ux := bs.u_x
+	var uz := bs.u_z
+	var t := types[u0]
 	var found := PackedInt32Array()
 	for u in _own_indices(bs):
-		if bs.u_type[u] == t and view.has_point(_screen_of(bs, u, to_screen)):
+		if types[u] == t and view.has_point(_screen_at(ux[u], uz[u], to_screen)):
 			found.append(query.unit_handle(u))
 	model.set_selection(found)
 	return found.size()
@@ -92,22 +101,25 @@ func same_type(h: int, view: Rect2, to_screen: Callable) -> int:
 
 ## Описатель → что выделять: юнит отряда — все живые бойцы отряда; прочее — сам описатель
 func expand(h: int) -> PackedInt32Array:
-	var out := PackedInt32Array([h])
 	if Ids.kind(h) != Ids.Kind.UNIT:
-		return out
+		return PackedInt32Array([h])
 	var bs := query.battle()
 	var u := query.unit_index(h)
 	if bs == null or u < 0:
-		return out
-	var s := bs.u_squad[u]
-	if s < 0 or bs.sq_single[s] == 1:
-		return out
-	out.clear()
-	for m in bs.sq_members[s]:
-		if bs.u_life[m] == BattleSim.Life.ALIVE:
-			out.append(query.unit_handle(m))
+		return PackedInt32Array([h])
+	return _squad_handles(u, bs.u_squad[u], bs.sq_single, bs.sq_members, bs.u_life)
+
+
+## Живые бойцы отряда s юнита u (одиночка или пустой отряд — сам юнит); массивы ядра — от вызывающего
+func _squad_handles(u: int, s: int, single: PackedInt32Array, members: Array[PackedInt32Array],
+		life: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if s >= 0 and single[s] != 1:
+		for m in members[s]:
+			if life[m] == BattleSim.Life.ALIVE:
+				out.append(query.unit_handle(m))
 	if out.is_empty():
-		out.append(h)
+		out.append(query.unit_handle(u))
 	return out
 
 
@@ -143,9 +155,7 @@ func _ground_rect(rect: Rect2, to_world: Callable) -> Rect2:
 	return out.grow(CULL_M)
 
 
-func _screen_of(bs: BattleSim, u: int, to_screen: Callable) -> Vector2:
-	var x := bs.u_x[u] if bs else 0.0
-	var z := bs.u_z[u] if bs else 0.0
+func _screen_at(x: float, z: float, to_screen: Callable) -> Vector2:
 	return to_screen.call(Vector3(x, Terrain.height_at(x, z) + 1.0, z))
 
 

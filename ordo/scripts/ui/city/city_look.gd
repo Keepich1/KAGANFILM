@@ -5,7 +5,8 @@ extends Node3D
 ##   tools/shot.sh res://scenes/test/ui_city.tscn out.png --at=6 -- --faction=kipchak --sel=building
 ## Параметры:
 ##   --faction=kokand|kipchak   за кого играем (игрок 0 / 1 в FakeCity)
-##   --sel=none|squad|workers|building|hq|single|node|herd   что выделить к кадру
+##   --sel=none|squad|workers|building|hq|single|node|herd|enemy|<id постройки>   что выделить к кадру
+##                              (enemy — ставка врага; id — своя постройка этого рода, например kazarma)
 ##   --bg=live|still|<путь.png>  live — мир и юниты (медленно на процессоре); still — кадр среза под интерфейсом
 ##   --tab=orders|economy|fort  открытая вкладка
 ##   --place=<id постройки>     показать режим постройки (призрак)
@@ -140,16 +141,23 @@ func _preset_selection() -> void:
 	var bs := q.battle()
 	var team := q.players().team[player]
 	var hs := PackedInt32Array()
+	# массивы ядра — в локальные (CONTRACT §10.2 п. 9)
+	var side := bs.u_side
+	var life := bs.u_life
+	var usq := bs.u_squad
+	var types := bs.u_type
+	var tf := bs.t_flags
+	var single := bs.sq_single
+	var members := bs.sq_members
 	match _sel_mode:
 		"squad":
 			# все отряды своей стороны (не одиночки)
 			for u in bs.n:
-				if bs.u_side[u] == team and bs.u_life[u] == BattleSim.Life.ALIVE and bs.sq_single[bs.u_squad[u]] == 0 \
-						and bs.sq_members[bs.u_squad[u]].size() > 1:
+				if side[u] == team and life[u] == BattleSim.Life.ALIVE and single[usq[u]] == 0 and members[usq[u]].size() > 1:
 					hs.append(q.unit_handle(u))
 		"workers", "single":
 			for u in bs.n:
-				if bs.u_side[u] == team and bs.u_life[u] == BattleSim.Life.ALIVE and bs.t_flags[bs.u_type[u]] & UnitStats.WORKER:
+				if side[u] == team and life[u] == BattleSim.Life.ALIVE and tf[types[u]] & UnitStats.WORKER:
 					hs.append(q.unit_handle(u))
 					if _sel_mode == "single":
 						break
@@ -184,5 +192,14 @@ func _preset_selection() -> void:
 			for h in ht.hw:
 				if ht.state[h] != HerdTable.State.FREE and ht.owner[h] == player:
 					hs.append(ht.handle(h))
+					break
+		"enemy":
+			hs.append(q.players().hq_b[1 - player])
+		_:
+			var want := q.defs().building(StringName(_sel_mode))
+			var bt := q.buildings()
+			for b in bt.hw:
+				if want >= 0 and bt.owner[b] == player and bt.btype[b] == want and bt.state[b] != BuildingTable.State.FREE:
+					hs.append(bt.handle(b))
 					break
 	selection.set_selection(hs)

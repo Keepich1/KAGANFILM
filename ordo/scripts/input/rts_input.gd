@@ -9,8 +9,9 @@ extends Node
 ##   протянуть ПКМ — MOVE_LINE; двойной ПКМ — бегом/галопом;
 ##   H стоп, F строй по кругу, G качып, R стрельба/рукопашная, V клич (у Урды — Ҳашар), U собрать/распустить
 ##   отряд, K свернуть / Shift+K свернуть лагерь / K с арбами — развернуть у курсора, «.» свободный работник,
-##   N тревога (Ноғора / Чакырык), Tab — наложения на карту, Ctrl+1…9 / 1…9 / Shift+1…9 группы (двойное —
-##   камера), P пауза, + / − скорость, M звук, B — вкладка «Хозяйство», буквы на открытой вкладке — постройки,
+##   N тревога (Ноғора / Чакырык), Tab — наложения на карту (сами — при своём здании воды / загоне и его
+##   постройке), Ctrl+1…9 / 1…9 / Shift+1…9 группы (двойное — камера), P пауза, + / − скорость, M звук
+##   (выключенный клавишей включается при выходе из «Города»), B — вкладка «Хозяйство», буквы на открытой вкладке — постройки,
 ##   Del — снести, Esc — отмена (пустое выделение — меню), F10 — меню, F5–F8 — виды камеры (1–4 — группы).
 ## Кнопки сетки с целью (идти, в атаку, добывать, помочь, место сбора, в гарнизон) «взводят» приказ: следующий
 ## ЛКМ по миру или миникарте отдаёт его (Shift — ещё), ПКМ или Esc — снимает.
@@ -26,8 +27,12 @@ extends Node
 signal issued(cmd: PackedInt32Array)
 ## Взведён / снят приказ с кнопки (NONE — снят)
 signal armed_changed(op: int)
-## Tab: наложения на карту (вода и сухие поля, трава) — включает OverlayView (VIEW)
-signal overlay_toggled(on: bool)
+## Наложения на карту (ECONOMY §1.3): kind — OVERLAY_WATER (арыки, зона воды, сухие поля) или OVERLAY_GRASS
+## (трава пастбищ клетками). Вкл/выкл — Tab (вид — по стороне); сами — пока выбрано одно своё здание воды или
+## загон и пока ставится такое здание; снято выделение — снова как по Tab. (true, kind) — показать kind (прежний
+## вид убрать), (false, kind) — убрать. Слушатель — VIEW: предложено FieldView.set_overlay(on, kind); у OverlayView
+## (таблички, надписи) такого нет — к нему не подключать.
+signal overlay_toggled(on: bool, kind: StringName)
 
 const DRAG_PX := 8.0
 const LINE_PX := 16.0
@@ -37,6 +42,9 @@ const ARMABLE := [SimCmd.Op.MOVE, SimCmd.Op.ATTACK_MOVE, SimCmd.Op.GATHER, SimCm
 	SimCmd.Op.GARRISON]
 ## Имена умений построек (Defs.b_ability хранит только id)
 const ABILITY_NAMES := {"hashar": "Ҳашар"}
+## Виды наложений на карту (overlay_toggled)
+const OVERLAY_WATER := &"water"
+const OVERLAY_GRASS := &"grass"
 
 var query: GameQuery
 var selection: SelectionModel
@@ -57,8 +65,11 @@ var now_s := -1.0
 var enabled := true
 ## Взведённый приказ с кнопки сетки (SimCmd.Op; NONE — нет)
 var armed := SimCmd.Op.NONE
-## Наложения на карту включены (Tab)
+## Наложения на карту включены клавишей Tab
 var overlay := false
+## Что показано сейчас (Tab или само — по выбранному зданию / постройке) и какого вида
+var overlay_on := false
+var overlay_kind := &""
 
 var sel: SelectionImpl
 var groups: ControlGroups
@@ -79,7 +90,8 @@ var _kachyp := false
 var _melee := false
 var _mouse := Vector2.ZERO
 var _hover_t := 0.0
-var _muted := false
+## Звук выключен клавишей M (при выходе из «Города» — включить обратно)
+var _muted_by_key := false
 var _rmb_line_ok := false
 var _cur_key := ""
 var _cur_t := -10.0
@@ -90,6 +102,9 @@ var _own_flags := 0
 var _own_dirty := true
 ## У драйвера есть sync() (GameDriver: шаг в фоне)
 var _can_sync := false
+## Наложение по выбранному своему зданию (пересчёт по смене выделения) и вид наложения стороны для Tab
+var _overlay_sel := &""
+var _overlay_side := OVERLAY_GRASS
 
 
 func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, cam: Camera3D = null,
@@ -114,6 +129,8 @@ func setup(q: GameQuery, sel_model: SelectionModel, p: int, issue_fn: Callable, 
 	if not view_rect.is_valid():
 		view_rect = _view_rect
 	_can_sync = driver != null and driver.has_method("sync")
+	_overlay_side = side_overlay(q, p)
+	_overlay_sel = &""
 
 
 ## Новая партия (CityHud.rebind): своё окно чтения; постройка, взведённый приказ, группы и счётчики сброшены
@@ -129,7 +146,9 @@ func rebind(q: GameQuery, p: int) -> void:
 	_kachyp = false
 	_melee = false
 	_cur_key = ""
+	overlay = false
 	setup(q, selection, p, issue, camera, driver)
+	update_overlay()
 
 
 ## Дождаться фонового шага драйвера (GameDriver.sync) перед чтением GameQuery; без фона — ничего
@@ -159,21 +178,37 @@ func _process(delta: float) -> void:
 	if _hover_t >= 0.08 and query and enabled:
 		_hover_t = 0.0
 		_update_cursor()
+		update_overlay()              # постройка кончилась (поставлена, снята) — наложение как было
+
+
+## Выход из «Города» (главное меню, «Сражение»): звук, выключенный клавишей M, — обратно (если громкость в
+## настройках Ordo не ноль: тогда шину держит выключенной он)
+func _exit_tree() -> void:
+	if not _muted_by_key:
+		return
+	_muted_by_key = false
+	var bus := AudioServer.get_bus_index("Master")
+	var ordo := get_node_or_null("/root/Ordo")
+	var vol: Variant = ordo.get("volume") if ordo else null
+	if bus >= 0 and AudioServer.is_bus_mute(bus) and not (vol is float and float(vol) <= 0.001):
+		AudioServer.set_bus_mute(bus, false)
 
 
 # ================================================================= события
 
 ## Разобрать событие ввода; true — съедено
 func handle(e: InputEvent) -> bool:
+	var used := false
 	if e is InputEventMouseButton:
-		return _mouse_button(e as InputEventMouseButton)
-	if e is InputEventMouseMotion:
+		used = _mouse_button(e as InputEventMouseButton)
+	elif e is InputEventMouseMotion:
 		return _mouse_motion(e as InputEventMouseMotion)
-	if e is InputEventKey:
+	elif e is InputEventKey:
 		var k := e as InputEventKey
 		if k.pressed and not k.echo:
-			return _key(k)
-	return false
+			used = _key(k)
+	update_overlay()                  # щелчок или клавиша могли начать / кончить постройку
+	return used
 
 
 func _mouse_button(mb: InputEventMouseButton) -> bool:
@@ -378,7 +413,7 @@ func _key(k: InputEventKey) -> bool:
 		return true
 	if _is(k, "ordo_overlay", KEY_TAB):
 		overlay = not overlay
-		overlay_toggled.emit(overlay)
+		update_overlay()
 		return true
 	if _is(k, "ordo_squad", KEY_U):
 		_squad_key()
@@ -402,8 +437,7 @@ func _key(k: InputEventKey) -> bool:
 			driver.time_scale = maxf(driver.time_scale * 0.5, 0.25)
 		return true
 	if _is(k, "ordo_mute", KEY_M):
-		_muted = not _muted
-		AudioServer.set_bus_mute(0, _muted)
+		toggle_mute()
 		return true
 	if code == KEY_B:
 		if hud:
@@ -415,6 +449,17 @@ func _key(k: InputEventKey) -> bool:
 			issue_cmd(SimCmd.demolish(own[0]))
 		return true
 	return false
+
+
+## M: звук вкл/выкл (главная шина). Состояние — у AudioServer, а не своё: громкость 0 в настройках Ordo тоже
+## держит шину выключенной, и первое M в новой партии не «пропадает»
+func toggle_mute() -> void:
+	var bus := AudioServer.get_bus_index("Master")
+	if bus < 0:
+		return
+	var mute := not AudioServer.is_bus_mute(bus)
+	AudioServer.set_bus_mute(bus, mute)
+	_muted_by_key = mute
 
 
 func _is(k: InputEventKey, action: String, fallback: int) -> bool:
@@ -719,6 +764,57 @@ func dam_button(b_h: int) -> void:
 		hud.notes.push(tr("Тўғон всегда открыт: шлюзы — позже"), CityNotes.Seal.GOLD)
 
 
+## Наложение на карту: постройка воды / загона (ставится) → выбранное своё здание → Tab (вид стороны) → нет.
+## Сообщает overlay_toggled, только если показ или вид сменились.
+func update_overlay() -> void:
+	var kind := &""
+	if placement and placement.active() and query:
+		kind = overlay_kind_of(query.defs(), placement.btype)
+	if kind == &"":
+		kind = _overlay_sel
+	if kind == &"" and overlay:
+		kind = _overlay_side
+	var on := kind != &""
+	if on == overlay_on and (not on or kind == overlay_kind):
+		return
+	overlay_on = on
+	if on:
+		overlay_kind = kind
+	overlay_toggled.emit(on, overlay_kind)
+
+
+## Вид наложения у постройки: вода (сеть тўғона, место у воды) / трава (загон со стадом, кроме ставки) / нет
+static func overlay_kind_of(defs: Defs, btype: int) -> StringName:
+	if defs == null or btype < 0 or btype >= defs.b_ids.size():
+		return &""
+	if String(defs.b_network[btype].get("kind", "")) == "water" or defs.b_water_place[btype] > 0:
+		return OVERLAY_WATER
+	if defs.b_herd[btype] >= 0 and defs.b_herd_cap[btype] > 0 and defs.b_flags[btype] & Defs.BF_HQ == 0:
+		return OVERLAY_GRASS
+	return &""
+
+
+## Вид наложения стороны игрока p для Tab: вода, если у стороны есть постройки воды (Коканд), иначе трава
+static func side_overlay(q: GameQuery, p: int) -> StringName:
+	var defs := q.defs()
+	var fid := defs.f_ids[q.players().faction[p]]
+	for b in defs.b_ids.size():
+		if defs.b_enabled[b] != 0 and defs.b_faction[b] == fid and overlay_kind_of(defs, b) == OVERLAY_WATER:
+			return OVERLAY_WATER
+	return OVERLAY_GRASS
+
+
+## Своё выбранное здание воды / загон (одно) → вид наложения; иначе пусто
+func _selected_overlay() -> StringName:
+	if selection == null or selection.selected.size() != 1 or Ids.kind(selection.selected[0]) != Ids.Kind.BUILDING:
+		return &""
+	var h := selection.selected[0]
+	var bt := query.buildings()
+	if not bt.valid(h) or bt.owner[bt.slot(h)] != player:
+		return &""
+	return overlay_kind_of(query.defs(), bt.btype[bt.slot(h)])
+
+
 func begin_place(btype: int) -> void:
 	sync_driver()
 	disarm()
@@ -726,6 +822,7 @@ func begin_place(btype: int) -> void:
 	var w := _world(_mouse)
 	if w != Vector2.INF:
 		placement.move(w)
+	update_overlay()
 
 
 ## «.» — следующий свободный работник: выделить и показать
@@ -745,6 +842,13 @@ func _squad_key() -> void:
 	var bs := query.battle()
 	if units.is_empty() or bs == null:
 		return
+	# массивы ядра — в локальные один раз (CONTRACT §10.2 п. 9)
+	var usq := bs.u_squad
+	var types := bs.u_type
+	var tf := bs.t_flags
+	var single := bs.sq_single
+	var members := bs.sq_members
+	var gen := bs.sq_gen
 	var squads := {}
 	var singles := PackedInt32Array()
 	var officer := 0
@@ -752,16 +856,16 @@ func _squad_key() -> void:
 		var u := query.unit_index(h)
 		if u < 0:
 			continue
-		var s := bs.u_squad[u]
-		if bs.sq_single[s] == 0 and bs.sq_members[s].size() > 1:
+		var s := usq[u]
+		if single[s] == 0 and members[s].size() > 1:
 			squads[s] = true
-		elif bs.t_flags[bs.u_type[u]] & UnitStats.OFFICER and officer == 0:
+		elif tf[types[u]] & UnitStats.OFFICER and officer == 0:
 			officer = h
 		else:
 			singles.append(h)
 	if not squads.is_empty():
 		for s: int in squads:
-			issue_cmd(SimCmd.disband(Ids.make(Ids.Kind.SQUAD, s, bs.sq_gen[s])))
+			issue_cmd(SimCmd.disband(Ids.make(Ids.Kind.SQUAD, s, gen[s])))
 	elif officer != 0 and not singles.is_empty():
 		issue_cmd(SimCmd.form_squad(officer, singles))
 
@@ -838,7 +942,8 @@ func _next_stance(units: PackedInt32Array) -> int:
 	for h in units:
 		var u := query.unit_index(h)
 		if u >= 0:
-			return (bs.sq_stance[bs.u_squad[u]] + 1) % 4
+			var s := bs.u_squad[u]
+			return (bs.sq_stance[s] + 1) % 4          # одно чтение: выход на первом
 	return BattleSim.Stance.HOLD
 
 
@@ -867,10 +972,12 @@ func _next_formation(units: PackedInt32Array) -> int:
 	var bs := query.battle()
 	if bs == null:
 		return BattleSim.Formation.LINE
+	var usq := bs.u_squad
+	var single := bs.sq_single
 	for h in units:
 		var u := query.unit_index(h)
-		if u >= 0 and bs.sq_single[bs.u_squad[u]] == 0:
-			return (bs.sq_form[bs.u_squad[u]] + 1) % 4
+		if u >= 0 and single[usq[u]] == 0:
+			return (bs.sq_form[usq[u]] + 1) % 4          # одно чтение: выход на первом
 	return BattleSim.Formation.LINE
 
 
@@ -878,9 +985,11 @@ func _general() -> int:
 	var bs := query.battle()
 	if bs == null:
 		return 0
+	var types := bs.u_type
+	var tf := bs.t_flags
 	for h in _units_of(_own_selection()):
 		var u := query.unit_index(h)
-		if u >= 0 and bs.t_flags[bs.u_type[u]] & UnitStats.GENERAL:
+		if u >= 0 and tf[types[u]] & UnitStats.GENERAL:
 			return h
 	return 0
 
@@ -889,6 +998,9 @@ func _general() -> int:
 
 func _on_selection_changed(_hs: PackedInt32Array) -> void:
 	_own_dirty = true
+	if query:
+		_overlay_sel = _selected_overlay()
+		update_overlay()
 
 
 ## Своё выделение (чужие юниты в выделении — только посмотреть, приказов нет)
@@ -900,10 +1012,13 @@ func _own_selection() -> PackedInt32Array:
 		_own_cache = selection.selected if owns_all(query, player, selection.selected) else PackedInt32Array()
 		_own_flags = 0
 		var bs := query.battle()
-		for h in _own_cache:
-			var u := query.unit_index(h) if Ids.kind(h) == Ids.Kind.UNIT else -1
-			if u >= 0 and bs:
-				_own_flags |= bs.t_flags[bs.u_type[u]]
+		if bs:
+			var types := bs.u_type
+			var tf := bs.t_flags
+			for h in _own_cache:
+				var u := query.unit_index(h) if Ids.kind(h) == Ids.Kind.UNIT else -1
+				if u >= 0:
+					_own_flags |= tf[types[u]]
 	return _own_cache
 
 
@@ -927,11 +1042,16 @@ func _units_of(hs: PackedInt32Array) -> PackedInt32Array:
 func _filter(units: PackedInt32Array, mask: int, has: bool) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	var bs := query.battle()
+	if bs == null:
+		return out
+	var life := bs.u_life
+	var types := bs.u_type
+	var tf := bs.t_flags
 	for h in units:
 		var u := query.unit_index(h)
-		if u < 0 or bs == null or bs.u_life[u] != BattleSim.Life.ALIVE:
+		if u < 0 or life[u] != BattleSim.Life.ALIVE:
 			continue
-		if (bs.t_flags[bs.u_type[u]] & mask != 0) == has:
+		if (tf[types[u]] & mask != 0) == has:
 			out.append(h)
 	return out
 
@@ -956,14 +1076,19 @@ static func compact_of(q: GameQuery, units: PackedInt32Array) -> PackedInt32Arra
 	var bs := q.battle()
 	if bs == null:
 		return units
+	# массивы ядра — в локальные один раз (CONTRACT §10.2 п. 9: 1000 описателей — не 1000 копий)
+	var life := bs.u_life
+	var usq := bs.u_squad
+	var single := bs.sq_single
+	var members := bs.sq_members
 	var out := PackedInt32Array()
 	var seen := {}
 	for h in units:
 		var u := q.unit_index(h)
-		if u < 0 or bs.u_life[u] != BattleSim.Life.ALIVE:
+		if u < 0 or life[u] != BattleSim.Life.ALIVE:
 			continue
-		var s := bs.u_squad[u]
-		if bs.sq_single[s] == 0 and bs.sq_members[s].size() > 1:
+		var s := usq[u]
+		if single[s] == 0 and members[s].size() > 1:
 			if seen.has(s):
 				continue
 			seen[s] = true
@@ -999,11 +1124,19 @@ static func team_of(q: GameQuery, h: int) -> int:
 	return q.players().team[o] if o >= 0 else -1
 
 
+## Всё в hs — игрока p. Юниты — по u_owner, взятому в локальную один раз (CONTRACT §10.2 п. 9): выделение
+## в 1000 бойцов — одна копия массива у BattleCore, а не тысяча
 static func owns_all(q: GameQuery, p: int, hs: PackedInt32Array) -> bool:
 	if hs.is_empty():
 		return false
+	var bs := q.battle()
+	var owner := bs.u_owner if bs else PackedInt32Array()
 	for h in hs:
-		if owner_of(q, h) != p:
+		if Ids.kind(h) == Ids.Kind.UNIT:
+			var u := q.unit_index(h)
+			if u < 0 or u >= owner.size() or owner[u] != p:
+				return false
+		elif owner_of(q, h) != p:
 			return false
 	return true
 
@@ -1030,6 +1163,8 @@ func center_on(hs: PackedInt32Array) -> void:
 	if hs.is_empty() or camera == null or not camera.has_method("go_to"):
 		return
 	var bs := query.battle()
+	var ux := bs.u_x if bs else PackedFloat32Array()
+	var uz := bs.u_z if bs else PackedFloat32Array()
 	var c := Vector2.ZERO
 	var n := 0
 	var bt := query.buildings()
@@ -1040,8 +1175,8 @@ func center_on(hs: PackedInt32Array) -> void:
 				n += 1
 			continue
 		var u := query.unit_index(h)
-		if u >= 0 and bs:
-			c += Vector2(bs.u_x[u], bs.u_z[u])
+		if u >= 0 and u < ux.size():
+			c += Vector2(ux[u], uz[u])
 			n += 1
 	if n > 0 and hud:
 		hud.look_at_world(c / n)

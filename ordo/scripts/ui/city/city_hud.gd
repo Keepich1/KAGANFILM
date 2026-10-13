@@ -14,7 +14,9 @@ extends CanvasLayer
 ##   hud.setup(driver.query, driver, selection, driver.local_player, camera, input)
 ##   camera.presets_enabled = false                             # цифры — группы; виды — F5–F8
 ##   camera.edge_blocked = hud.blocks_edge_pan
-##   input.overlay_toggled.connect(overlay_view.set_enabled)    # Tab — наложения (VIEW)
+##   input.overlay_toggled.connect(field_view.set_overlay)      # наложения (on, kind: &"water" | &"grass") —
+##       # когда у VIEW появится слушатель (предложено FieldView.set_overlay(on, kind)); OverlayView — таблички
+##       # и надписи, set_enabled у него нет: к нему не подключать (ошибка при первом Tab)
 ##   hud.restart_requested.connect(...); hud.quit_requested.connect(...)   # меню (иначе перезагрузка / выход)
 ##   # GameDriver: «Начать заново» → driver.restart() — интерфейс сам перейдёт на новую партию (rebind)
 ## Меню (≡, F10, Esc при пустом выделении) ставит SimDriver на паузу и выключает ввод, пока открыто.
@@ -36,6 +38,16 @@ const HEAVY_S := 1.0
 ## Большое выделение (больше BIG_SEL описателей) — сводку карточек спрашиваем реже, раз в BIG_INFO_S
 const BIG_SEL := 200
 const BIG_INFO_S := 0.5
+## Мелкое окно (1280×720 и т. п.): холст «Города» (Window.content_scale_factor) укрупняется так, чтобы
+## интерфейс был не мельче UI_MIN_SCALE от раскладки 1920×1080, а сама раскладка — не уже MIN_VIEW
+## (1280×720 → 0,8: раскладка 1600×900). Окна от 1600×900 и больше — как было. Прежний множитель —
+## обратно при выходе из «Города» (главное меню, «Сражение»).
+const UI_MIN_SCALE := 0.8
+const MIN_VIEW := Vector2(1600, 900)
+
+## Интерфейс, который ведёт масштаб окна (один на окно), и множитель окна до него
+static var _scale_owner: CityHud = null
+static var _scale_prev := 1.0
 
 var query: GameQuery
 var driver: SimDriver
@@ -72,6 +84,51 @@ var _own := false
 ## Ответ тот же (отряд считается по своим бойцам), а цена в GameQueryImpl растёт с числом описателей:
 ## 1000 выделенных — десятки мс, 35 описателей — около миллисекунды. Пересчёт — при смене выделения.
 var _sel_q := PackedInt32Array()
+
+
+func _ready() -> void:
+	_apply_ui_scale()
+
+
+## Выход из «Города»: системный курсор вместо наконечника, прежний масштаб окна
+func _exit_tree() -> void:
+	CityCursor.reset()
+	if _scale_owner == self:
+		_scale_owner = null
+		var w := get_window()
+		if w:
+			if w.size_changed.is_connected(_apply_ui_scale):
+				w.size_changed.disconnect(_apply_ui_scale)
+			w.content_scale_factor = _scale_prev
+
+
+## Множитель холста для окна win (пиксели) при раскладке base (canvas_items, aspect expand: свой масштаб окна —
+## min(win / base)): интерфейс не мельче UI_MIN_SCALE и раскладка не уже MIN_VIEW; иначе 1
+static func ui_scale_factor(win: Vector2, base: Vector2) -> float:
+	if win.x <= 0.0 or win.y <= 0.0 or base.x <= 0.0 or base.y <= 0.0:
+		return 1.0
+	var natural := minf(win.x / base.x, win.y / base.y)
+	var want := minf(UI_MIN_SCALE, minf(win.x / MIN_VIEW.x, win.y / MIN_VIEW.y))
+	return maxf(1.0, want / natural)
+
+
+## Подобрать масштаб окна под его размер (при входе и при каждом изменении окна)
+func _apply_ui_scale() -> void:
+	if not is_inside_tree():
+		return
+	var w := get_window()
+	if w == null or w.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED:
+		return
+	if _scale_owner == null or not is_instance_valid(_scale_owner):
+		_scale_owner = self
+		_scale_prev = w.content_scale_factor
+		if not w.size_changed.is_connected(_apply_ui_scale):
+			w.size_changed.connect(_apply_ui_scale)
+	if _scale_owner != self:
+		return
+	var f := ui_scale_factor(Vector2(w.size), Vector2(w.content_scale_size))
+	if not is_equal_approx(w.content_scale_factor, f):
+		w.content_scale_factor = f
 
 
 func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camera3D = null, inp: RtsInput = null) -> void:
@@ -294,19 +351,20 @@ func begin_place(btype: int) -> void:
 		input.begin_place(btype)
 
 
+## Найм, отмена очереди и обмен — только в своём здании (у чужого панель лишь показывает)
 func train(b_h: int, utype: int) -> void:
-	if input:
+	if input and RtsInput.owner_of(query, b_h) == player:
 		input.issue_cmd(SimCmd.train(b_h, utype, 1))
 
 
 func cancel_train(b_h: int, index: int) -> void:
-	if input:
+	if input and RtsInput.owner_of(query, b_h) == player:
 		input.issue_cmd(SimCmd.cancel_train(b_h, index))
 
 
 ## Обмен на базаре: give → take партией amount_milli (одна сторона — золото)
 func trade(b_h: int, give: int, take: int, amount_milli: int) -> void:
-	if input:
+	if input and RtsInput.owner_of(query, b_h) == player:
 		input.issue_cmd(SimCmd.trade(b_h, give, take, amount_milli))
 
 
@@ -351,18 +409,27 @@ func select_card(card: Dictionary, shift := false, double := false) -> void:
 		return
 	sync_driver()
 	var bs := query.battle()
+	if bs == null:
+		return
 	var sq := int(card.get("squad", 0))
 	var type_id := String(card.get("type", ""))
+	# массивы ядра — в локальные один раз (CONTRACT §10.2 п. 9: у BattleCore чтение свойства копирует массив)
+	var usq := bs.u_squad
+	var types := bs.u_type
+	var gen := bs.sq_gen
+	var single := bs.sq_single
+	var members := bs.sq_members
+	var type_ids := bs.type_ids
 	var keep := PackedInt32Array()
 	for h in selection.selected:
 		var u := query.unit_index(h)
 		var mine := false
-		if u >= 0 and bs:
-			var s := bs.u_squad[u]
+		if u >= 0:
+			var s := usq[u]
 			if sq != 0:
-				mine = Ids.make(Ids.Kind.SQUAD, s, bs.sq_gen[s]) == sq
+				mine = Ids.make(Ids.Kind.SQUAD, s, gen[s]) == sq
 			else:
-				mine = (bs.sq_single[s] == 1 or bs.sq_members[s].size() == 1) and bs.type_ids[bs.u_type[u]] == type_id
+				mine = (single[s] == 1 or members[s].size() == 1) and type_ids[types[u]] == type_id
 		if mine != shift:
 			keep.append(h)
 	if keep.is_empty():

@@ -3,12 +3,23 @@ extends Control
 ## Панель здания (ARCHITECTURE §14): имя, состояние, прочность; очередь найма с ходом головы
 ## (щелчок по месту — отменить); кнопки найма с ценой и причиной недоступности по-русски;
 ## загон — отара и трава, поле — полив, башня — гарнизон; что здание даёт (из Defs).
-## Данные — GameQuery.building_panel. Строение — при смене здания/набора кнопок; числа — каждое обновление.
+## Данные — GameQuery.building_panel. Строение — при смене здания/набора кнопок и ширины; числа — каждое обновление.
+## Чужое здание — только посмотреть: очередь без отмены, кнопок найма нет.
+## Узкая бумага (холст 1600 при окне 1280×720), когда всё в ряд не влезает, — сжатая раскладка: медальон
+## меньше, очередь найма — в левом столбце под прочностью, на бумаге две строки о здании; найм и обмен —
+## во всю правую часть.
 
 const SLOT := 48.0
+const SLOT_COMPACT := 38.0
 const TRAIN := 64.0
-## Строк о здании на бумаге (остальные — в подсказке)
+## Зазор между ценами разных ресурсов под кнопкой найма
+const COST_GAP := 5.0
+## Левый столбец (медальон, имя, прочность, строки о здании): обычный и сжатый
+const LEFT_W := 400.0
+const LEFT_COMPACT := 336.0
+## Строк о здании на бумаге (остальные — в подсказке); в сжатой раскладке с очередью — EXTRA_LINES_COMPACT
 const EXTRA_LINES := 3
+const EXTRA_LINES_COMPACT := 2
 ## Обмен на базаре: партия (как rules.trade.lot в Сб. 1; панель ECON может дать trade_lot) и ширина столбца
 const TRADE_LOT := 100
 const TRADE_COL := 132.0
@@ -24,20 +35,27 @@ var _extra: Label
 var _grass: CityBar
 ## Состояние умения под кнопкой (по панели ECON: действует / через / готово)
 var _ability_state: Label
+## Сжатая раскладка (тесты и кадры) и строк о здании на бумаге
+var compact := false
+var _extra_lines := EXTRA_LINES
 
 
 func setup(p_hud: CityHud) -> void:
 	hud = p_hud
 	name = "BuildingPanel"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# окно сменило размер — при следующем показе собрать заново под новую ширину
+	resized.connect(func() -> void: _sig = "")
 
 
 func show_panel(d: Dictionary) -> void:
 	if d.is_empty():
 		return
-	var sig := "%d|%d|" % [int(d.get("handle", 0)), int(d.get("state", 0))]
-	for t: Dictionary in d.get("trains", []):
-		sig += "%d:%s:%s;" % [int(t.get("utype", -1)), str(t.get("enabled", false)), t.get("why", "")]
+	var own := is_own(int(d.get("handle", 0)))
+	var sig := "%d|%d|%s|" % [int(d.get("handle", 0)), int(d.get("state", 0)), str(own)]
+	if own:
+		for t: Dictionary in d.get("trains", []):
+			sig += "%d:%s:%s;" % [int(t.get("utype", -1)), str(t.get("enabled", false)), t.get("why", "")]
 	sig += "|%d|%d|%s" % [(d.get("queue", []) as Array).size(), (d.get("trade", {}) as Dictionary).size(), str(d.has("ability"))]
 	if sig != _sig:
 		_sig = sig
@@ -54,82 +72,113 @@ func _rebuild(d: Dictionary) -> void:
 	_handle = int(d.get("handle", 0))
 	var defs := hud.query.defs()
 	var bt := int(d.get("btype", 0))
+	var st := int(d.get("state", 0))
+	# чужое здание — только посмотреть: очередь без отмены, найма нет (и не видно, что чужим по карману)
+	var own := is_own(_handle)
+	var trains: Array = d.get("trains", []) if own else []
+	var queue: Array = d.get("queue", [])
+	var has_queue := not trains.is_empty() or not queue.is_empty()
+	var ab: Dictionary = defs.b_ability[bt] if bt >= 0 and bt < defs.b_ability.size() else {}
+	var show_ab := not ab.is_empty() and own and st == BuildingTable.State.ACTIVE
+	var rates: Dictionary = d.get("trade", {})
+	var show_trade := not rates.is_empty() and own and st == BuildingTable.State.ACTIVE and trains.is_empty()
+	# столбец найма не уже кнопки; цена шире столбца — в две строки (_cost_row)
+	var col_min := TRAIN + 18.0
+	# всё в ряд в обычной раскладке; не влезает в бумагу — сжатая
+	var need := LEFT_W + (BuildingTable.QMAX * (SLOT + 6.0) + 28.0 if has_queue else 0.0) \
+		+ trains.size() * col_min + (TRAIN + 40.0 if show_ab else 0.0) \
+		+ (_trade_count(defs, rates) * TRADE_COL if show_trade else 0.0)
+	compact = size.x > 0.0 and need > size.x
+	var md := 80.0 if compact else 96.0
+	var tx := md + 18.0
+	var bar_w := 140.0 if compact else 180.0
 	var roundel := CityRoundel.new()
 	roundel.color = UiTheme.TEAM[hud.team_of_building(_handle) % 4]
 	roundel.icon = UiTheme.building_icon(defs, bt)
 	roundel.portrait = UiTheme.building_portrait(defs, bt)     # модель постройки, если снята; иначе значок
 	roundel.position = Vector2(4, 6)
-	roundel.size = Vector2(96, 96)
+	roundel.size = Vector2(md, md)
 	add_child(roundel)
-	var nm := UiTheme.label(String(d.get("name", "")), UiTheme.head_bold(), 28, true)
-	nm.position = Vector2(112, 0)
+	var nm := UiTheme.label(String(d.get("name", "")), UiTheme.head_bold(), 26 if compact else 28, true)
+	nm.position = Vector2(tx - 2.0, 0)
 	add_child(nm)
 	_state = UiTheme.label("", UiTheme.italic(500), 18, true)
-	_state.position = Vector2(114, 36)
+	_state.position = Vector2(tx, 34 if compact else 36)
 	_state.add_theme_color_override("font_color", UiTheme.INK_SOFT)
 	add_child(_state)
 	_hp_bar = CityBar.new()
 	_hp_bar.color = UiTheme.HP
-	_hp_bar.position = Vector2(114, 66)
-	_hp_bar.size = Vector2(180, 11)
+	_hp_bar.position = Vector2(tx, 64 if compact else 66)
+	_hp_bar.size = Vector2(bar_w, 11)
 	_hp_bar.tooltip_text = tr("Прочность")
 	_hp_bar.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_hp_bar)
 	_hp_txt = UiTheme.label("", UiTheme.text(600), 16, true)
-	_hp_txt.position = Vector2(300, 60)
+	_hp_txt.position = Vector2(tx + bar_w + 6.0, _hp_bar.position.y - 6.0)
 	add_child(_hp_txt)
-	_extra = UiTheme.label("", UiTheme.text(500), 17, true)
-	_extra.position = Vector2(8, 108)
-	_extra.size = Vector2(380, 70)
-	_extra.mouse_filter = Control.MOUSE_FILTER_PASS
-	add_child(_extra)
 	var herd: Dictionary = d.get("herd", {})
 	if not herd.is_empty():
 		_grass = CityBar.new()
 		_grass.color = Color("#7a9a3a")
-		_grass.position = Vector2(114, 84)
-		_grass.size = Vector2(180, 9)
+		_grass.position = Vector2(tx, 79 if compact else 84)
+		_grass.size = Vector2(bar_w, 7 if compact else 9)
 		_grass.tooltip_text = tr("Трава под отарой")
 		_grass.mouse_filter = Control.MOUSE_FILTER_PASS
 		add_child(_grass)
-	var x := 400.0
-	var trains: Array = d.get("trains", [])
-	var queue: Array = d.get("queue", [])
-	if not trains.is_empty() or not queue.is_empty():
-		var qt := UiTheme.label(tr("Очередь найма"), UiTheme.head_bold(), 19, true)
-		qt.position = Vector2(x, 0)
-		add_child(qt)
+	var x := LEFT_COMPACT if compact else LEFT_W
+	var extra_y := 108.0
+	_extra_lines = EXTRA_LINES
+	if has_queue:
+		var s_sz := SLOT_COMPACT if compact else SLOT
+		var gap := 4.0 if compact else 6.0
+		# сжатая: ряд под прочностью в левом столбце (без заголовка; подсказки — у мест); обычная — свой столбец
+		var q0 := Vector2(tx - 2.0, 88.0) if compact else Vector2(x, 32.0)
+		if not compact:
+			var qt := UiTheme.label(tr("Очередь найма"), UiTheme.head_bold(), 19, true)
+			qt.position = Vector2(x, 0)
+			add_child(qt)
 		for i in BuildingTable.QMAX:
 			var slot := Button.new()
-			slot.position = Vector2(x + i * (SLOT + 6), 32)
-			slot.size = Vector2(SLOT, SLOT)
+			slot.position = q0 + Vector2(i * (s_sz + gap), 0)
+			slot.size = Vector2(s_sz, s_sz)
 			slot.focus_mode = Control.FOCUS_NONE
 			slot.tooltip_text = tr("Пусто")
-			var idx := i
-			slot.pressed.connect(func() -> void: hud.cancel_train(_handle, idx))
+			if own:
+				var idx := i
+				slot.pressed.connect(func() -> void: hud.cancel_train(_handle, idx))
+			else:
+				slot.disabled = true
 			add_child(slot)
 			var ic := TextureRect.new()
 			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			ic.position = Vector2(6, 6)
-			ic.size = Vector2(SLOT - 12, SLOT - 12)
+			ic.position = Vector2(5, 5) if compact else Vector2(6, 6)
+			ic.size = slot.size - ic.position * 2.0
 			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			slot.add_child(ic)
 			var bar := CityBar.new()
 			bar.color = UiTheme.GOLD_LIGHT
-			bar.position = Vector2(x + i * (SLOT + 6), 32 + SLOT + 4)
-			bar.size = Vector2(SLOT, 7)
+			bar.position = slot.position + Vector2(0, s_sz + (2.0 if compact else 4.0))
+			bar.size = Vector2(s_sz, 5 if compact else 7)
 			bar.visible = i == 0 and not queue.is_empty()
 			add_child(bar)
 			_slots.append({"button": slot, "icon": ic, "bar": bar})
-		x += BuildingTable.QMAX * (SLOT + 6) + 28.0
+		if compact:
+			extra_y = q0.y + s_sz + 10.0
+			_extra_lines = EXTRA_LINES_COMPACT
+		else:
+			x += BuildingTable.QMAX * (SLOT + 6.0) + 28.0
+	_extra = UiTheme.label("", UiTheme.text(500), 17, true)
+	_extra.position = Vector2(8, extra_y)
+	_extra.size = Vector2((LEFT_COMPACT - 12.0) if compact else 380.0, 178.0 - extra_y)
+	_extra.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(_extra)
 	var step := 0.0
-	var ab: Dictionary = defs.b_ability[bt] if bt >= 0 and bt < defs.b_ability.size() else {}
-	var own := hud.query.buildings().valid(_handle) and hud.query.buildings().owner[hud.query.buildings().slot(_handle)] == hud.player
 	if not trains.is_empty():
 		var tt := UiTheme.label(tr("Нанять"), UiTheme.head_bold(), 19, true)
 		tt.position = Vector2(x, 0)
 		add_child(tt)
-		step = clampf((size.x - x - (TRAIN + 40.0 if not ab.is_empty() else 0.0)) / maxf(1.0, trains.size()), TRAIN + 18.0, 124.0)
+		step = clampf((size.x - x - (TRAIN + 40.0 if show_ab else 0.0)) / maxf(1.0, trains.size()), col_min, 124.0)
+		var two_rows := false
 		for i in trains.size():
 			var t: Dictionary = trains[i]
 			var bx := x + i * step + (step - TRAIN) * 0.5 - 8.0
@@ -156,13 +205,15 @@ func _rebuild(d: Dictionary) -> void:
 			if b.disabled:
 				ic.modulate = Color(0.55, 0.5, 0.45)
 			b.add_child(ic)
-			var nm2 := UiTheme.label(String(t.get("name", "")), UiTheme.text(700), 14, true)
+			var nm2 := UiTheme.label(String(t.get("name", "")), UiTheme.text(700), 15, true)
 			nm2.position = Vector2(bx + TRAIN * 0.5 - (step - 6.0) * 0.5, 96)
 			nm2.size = Vector2(step - 6.0, 18)
 			nm2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			nm2.clip_text = true
+			nm2.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			add_child(nm2)
 			var row := _cost_row(defs, cost, b.disabled)
+			two_rows = two_rows or _cost_width(cost) > step - 6.0
 			row.position = Vector2(bx + TRAIN * 0.5 - (step - 6.0) * 0.5, 115)
 			row.size = Vector2(step - 6.0, 18)
 			add_child(row)
@@ -170,12 +221,12 @@ func _rebuild(d: Dictionary) -> void:
 		for t: Dictionary in trains:
 			if t.get("why", "") != "":
 				var why := UiTheme.label(String(t["why"]), UiTheme.italic(600), 16, true)
-				why.position = Vector2(x, 140)
+				why.position = Vector2(x, 156 if two_rows else 140)
 				why.add_theme_color_override("font_color", UiTheme.RED)
 				add_child(why)
 				break
 	# умение здания (Ҳашар у Урды, ECONOMY §2.6): кнопка в панели, клавиша V
-	if not ab.is_empty() and own and int(d.get("state", 0)) == BuildingTable.State.ACTIVE:
+	if show_ab:
 		var ax := x + trains.size() * step + 24.0
 		var at := UiTheme.label(tr("Умение"), UiTheme.head_bold(), 19, true)
 		at.position = Vector2(ax - 8.0, 0)
@@ -200,17 +251,17 @@ func _rebuild(d: Dictionary) -> void:
 		ic.size = Vector2(TRAIN - 16, TRAIN - 16)
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(ic)
-		var key := UiTheme.label("V", UiTheme.text(800), 13)
-		key.position = Vector2(TRAIN - 18, TRAIN - 20)
+		var key := UiTheme.label("V", UiTheme.text(800), 15)
+		key.position = Vector2(TRAIN - 19, TRAIN - 22)
 		key.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
 		b.add_child(key)
-		var an := UiTheme.label(nm_ab, UiTheme.text(700), 14, true)
+		var an := UiTheme.label(nm_ab, UiTheme.text(700), 15, true)
 		an.position = Vector2(ax - 20.0, 96)
 		an.size = Vector2(TRAIN + 40.0, 18)
 		an.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(an)
 		if d.has("ability"):
-			_ability_state = UiTheme.label("", UiTheme.italic(500), 14, true)
+			_ability_state = UiTheme.label("", UiTheme.italic(500), 15, true)
 			_ability_state.name = "AbilityState"
 			_ability_state.position = Vector2(ax - 20.0, 115)
 			_ability_state.size = Vector2(TRAIN + 40.0, 18)
@@ -218,9 +269,18 @@ func _rebuild(d: Dictionary) -> void:
 			_ability_state.add_theme_color_override("font_color", UiTheme.INK_SOFT)
 			add_child(_ability_state)
 	# базар: обмен за золото (своё готовое здание с ценами от ECON)
-	var rates: Dictionary = d.get("trade", {})
-	if not rates.is_empty() and own and int(d.get("state", 0)) == BuildingTable.State.ACTIVE and trains.is_empty():
+	if show_trade:
 		_trade_section(defs, x, rates, int(d.get("trade_lot", TRADE_LOT)))
+
+
+## Столбцов обмена (все ресурсы с ценами, кроме золота)
+func _trade_count(defs: Defs, rates: Dictionary) -> int:
+	var gold := defs.res(&"gold")
+	var n := 0
+	for r: int in rates:
+		if r != gold and r >= 0 and r < defs.R:
+			n += 1
+	return n
 
 
 ## Обмен на базаре (ECONOMY, Бозор): по ресурсу — значок, «Продать» за золото и «Купить» за золото партией
@@ -336,6 +396,12 @@ func info_lines(defs: Defs, d: Dictionary) -> PackedStringArray:
 	return alarm
 
 
+## Здание игрока (найм, отмена очереди, умение, обмен — только у своего)
+func is_own(b_h: int) -> bool:
+	var bt := hud.query.buildings()
+	return bt.valid(b_h) and bt.owner[bt.slot(b_h)] == hud.player
+
+
 ## Ресурсы стороны хозяина здания (FactionDefs.ui_res); пусто — не знаем (без интерфейса, чужое без хозяина)
 func _owner_res(defs: Defs, b_h: int) -> PackedInt32Array:
 	if hud == null or b_h == 0:
@@ -361,28 +427,44 @@ static func ability_state(ab: Dictionary) -> String:
 	return TranslationServer.translate("готово")
 
 
-## Цена значками: [значок ресурса][число] по порядку ресурсов
-func _cost_row(defs: Defs, cost: PackedInt32Array, bad: bool) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 1)
+## Ширина цены значками в одну строку (как _cost_row: [значок 17 + число] через COST_GAP)
+func _cost_width(cost: PackedInt32Array) -> float:
+	var f := UiTheme.text(700)
+	var w := 0.0
+	var n := 0
+	for r in cost.size():
+		if cost[r] > 0:
+			w += 18.0 + f.get_string_size(str(ceili(cost[r] / 1000.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+			n += 1
+	return w + maxf(0.0, (n - 1) * COST_GAP)
+
+
+## Цена значками: [значок ресурса][число] по порядку ресурсов, по середине столбца; не влезает в ширину —
+## переносится второй строкой (не залезает на соседний найм)
+func _cost_row(defs: Defs, cost: PackedInt32Array, bad: bool) -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.name = "Cost"
+	row.alignment = FlowContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("h_separation", int(COST_GAP))
+	row.add_theme_constant_override("v_separation", 0)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for r in cost.size():
 		if cost[r] <= 0:
 			continue
+		var one := HBoxContainer.new()
+		one.add_theme_constant_override("separation", 1)
+		one.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var ic := TextureRect.new()
 		ic.texture = UiTheme.res_icon(defs, r)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.custom_minimum_size = Vector2(17, 17)
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(ic)
-		var n := UiTheme.label(str(ceili(cost[r] / 1000.0)), UiTheme.text(700), 14, true)
+		one.add_child(ic)
+		var n := UiTheme.label(str(ceili(cost[r] / 1000.0)), UiTheme.text(700), 15, true)
 		n.add_theme_color_override("font_color", UiTheme.RED if bad else UiTheme.INK)
-		row.add_child(n)
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(4, 1)
-		row.add_child(gap)
+		one.add_child(n)
+		row.add_child(one)
 	return row
 
 
@@ -405,8 +487,8 @@ func _update(d: Dictionary) -> void:
 	_hp_txt.text = "%d / %d" % [hp, hpm]
 	var lines := info_lines(defs, d)
 	# на бумаге — три первых строки (тревоги впереди), все — в подсказке
-	_extra.text = "\n".join(lines.slice(0, EXTRA_LINES))
-	_extra.tooltip_text = "\n".join(lines) if lines.size() > EXTRA_LINES else ""
+	_extra.text = "\n".join(lines.slice(0, _extra_lines))
+	_extra.tooltip_text = "\n".join(lines) if lines.size() > _extra_lines else ""
 	var herd: Dictionary = d.get("herd", {})
 	if _grass and not herd.is_empty():
 		_grass.value = maxf(0.0, float(herd.get("grass", 0.0)))
@@ -422,7 +504,8 @@ func _update(d: Dictionary) -> void:
 			var qd: Dictionary = queue[i]
 			var ut := int(qd.get("utype", -1))
 			ic.texture = UiTheme.unit_face(defs.unit_ids[ut] if ut >= 0 else "")
-			(s["button"] as Button).tooltip_text = tr("%s — щелчок отменяет") % qd.get("name", "")
+			var btn := s["button"] as Button
+			btn.tooltip_text = String(qd.get("name", "")) if btn.disabled else tr("%s — щелчок отменяет") % qd.get("name", "")
 			bar.value = float(qd.get("t", 0.0)) if i == 0 else 0.0
 		else:
 			ic.texture = null

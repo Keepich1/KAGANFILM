@@ -3,7 +3,9 @@ extends SceneTree
 ## FactionDefs.ui_res (свои ресурсы: у Коканда ғишт и нет коней, у кыпчаков кони и нет камня; списка в коде нет);
 ## сетка приказов = GameQuery.orders_for, вкладки стройки = build_menu; панель здания — кнопки найма;
 ## записки — цвет печати по событию; все строки — по-русски; замер времени обновления; новая партия у драйвера
-## (started) — интерфейс и ввод на новом окне чтения, перед чтением — driver.sync().
+## (started) — интерфейс и ввод на новом окне чтения, перед чтением — driver.sync(). Табличка набега по
+## raid_eta_ticks (0 — набег идёт); чужое здание — без найма и отмены; мелкое окно (1280×720) — холст 1600×900,
+## раскладка влезает; выход из «Города» возвращает курсор и масштаб окна.
 ## Если в проекте уже есть настоящая игра (GameDriver, GameQueryImpl — главная ветка после слияния GAME),
 ## тот же интерфейс проверяется и на ней: приказы мышью доходят до игры и принимаются (без CMD_REJECTED).
 ##   godot --headless --path ordo --script res://tests/test_ui_bind.gd
@@ -19,6 +21,14 @@ class SyncDriver extends FakeCityDriver:
 		syncs += 1
 
 
+## Поддельный город с заданным raid_eta_ticks (GameQueryImpl: 0 — набег идёт)
+class EtaCity extends FakeCity:
+	var eta := -1
+
+	func raid_eta_ticks(_p: int) -> int:
+		return eta
+
+
 func _init() -> void:
 	city = FakeCity.new()
 	city.setup(1)
@@ -29,8 +39,172 @@ func _init() -> void:
 	_test_big_city()
 	_test_panel_extras()
 	_test_restart()
+	_test_raid_plaque()
+	_test_enemy_panel()
 	_test_real_game()
+	# выход из «Города» и масштаб окна — на живом дереве (в _init узлы ещё не в нём): первый кадр
+	process_frame.connect(_in_tree_tests, CONNECT_ONE_SHOT)
+
+
+func _in_tree_tests() -> void:
+	for ch in root.get_children():
+		if ch.is_queued_for_deletion():
+			ch.free()
+	_test_exit()
+	_test_small_window()
 	SimHarness.finish(self)
+
+
+## Табличка набега: > 0 — «Набег через», 0 — «Набег!» (так GameQueryImpl отвечает во время набега), −1 — нет
+func _test_raid_plaque() -> void:
+	print("[табличка набега]")
+	var ec := EtaCity.new()
+	ec.setup(1)
+	var made := _make_hud(0, ec)
+	var hud: CityHud = made[0]
+	var got: Array[String] = []
+	for eta in [300, 0, -1]:
+		ec.eta = eta
+		hud.refresh_now()
+		got.append(hud.top._raid.text if hud.top._plaque.visible else "—")
+	SimHarness.check(got == [tr("Набег через %s") % UiTheme.clock(300), tr("Набег!"), "—"],
+		"eta 300 / 0 / −1: %s" % " | ".join(got))
+	hud.top.set_raid_active(true)
+	hud.refresh_now()
+	SimHarness.check(hud.top._plaque.visible and hud.top._raid.text == tr("Набег!"), "−1 и событие RAID_STARTED — «Набег!» (FakeCity)")
+	hud.queue_free()
+	(made[2] as Node).queue_free()
+
+
+## Чужое здание: панель только показывает — кнопок найма нет, очередь не отменяется, приказов нет
+func _test_enemy_panel() -> void:
+	print("[чужое здание]")
+	var made := _make_hud(0)
+	var hud: CityHud = made[0]
+	var sel: SelectionModel = made[1]
+	var log: Array = made[3]
+	var hq := city.players().hq_b[1]
+	sel.set_selection(PackedInt32Array([hq]))
+	hud.refresh_now(true)
+	var d := city.building_panel(hq)
+	var ut := int((d.get("trains", []) as Array)[0]["utype"]) if not (d.get("trains", []) as Array).is_empty() else 0
+	d["queue"] = [{"utype": ut, "name": "x", "t": 0.5}]            # чужой найм идёт
+	hud.bottom.building.show_panel(d)
+	log.clear()
+	var trains := 0
+	var slots := 0
+	var live := 0
+	for ch in hud.bottom.building.get_children():
+		if ch is Button and not ch.is_queued_for_deletion():
+			var b := ch as Button
+			if b.size.x >= CityBuildingPanel.TRAIN:
+				trains += 1
+			else:
+				slots += 1
+			live += 0 if b.disabled else 1
+			b.emit_signal("pressed")
+	hud.train(hq, ut)
+	hud.cancel_train(hq, 0)
+	SimHarness.check(hud.bottom.building.visible and not (d["trains"] as Array).is_empty() and trains == 0
+		and slots == BuildingTable.QMAX and live == 0 and log.is_empty(),
+		"ставка врага: кнопок найма %d, места очереди %d (живых %d), приказов %d" % [trains, slots, live, log.size()])
+	hud.queue_free()
+	(made[2] as Node).queue_free()
+
+
+## Выход из «Города» (главное меню, «Сражение»): курсор-наконечник снят, звук, выключенный клавишей M, — обратно
+func _test_exit() -> void:
+	print("[выход из «Города»]")
+	var made := _make_hud(0)
+	var hud: CityHud = made[0]
+	var inp: RtsInput = made[2]
+	CityCursor.apply(CityCursor.Kind.ATTACK)
+	var was := CityCursor.current
+	var bus := AudioServer.get_bus_index("Master")
+	AudioServer.set_bus_mute(bus, false)
+	var m := InputEventKey.new()
+	m.physical_keycode = KEY_M
+	m.keycode = KEY_M
+	m.pressed = true
+	inp.handle(m)
+	var muted := AudioServer.is_bus_mute(bus)
+	hud.free()
+	inp.free()
+	SimHarness.check(was == CityCursor.Kind.ATTACK and CityCursor.current == -1, "выход — системный курсор (вид %d → %d)" % [was, CityCursor.current])
+	SimHarness.check(muted and not AudioServer.is_bus_mute(bus), "звук, выключенный клавишей M, при выходе включён")
+	# выключен настройками (громкость 0), а не клавишей — выход его не трогает
+	made = _make_hud(0)
+	AudioServer.set_bus_mute(bus, true)
+	(made[0] as Node).free()
+	(made[2] as Node).free()
+	SimHarness.check(AudioServer.is_bus_mute(bus), "шину, выключенную не клавишей, выход не включает")
+	AudioServer.set_bus_mute(bus, false)
+
+
+## Мелкое окно: 1280×720 → холст 1600×900 (интерфейс 0,8 вместо 0,67), раскладка влезает; выход — как было
+func _test_small_window() -> void:
+	print("[мелкое окно 1280×720]")
+	var f := CityHud.ui_scale_factor
+	SimHarness.check(is_equal_approx(f.call(Vector2(1280, 720), Vector2(1920, 1080)), 1.2)
+		and is_equal_approx(f.call(Vector2(1920, 1080), Vector2(1920, 1080)), 1.0)
+		and is_equal_approx(f.call(Vector2(1600, 900), Vector2(1920, 1080)), 1.0)
+		and is_equal_approx(f.call(Vector2(2560, 1440), Vector2(1920, 1080)), 1.0)
+		and f.call(Vector2(1366, 768), Vector2(1920, 1080)) > 1.1,
+		"множитель: 1280×720 — 1,2; 1366×768 — %.3f; 1600×900 и больше — 1" % float(f.call(Vector2(1366, 768), Vector2(1920, 1080))))
+	var w := root
+	var old_mode := w.content_scale_mode
+	var old_size := w.size
+	var old_css := w.content_scale_size
+	var old_aspect := w.content_scale_aspect
+	w.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	w.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	w.content_scale_size = Vector2i(1920, 1080)
+	w.size = Vector2i(1280, 720)
+	for p in 2:
+		var made := _make_hud(p)
+		var hud: CityHud = made[0]
+		var sel: SelectionModel = made[1]
+		var vs := hud.view_size()
+		var fid := String(city.defs().f_ids[city.players().faction[p]])
+		SimHarness.check(is_equal_approx(w.content_scale_factor, 1.2) and vs.is_equal_approx(Vector2(1600, 900)),
+			"%s: окно 1280×720 — множитель %.2f, холст %s" % [fid, w.content_scale_factor, vs])
+		# балка: ячейки слева не заходят под герб посередине
+		var right := 0.0
+		for c in hud.top._chips:
+			right = maxf(right, (c["box"] as Control).position.x + (c["box"] as Control).size.x)
+		right = maxf(right, hud.top._pop_box.position.x + hud.top._pop_box.size.x)
+		SimHarness.check(right <= vs.x * 0.5 - 40.0, "%s: ячейки балки до %.0f — левее герба (%.0f)" % [fid, right, vs.x * 0.5 - 40.0])
+		# панель каждого своего здания с наймом влезает в бумагу
+		var bt := city.buildings()
+		var defs := city.defs()
+		var worst := -1e9
+		var worst_at := ""
+		var compact := 0
+		var seen := {}
+		for b in bt.hw:
+			if bt.owner[b] != p or bt.state[b] == BuildingTable.State.FREE or seen.has(bt.btype[b]):
+				continue
+			seen[bt.btype[b]] = true
+			sel.set_selection(PackedInt32Array([bt.handle(b)]))
+			hud.refresh_now(true)
+			var bp := hud.bottom.building
+			compact += 1 if bp.compact else 0
+			for ch in bp.get_children():
+				var c := ch as Control
+				if c and c.visible and not c.is_queued_for_deletion():
+					var over := c.position.x + c.size.x - bp.size.x
+					if over > worst:
+						worst = over
+						worst_at = "%s/%s «%s»" % [defs.b_ids[bt.btype[b]], c.get_class(), c.get("text") if c.get("text") != null else ""]
+		SimHarness.check(worst <= 8.0, "%s: всё в панели здания внутри бумаги (ширина %.0f; дальше всех %s — %.0f; сжатых панелей %d)" % [
+			fid, hud.bottom.building.size.x, worst_at, worst, compact])
+		hud.free()
+		(made[2] as Node).free()
+		SimHarness.check(is_equal_approx(w.content_scale_factor, 1.0), "%s: выход — множитель окна снова %.2f" % [fid, w.content_scale_factor])
+	w.size = old_size
+	w.content_scale_size = old_css
+	w.content_scale_aspect = old_aspect
+	w.content_scale_mode = old_mode
 
 
 ## Добавки панели здания от ECON (сверх договора): тревоги впереди, места у воды, работники, отара без травы
@@ -448,18 +622,20 @@ func _test_big_city() -> void:
 	inp.queue_free()
 
 
-func _make_hud(p: int) -> Array:
+func _make_hud(p: int, q: GameQuery = null) -> Array:
+	if q == null:
+		q = city
 	var sel := SelectionModel.new()
 	var inp := RtsInput.new()
 	inp.to_world = func(s: Vector2) -> Vector3: return Vector3(s.x * 0.1, 0.0, s.y * 0.1)
 	inp.to_screen = func(w: Vector3) -> Vector2: return Vector2(w.x, w.z) * 10.0
 	inp.view_rect = func() -> Rect2: return Rect2(0, 0, 1920, 1080)
 	var log: Array[PackedInt32Array] = []
-	inp.setup(city, sel, p, func(c: PackedInt32Array) -> void: log.append(c))
+	inp.setup(q, sel, p, func(c: PackedInt32Array) -> void: log.append(c))
 	root.add_child(inp)
 	var hud := CityHud.new()
 	root.add_child(hud)
-	hud.setup(city, null, sel, p, null, inp)
+	hud.setup(q, null, sel, p, null, inp)
 	return [hud, sel, inp, log]
 
 

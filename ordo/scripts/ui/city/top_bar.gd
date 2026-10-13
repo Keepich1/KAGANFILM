@@ -7,6 +7,11 @@ extends Control
 
 const H := 54.0
 const CHIP_W := 128.0
+## Узкий холст (1600 при окне 1280×720): ячейки сужаются до CHIP_MIN, чтобы не заходить под герб
+const CHIP_MIN := 104.0
+## Ячейки слева кончаются не ближе CREST_GAP к середине балки (герб — 80 в ширину)
+const CREST_GAP := 54.0
+const POP_EXTRA := 30.0
 
 var hud: CityHud
 ## Индексы ресурсов на балке (по порядку) — тест test_ui_bind сверяет с FactionDefs
@@ -22,6 +27,7 @@ var _speed: Button
 var _pause: Button
 var _raid_on := false
 var _season: Label
+var _season_box: Control
 ## Содержание войска, милли еды в минуту (пересчёт по тяжёлому обновлению — раз в секунду)
 var upkeep_milli := 0
 var _upkeep_by_type := PackedInt32Array()
@@ -58,12 +64,13 @@ func setup(p_hud: CityHud) -> void:
 	_pop_box = pc["box"]
 	(pc["inc"] as Label).text = tr("население")
 	(pc["inc"] as Label).add_theme_color_override("font_color", UiTheme.PARCH_DIM)
-	_pop_box.custom_minimum_size.x = CHIP_W + 30.0
-	x += CHIP_W + 30.0
+	_pop_box.custom_minimum_size.x = CHIP_W + POP_EXTRA
+	x += CHIP_W + POP_EXTRA
 	# сезон (Сб. 2: у сторон с чертой seasons, если сезоны включены)
 	if defs.has_trait(f, "seasons") and defs.s_enabled.has(1):
 		var sc := _chip(x, UiTheme.icon("res", "season"))
 		_season = sc["value"]
+		_season_box = sc["box"]
 	# табличка набега
 	_plaque = NinePatchRect.new()
 	_plaque.name = "RaidPlaque"
@@ -137,6 +144,28 @@ func setup(p_hud: CityHud) -> void:
 	var menu := _sys_button("menu", tr("Меню (F10)"))
 	menu.pressed.connect(func() -> void: hud.open_menu())
 	right.add_child(menu)
+	resized.connect(_layout)
+	_layout()
+
+
+## Ячейки слева — по ширине балки: на узком холсте (1600) уже, чтобы не заходить под герб посередине
+func _layout() -> void:
+	var boxes: Array[Control] = []
+	for c in _chips:
+		boxes.append(c["box"] as Control)
+	boxes.append(_pop_box)
+	if _season_box:
+		boxes.append(_season_box)
+	var room := size.x * 0.5 - CREST_GAP - 16.0 - POP_EXTRA
+	var w := clampf(room / boxes.size(), CHIP_MIN, CHIP_W) if size.x > 0.0 else CHIP_W
+	var x := 16.0
+	for b in boxes:
+		var bw := w + (POP_EXTRA if b == _pop_box else 0.0)
+		b.position.x = x
+		b.size.x = bw
+		b.custom_minimum_size.x = bw
+		x += bw
+	queue_redraw()
 
 
 func _chip(x: float, icon: Texture2D) -> Dictionary:
@@ -156,7 +185,7 @@ func _chip(x: float, icon: Texture2D) -> Dictionary:
 	var v := UiTheme.label("0", UiTheme.text(700), 25)
 	v.position = Vector2(46, -2)
 	box.add_child(v)
-	var inc := UiTheme.label("", UiTheme.italic(500), 15)
+	var inc := UiTheme.label("", UiTheme.italic(500), 16)
 	inc.position = Vector2(47, 25)
 	box.add_child(inc)
 	return {"box": box, "value": v, "inc": inc}
@@ -230,15 +259,17 @@ func refresh(heavy := true) -> void:
 	_pop.text = "%d / %d" % [used, cap]
 	_pop.add_theme_color_override("font_color", UiTheme.RED_LIGHT if used >= cap else UiTheme.PARCH)
 	_pop_box.tooltip_text = tr("Население: %d из %d (предел 500)") % [used, cap]
-	# набег
+	# набег: > 0 — отсчёт; 0 — набег идёт (GameQueryImpl: RaidDirector.eta_for в сборе, походе, ударе,
+	# отходе); −1 — набега нет (FakeCity даёт −1 и во время набега — тогда по событию RAID_STARTED)
 	var eta := q.raid_eta_ticks(p)
-	if eta >= 0:
+	if eta > 0:
 		_plaque.visible = true
 		_raid.text = tr("Набег через %s") % UiTheme.clock(eta)
 		_plaque.tooltip_text = tr("Набег приближается: соберите войско, уведите работников")
-	elif _raid_on:
+	elif eta == 0 or _raid_on:
 		_plaque.visible = true
 		_raid.text = tr("Набег!")
+		_plaque.tooltip_text = tr("Набег идёт: защищайте поля, стада и склады")
 	else:
 		_plaque.visible = false
 	if _season:

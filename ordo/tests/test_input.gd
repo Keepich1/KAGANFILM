@@ -2,9 +2,10 @@ extends SceneTree
 ## Управление «Города» (ARCHITECTURE §15, UI): синтетические InputEvent → точные массивы SimCmd.
 ## Матрица ПКМ (земля, враг, узел, своё поле, своя стройка, своё здание с наймом, башня, Ctrl — простая атака),
 ## двойной ПКМ, ПКМ с протяжкой (линия), Shift (очередь), инструмент стены ЛКМ-ЛКМ-ЛКМ-ПКМ, постройка с
-## поворотом, клавиши H / F / U / R / G / K / V / N / Tab / P / + / − / «.», группы Ctrl+N / N, рамка и двойной
+## поворотом, клавиши H / F / U / R / G / K / V / N / Tab / M / P / + / − / «.», группы Ctrl+N / N, рамка и двойной
 ## щелчок, взведённые приказы с кнопок (ЛКМ по карте и миникарте), стойка и рецепт по кругу, курсор по смыслу,
-## буквы вкладки стройки, меню (F10, Esc), карточки отрядов. Работает на FakeCity.
+## буквы вкладки стройки, меню (F10, Esc), карточки отрядов, наложения на карту (Tab и сами — у своего здания
+## воды / загона и при его постройке), звук M с возвратом при выходе. Работает на FakeCity.
 ##   godot --headless --path ordo --script res://tests/test_input.gd
 
 ## Экран ↔ мир: 10 пикселей на метр, (0, 0) экрана — точка мира ORIGIN
@@ -523,12 +524,62 @@ func _test_city_keys() -> void:
 		"V у Урды и N — без приказа, пока нет SimCmd.ability / alarm")
 	SimHarness.check(RtsInput.future_cmd("stop", [rep]) == SimCmd.stop(rep) and RtsInput.future_cmd("nope", []).is_empty(),
 		"future_cmd находит строителя SimCmd по имени")
-	# Tab — наложения
-	var seen: Array[bool] = []
-	inp.overlay_toggled.connect(func(on: bool) -> void: seen.append(on))
+	# Tab — наложения (у Коканда — вода); сами — у своего здания воды и при постройке поля
+	var seen: Array[String] = []
+	var on_overlay := func(on: bool, kind: StringName) -> void: seen.append("%s:%s" % ["вкл" if on else "выкл", kind])
+	inp.overlay_toggled.connect(on_overlay)
 	inp.handle(_key(KEY_TAB))
 	inp.handle(_key(KEY_TAB))
-	SimHarness.check(seen == [true, false], "Tab включает и выключает наложения (%s)" % str(seen))
+	SimHarness.check(seen == ["вкл:water", "выкл:water"], "Tab включает и выключает наложения (%s)" % str(seen))
+	seen.clear()
+	var tg := _building(0, &"togon")
+	if tg == 0:
+		tg = _building(0, &"togon", BuildingTable.State.SITE)
+	sel.set_selection(PackedInt32Array([tg]))
+	var auto_on := seen.duplicate()
+	sel.set_selection(PackedInt32Array([_building(0, &"urda")]))
+	SimHarness.check(tg != 0 and auto_on == ["вкл:water"] and seen == ["вкл:water", "выкл:water"],
+		"выбран свой тўғон — наложение воды само, снят — убрано (%s)" % str(seen))
+	seen.clear()
+	inp.handle(_key(KEY_TAB))
+	sel.set_selection(PackedInt32Array([tg]))
+	sel.set_selection(PackedInt32Array())
+	SimHarness.check(seen == ["вкл:water"] and inp.overlay_on, "при включённом Tab выбор тўғона ничего не меняет, снятие — Tab остаётся (%s)" % str(seen))
+	inp.handle(_key(KEY_TAB))
+	seen.clear()
+	inp.begin_place(city.defs().building(&"dala"))
+	var placing := seen.duplicate()
+	inp.handle(_key(KEY_ESCAPE))
+	SimHarness.check(placing == ["вкл:water"] and seen == ["вкл:water", "выкл:water"] and not inp.overlay_on,
+		"постройка поля — наложение воды, Esc — убрано (%s)" % str(seen))
+	var bt0 := city.buildings()
+	var enemy_b := 0
+	for b in bt0.hw:
+		if bt0.owner[b] == 1 and bt0.state[b] != BuildingTable.State.FREE:
+			enemy_b = bt0.handle(b)
+	seen.clear()
+	sel.set_selection(PackedInt32Array([enemy_b]))
+	sel.set_selection(PackedInt32Array())
+	SimHarness.check(seen.is_empty(), "чужое здание наложений не включает")
+	var defs := city.defs()
+	SimHarness.check(RtsInput.overlay_kind_of(defs, defs.building(&"koroo")) == RtsInput.OVERLAY_GRASS
+		and RtsInput.overlay_kind_of(defs, defs.building(&"ordo")) == &""
+		and RtsInput.overlay_kind_of(defs, defs.building(&"aryk")) == RtsInput.OVERLAY_WATER
+		and RtsInput.side_overlay(city, 1) == RtsInput.OVERLAY_GRASS and RtsInput.side_overlay(city, 0) == RtsInput.OVERLAY_WATER,
+		"вид наложения: загон — трава, ставка — нет, арык — вода; Tab у кыпчаков — трава, у Коканда — вода")
+	inp.overlay_toggled.disconnect(on_overlay)
+	# M — звук: состояние у AudioServer (возврат при выходе из «Города» — test_ui_bind, нужно дерево)
+	var bus := AudioServer.get_bus_index("Master")
+	AudioServer.set_bus_mute(bus, false)
+	inp.handle(_key(KEY_M))
+	var muted := AudioServer.is_bus_mute(bus)
+	inp.handle(_key(KEY_M))
+	var back := not AudioServer.is_bus_mute(bus)
+	AudioServer.set_bus_mute(bus, true)            # громкость 0 в настройках — шина выключена
+	inp.handle(_key(KEY_M))
+	var first_on := not AudioServer.is_bus_mute(bus)
+	SimHarness.check(muted and back and first_on, "M выключает и включает звук; при выключенной шине первое M включает")
+	AudioServer.set_bus_mute(bus, false)
 	# P, + / − — пауза и скорость
 	var drv := FakeCityDriver.new()
 	inp.driver = drv
