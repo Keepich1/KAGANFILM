@@ -4,7 +4,8 @@ extends Control
 ## Красная — RAID_STARTED, BUILDING_DESTROYED, FAMINE, CMD_REJECTED, HERD_STOLEN; зелёная — BUILDING_DONE,
 ## TRAINED, LOOT, RAID_ENDED; золотая — POP_CAPPED, PASTURE_LOW, NOT_ENOUGH, SEASON, RAID_WARNING.
 ## Читает SimEvents своим курсором (не теряет событий при нескольких тактах за кадр). Одинаковые записки
-## подряд складываются («×3»). Живёт 9 с и гаснет; щелчок — камера к месту события.
+## подряд складываются («×3»). Живёт 9 с и гаснет; щелчок — камера к месту события (у событий без места —
+## точка (0, 0) — щелчок ничего не делает). Удар по тўғону (источнику воды) — «под ударом!» не чаще раза в 15 с.
 
 enum Seal { RED, GREEN, GOLD }
 
@@ -13,9 +14,12 @@ const LIFE := 9.0
 const W := 420.0
 const H := 62.0
 
+const HIT_EVERY_TICKS := 15 * 30
+
 var hud: CityHud
 var _cursor := 0
 var _notes: Array[Dictionary] = []       # {node, text, label, count, t, pos}
+var _hit_tick := {}                      # описатель здания → такт последней записки «под ударом»
 
 
 func setup(p_hud: CityHud) -> void:
@@ -38,11 +42,19 @@ func poll() -> int:
 		var p := ev.e_player[i]
 		if p != hud.player and p != -1:
 			continue
-		hud.on_event(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i], Vector2(ev.e_x[i], ev.e_z[i]))
+		var pos := Vector2(ev.e_x[i], ev.e_z[i])
+		if pos == Vector2.ZERO:
+			pos = Vector2.INF
+		hud.on_event(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i], pos)
+		if ev.e_kind[i] == SimEvents.Ev.BUILDING_HIT:
+			var last: int = _hit_tick.get(ev.e_a[i], -HIT_EVERY_TICKS)
+			if ev.e_tick[i] - last < HIT_EVERY_TICKS:
+				continue
+			_hit_tick[ev.e_a[i]] = ev.e_tick[i]
 		var n := describe(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i])
 		if n.is_empty():
 			continue
-		push(n["text"], n["seal"], Vector2(ev.e_x[i], ev.e_z[i]))
+		push(n["text"], n["seal"], pos)
 		added += 1
 	_cursor = r.y
 	return added
@@ -60,7 +72,16 @@ func describe(kind: int, a: int, b: int, c: int) -> Dictionary:
 		E.RAID_ENDED:
 			return {"text": tr("Набег отбит"), "seal": Seal.GREEN}
 		E.BUILDING_DESTROYED:
+			if _water_source(b):
+				return {"text": tr("%s разрушен: поля сохнут") % tr(defs.b_name[b]), "seal": Seal.RED}
 			return {"text": tr("Разрушено: %s") % tr(defs.b_name[b]) if b >= 0 and b < defs.b_name.size() else tr("Здание разрушено"), "seal": Seal.RED}
+		E.BUILDING_HIT:
+			# о прочих ударах говорят метка на миникарте и полоска над зданием; записка — только о воде
+			var bt := hud.query.buildings()
+			var ht := bt.btype[bt.slot(a)] if bt and bt.valid(a) else -1
+			if _water_source(ht):
+				return {"text": tr("%s под ударом!") % tr(defs.b_name[ht]), "seal": Seal.RED}
+			return {}
 		E.BUILDING_DONE:
 			if b >= 0 and b < defs.b_kind.size() and defs.b_kind[b] in [Defs.BKind.WALL, Defs.BKind.LINK]:
 				return {}
@@ -80,7 +101,7 @@ func describe(kind: int, a: int, b: int, c: int) -> Dictionary:
 		E.SEASON:
 			return {"text": tr("Пришёл сезон: %s") % tr(defs.s_name[a]) if a >= 0 and a < defs.s_name.size() else tr("Смена сезона"), "seal": Seal.GOLD}
 		E.HERD_STOLEN:
-			return {"text": tr("Угоняют табун!"), "seal": Seal.RED}
+			return {"text": tr("Угоняют табун!") + (" (%d)" % c if c > 0 else ""), "seal": Seal.RED}
 		E.HERD_RETURNED:
 			return {"text": tr("Стадо вернулось"), "seal": Seal.GREEN}
 		E.IRRIGATION_CHANGED:
@@ -90,10 +111,18 @@ func describe(kind: int, a: int, b: int, c: int) -> Dictionary:
 		E.PLAYER_DEFEATED:
 			return {"text": tr("Поражение: ставка потеряна") if a == 0 else tr("Поражение: арба с ордо погибла"), "seal": Seal.RED}
 		E.VICTORY:
-			return {"text": tr("Победа!"), "seal": Seal.GREEN}
+			if a == hud.my_team():
+				return {"text": tr("Победа!"), "seal": Seal.GREEN}
+			return {"text": tr("Поражение"), "seal": Seal.RED}
 		E.WORKER_IDLE:
 			return {"text": tr("Работник без дела («.» — найти)"), "seal": Seal.GOLD}
 	return {}
+
+
+## Постройка — источник воды сети (тўғон: Defs.b_network.source)
+func _water_source(btype: int) -> bool:
+	var defs := hud.query.defs()
+	return btype >= 0 and btype < defs.b_network.size() and bool(defs.b_network[btype].get("source", false))
 
 
 ## Причина отказа приказа по-русски (EconApi.Err или 100 + NavApi.Why)

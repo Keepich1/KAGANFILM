@@ -189,6 +189,21 @@ func _test_side(p: int) -> void:
 		"печати: отказ — красная, предел — золотая, построено — зелёная, голод — красная")
 	SimHarness.check(String(notes[0]["text"]).contains("склон"), "отказ по-русски: «%s»" % notes[0]["text"])
 	SimHarness.check(before >= 0, "записки до проверки: %d" % before)
+	if fid == "kokand":
+		# тўғон: удар — «под ударом!» один раз за 15 с, разрушение — «поля сохнут»
+		var tg := defs.building(&"togon")
+		var tg_h := 0
+		var btab := city.buildings()
+		for b in btab.hw:
+			if btab.owner[b] == p and btab.btype[b] == tg:
+				tg_h = btab.handle(b)
+		for k in 3:
+			ev.push(SimEvents.Ev.BUILDING_HIT, p, tg_h, 5000, 0, Vector2(30, 40))
+		var hit_added := hud.notes.poll()
+		ev.push(SimEvents.Ev.BUILDING_DESTROYED, p, tg_h, tg, 0, Vector2(30, 40))
+		hud.notes.poll()
+		var top_text := String(hud.notes.visible_notes()[0]["text"])
+		SimHarness.check(hit_added == 1 and top_text.contains("сохнут"), "тўғон: «под ударом» один раз (%d), затем «%s»" % [hit_added, top_text])
 	ev.push(SimEvents.Ev.RAID_STARTED, p, 1 - p, 20, 1, Vector2(112, 132))
 	hud.notes.poll()
 	SimHarness.check(hud.bottom.minimap._pings.size() >= 1 and hud.top._raid_on, "набег: метка на миникарте и «Набег!» на балке")
