@@ -65,7 +65,8 @@ func _koroo() -> void:
 		var pen := k.build_now(p, &"koroo", Vector2(-60, -50))
 		if n > 0:
 			e.assign_gather(p, k.workers_of(p), pen)
-		k.run_s(20.0)
+		# пастухи идут к короо 70 м; настоящая ходьба (разгон, обход своих) — дольше 20 с
+		k.run_s(30.0 if k.is_real() else 20.0)
 		var f0 := k.res(p, "food")
 		k.run_s(30.0)
 		var per_min := (k.res(p, "food") - f0) * 2.0
@@ -128,7 +129,6 @@ func _barymta() -> void:
 	var kip := k.kipchak(KIP, 0)
 	var kok := k.kokand(KOK, 0)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	var yard := k.build_now(kip, &"jylky", Vector2(-25, 90), 2)
 	k.run_s(1.0)
 	var yb := e.buildings.slot(yard)
@@ -140,7 +140,7 @@ func _barymta() -> void:
 	var guard := k.port.spawn(kip, e.players.team[kip], &"jooker", Vector2(-25, 70), 0.0)
 	k.run_s(8.0)
 	SimHarness.check(e.herds.heads(e.hd.herd_at(e, yb, -1)) >= 20, "охрана хозяина рядом — круг стоит")
-	stub.remove(guard)
+	k.port.remove(guard)
 	var c0 := k.events.head
 	k.run_s(3.0)
 	SimHarness.check(e.raid.raid_progress(e, yb) > 0.2 and e.raid.raid_progress(e, yb) < 0.8, "круг прогресса идёт (%.2f)" % e.raid.raid_progress(e, yb))
@@ -212,7 +212,6 @@ func _water() -> void:
 	var k := EconKit.make()
 	var p := k.kokand(KOK, 0)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	var dam := k.build_now(p, &"togon", Vector2(90, -100))
 	var w_before := k.res(p, "wood")
 	var chain := e.spawn_links(p, k.b(&"aryk"), PackedVector2Array([Vector2(90, -94), Vector2(90, 30)]))
@@ -239,7 +238,7 @@ func _water() -> void:
 	SimHarness.check_range(lalmi, 7.4, 7.6, "лалми: 7,5 еды в минуту на работника при складе в 25 м (%.2f)" % lalmi)
 	SimHarness.check(e.wk.w_mult[e.un_w[Ids.slot(w)]] == 250, "множитель поля без воды — 25%")
 	var p1 := e.buildings.slot(fields[0])
-	stub.test_hit_structure(dam, 1_000_000, 0)
+	k.hit(dam, 1_000_000, 0)
 	k.step()
 	SimHarness.check(e.buildings.state[e.buildings.slot(dam)] == BuildingTable.State.RUIN, "тўғон разрушен")
 	k.run_s(19.0)
@@ -251,7 +250,7 @@ func _water() -> void:
 	var bw := e.spawn_worker(p, Vector2(90, -80))
 	SimHarness.check(e.place_site(p, k.b(&"togon"), Vector2(90, -100), 0, PackedInt32Array([bw])) == EconApi.Err.OK
 		and k.res(p, "wood") == wood - 40.0 and k.res(p, "stone") == stone - 20.0, "восстановление на руинах: 40 дерева, 20 камня")
-	k.run_s(20.0)
+	k.run_s(26.0 if k.is_real() else 20.0)
 	SimHarness.check(e.buildings.state[e.buildings.slot(dam)] == BuildingTable.State.ACTIVE and e.b_water[p1] == 1000,
 		"за 15 с встал — вода сразу")
 
@@ -263,7 +262,6 @@ func _bounty() -> void:
 	var kip := k.kipchak(KIP, 0)
 	var kok := k.kokand(KOK, 1)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	var raider := k.port.spawn(kip, e.players.team[kip], &"chabuulchu", KOK + Vector2(30, 0), 0.0)
 	var soldier := k.unit(kok, &"sarboz", KOK + Vector2(30, 5))
 	var g0 := k.res(kip, "gold")
@@ -280,9 +278,9 @@ func _bounty() -> void:
 	SimHarness.check(k.res(kok, "gold") == gk, "оседлым олжо нет")
 	var uy := k.build_now(kok, &"uy", KOK + Vector2(30, 30))
 	g0 = k.res(kip, "gold")
-	stub.test_hit_structure(uy, 1_000_000, raider)
+	k.hit(uy, 1_000_000, raider)
 	k.step()
 	SimHarness.check(k.res(kip, "gold") == g0 + 30.0, "разрушен Уй (80 + 20) — 30 золота")
-	stub.test_hit_structure(e.players.hq_b[kok], 10_000_000, raider)
+	k.hit(e.players.hq_b[kok], 10_000_000, raider)
 	k.step()
 	SimHarness.check(k.res(kip, "gold") == g0 + 430.0, "разрушена ставка — 400 золота")

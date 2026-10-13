@@ -40,15 +40,14 @@ func _site() -> void:
 	SimHarness.check(k.res(p, "wood") == wood0 - 80.0 and k.res(p, "stone") == 230.0, "цена списана: 80 дерева, 20 камня")
 	SimHarness.check(e.place_site(p, k.b(&"uy"), Vector2(92, 31), 0, PackedInt32Array()) == -(100 + NavApi.Why.OVERLAP),
 		"на занятое место нельзя (штамп в навигации)")
-	var stub := k.port as CombatPortStub
-	SimHarness.check(stub.structures.has(h) and int(stub.structures[h]["flags"]) & BattleSim.ST_SITE != 0, "зеркало в ядре с ST_SITE")
+	SimHarness.check(k.structure_flags(h) >= 0 and k.structure_flags(h) & BattleSim.ST_SITE != 0, "зеркало в ядре с ST_SITE")
 	var cap0 := e.players.pop_cap[p]
 	var c0 := k.events.head
 	k.run_s(25.0)
 	SimHarness.check(e.buildings.state[e.buildings.slot(h)] == BuildingTable.State.ACTIVE and k.count_ev(SimEvents.Ev.BUILDING_DONE, c0) == 1,
 		"двое достроили Уй (BUILDING_DONE)")
 	SimHarness.check(e.players.pop_cap[p] == cap0 + 15, "население +15")
-	SimHarness.check(int(stub.structures[h]["flags"]) & BattleSim.ST_SITE == 0, "зеркало без ST_SITE")
+	SimHarness.check(k.structure_flags(h) >= 0 and k.structure_flags(h) & BattleSim.ST_SITE == 0, "зеркало без ST_SITE")
 	var j0 := e.worker_job(ws[0])
 	SimHarness.check(j0 == EconWorkers.Job.TO_NODE or j0 == EconWorkers.Job.GATHER, "каменотёс вернулся к жиле")
 	SimHarness.check(e.worker_job(ws[1]) == EconWorkers.Job.IDLE, "второй — свободен (прежней работы не было)")
@@ -303,11 +302,10 @@ func _damage() -> void:
 		for i in 20:
 			atk.append(k.port.spawn(att_p, e.players.team[att_p], StringName(case[0]), Vector2(0, 0), 0.0))
 		var t := 0
-		var stub := k.port as CombatPortStub
 		while e.buildings.valid(h) and e.buildings.state[e.buildings.slot(h)] == BuildingTable.State.ACTIVE and t < 3000:
 			if (t + 1) % 42 == 0:
 				for a in atk:
-					stub.test_hit_structure(h, dmg, a)
+					k.hit(h, dmg, a)
 			k.step()
 			t += 1
 		var secs := t / 30.0
@@ -322,10 +320,9 @@ func _ruins_repair() -> void:
 	var k := EconKit.make()
 	var p := k.kokand(HQ, 2)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	var uy := k.build_now(p, &"uy", Vector2(120, 30))
 	var c0 := k.events.head
-	stub.test_hit_structure(uy, 100000, 0)
+	k.hit(uy, 100000, 0)
 	k.step()
 	var b := e.buildings.slot(uy)
 	SimHarness.check(e.buildings.state[b] == BuildingTable.State.RUIN and k.count_ev(SimEvents.Ev.BUILDING_DESTROYED, c0) == 1,
@@ -344,12 +341,13 @@ func _ruins_repair() -> void:
 	var wood := k.res(p, "wood")
 	var stone := k.res(p, "stone")
 	SimHarness.check(e.assign_build(p, PackedInt32Array([k.workers_of(p)[0]]), uy2) == EconApi.Err.OK, "приказ «чинить»")
-	k.run_s(25.0)
+	# настоящая ходьба — путь в обход ставки (на заглушке — по прямой): дольше на ~10 с
+	k.run_s(40.0 if k.is_real() else 25.0)
 	SimHarness.check(e.buildings.hp_c[b2] == e.buildings.hp_max_c[b2], "починен")
 	SimHarness.check_range(wood - k.res(p, "wood"), 18.0, 22.0, "половина HP за четверть цены: 20 дерева")
 	SimHarness.check_range(stone - k.res(p, "stone"), 4.0, 6.0, "и 5 камня")
 	# ставка
 	var hq := e.players.hq_b[p]
-	stub.test_hit_structure(hq, 500000, 0)
+	k.hit(hq, 500000, 0)
 	k.step()
 	SimHarness.check(e.players.hq_b[p] == 0 and not e.has_hq(p), "Урда разрушена: hq_b = 0, has_hq — нет")

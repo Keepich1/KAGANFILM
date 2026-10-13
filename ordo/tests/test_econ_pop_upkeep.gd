@@ -44,7 +44,6 @@ func _famine() -> void:
 	var k := EconKit.make()
 	var p := k.kokand(HQ, 0)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	var sq := k.port.spawn_squad(p, 0, &"sarboz", 40, HQ + Vector2(40, 40), 0.0)
 	for u_h in k.port.members(sq):
 		e.register_unit(u_h, p, k.u(&"sarboz"))
@@ -55,7 +54,7 @@ func _famine() -> void:
 	k.run_s(30.0)
 	SimHarness.check(e.players.famine[p] == 1 and k.count_ev(SimEvents.Ev.FAMINE, c0) == 1 and k.res(p, "food") == 0.0,
 		"еды не хватило на содержание — голод (FAMINE)")
-	var mods: PackedFloat32Array = stub.owner_mods.get(p, PackedFloat32Array())
+	var mods := k.owner_mods(p)
 	SimHarness.check(mods.size() == BattleSim.MOD_N and is_equal_approx(mods[BattleSim.MOD_ATK], 0.8)
 		and is_equal_approx(mods[BattleSim.MOD_STAM], 0.5), "в ядро: атака ×0,8, выносливость ×0,5")
 	SimHarness.check(is_equal_approx(e.players.stat[p * PlayerTable.Stat.COUNT + PlayerTable.Stat.ATK], 0.8), "PlayerTable.stat: ATK 0,8")
@@ -71,7 +70,7 @@ func _famine() -> void:
 	SimHarness.check(n0 - e.p_soldiers[p] == 4, "ещё через 30 с — снова")
 	k.set_res(p, "food", 60.0)
 	k.run_s(1.0)
-	mods = stub.owner_mods.get(p, PackedFloat32Array())
+	mods = k.owner_mods(p)
 	SimHarness.check(e.players.famine[p] == 0 and is_equal_approx(mods[BattleSim.MOD_ATK], 1.0), "50 еды и больше — голод кончился")
 
 
@@ -104,8 +103,7 @@ func _famine_income() -> void:
 			SimHarness.check(famine_s >= 50 and k.count_ev(SimEvents.Ev.FAMINE, c0) == 1,
 				"приход 3/мин < расхода 7/мин, еда 0 — голод (%d с из 60)" % famine_s)
 		else:
-			var stub := k.port as CombatPortStub
-			var mods: PackedFloat32Array = stub.owner_mods.get(p, PackedFloat32Array())
+			var mods := k.owner_mods(p)
 			SimHarness.check(famine_s == 0 and k.count_ev(SimEvents.Ev.FAMINE, c0) == 0
 				and (mods.is_empty() or is_equal_approx(mods[BattleSim.MOD_ATK], 1.0)),
 				"приход 450/мин > расхода 7/мин, еда всё время 0 — голода нет (доход %+.0f/мин)" % inc)
@@ -135,7 +133,9 @@ func _queue() -> void:
 	SimHarness.check(tr >= 0 and k.count_ev(SimEvents.Ev.TRAINED, c0) == 1, "через 7 с — первый деҳқон (TRAINED)")
 	var u_h := k.events.e_a[tr]
 	var door := Vector2(k.events.e_x[tr], k.events.e_z[tr])
-	SimHarness.check(door.distance_to(HQ + Vector2(0, 10.5)) < 0.1, "вышел у двери (фасад +Z)")
+	# на настоящей сетке дверь — nearest_passable (клетка 4 м вне следа ставки), на заглушке — точно
+	SimHarness.check(door.distance_to(HQ + Vector2(0, 10.5)) < (4.0 if k.is_real() else 0.1),
+		"вышел у двери (фасад +Z): %s" % door)
 	SimHarness.check(e.worker_job(u_h) == EconWorkers.Job.TO_NODE, "точка сбора на жиле — сразу к работе")
 	SimHarness.check(e.players.pop_used[p] == 1 and e.players.pop_reserved[p] == 1, "занят 1, следующий в очереди занял место")
 

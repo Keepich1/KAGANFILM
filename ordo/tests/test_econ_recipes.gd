@@ -9,7 +9,6 @@ func _init() -> void:
 	var k := EconKit.make()
 	var p := k.kokand(KOK, 3)
 	var e := k.econ
-	var stub := k.port as CombatPortStub
 	SimHarness.check(e.place_why(p, k.b(&"xumdon"), Vector2(60, 40), 0) == 100 + NavApi.Why.NOT_NEAR, "Хумдон вне зоны воды — нельзя")
 	SimHarness.check(e.ghost_why(p, k.b(&"xumdon"), Vector2(60, 40), 0) == NavApi.Why.NOT_NEAR, "призрак Хумдона вне воды — NOT_NEAR")
 	var dam := k.build_now(p, &"togon", Vector2(90, -100))
@@ -49,7 +48,7 @@ func _init() -> void:
 	k.run_s(10.0)
 	SimHarness.check(k.res(p, "brick") > b1, "дрова есть — снова жжёт")
 	# без воды — 50%
-	stub.test_hit_structure(dam, 1_000_000, 0)
+	k.hit(dam, 1_000_000, 0)
 	k.run_s(21.0)
 	SimHarness.check(e.b_water[kb] == 0, "тўғон сломан, сеть высохла")
 	while k.tick % 30 != 1:

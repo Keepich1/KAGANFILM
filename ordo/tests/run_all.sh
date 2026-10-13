@@ -2,6 +2,7 @@
 # Все безголовые тесты «Ордо» (ARCHITECTURE §15): tests/test_*.gd по очереди.
 #   tests/run_all.sh            — все
 #   tests/run_all.sh econ nav   — только те, в имени которых есть «econ» или «nav»
+# Тесты экономики (test_econ_*) идут дважды: на заглушках и на настоящих CombatPortBattle + NavGrid (ORDO_IMPL=real).
 # Тест прошёл, если вышел с кодом 0, напечатал «ИТОГ: ВСЁ ПРОШЛО» и в выводе нет SCRIPT ERROR / ERROR
 # (ошибка разбора скрипта вешает SceneTree — её ловит предел времени TEST_TIMEOUT, по умолчанию 900 с).
 # Журналы — в renders/tests/<имя>.log (в git не идут).
@@ -22,26 +23,39 @@ for f in "$ROOT"/tests/test_*.gd; do
   tests+=("$name")
 done
 
-fails=()
+# тесты экономики — ещё раз на настоящем движении (I2: CombatPortBattle + NavGrid, EconKit по ORDO_IMPL=real)
+runs=()
 for name in "${tests[@]}"; do
+  runs+=("$name")
+  [[ "$name" == test_econ_* ]] && [ "${ORDO_IMPL:-}" != "real" ] && runs+=("$name@real")
+done
+
+fails=()
+for run in "${runs[@]}"; do
+  name="${run%@real}"
+  env_impl="${ORDO_IMPL:-}"
+  label="$name"
   log="$LOGS/$name.log"
+  if [[ "$run" == *@real ]]; then
+    env_impl="real"; label="$name (настоящие)"; log="$LOGS/${name}_real.log"
+  fi
   start=$(date +%s)
-  timeout "${TEST_TIMEOUT:-900}" "$GODOT" --headless --path "$ROOT" --script "res://tests/$name.gd" > "$log" 2>&1
+  ORDO_IMPL="$env_impl" timeout "${TEST_TIMEOUT:-900}" "$GODOT" --headless --path "$ROOT" --script "res://tests/$name.gd" > "$log" 2>&1
   code=$?
   secs=$(( $(date +%s) - start ))
   if [ $code -eq 0 ] && grep -q "ИТОГ: ВСЁ ПРОШЛО" "$log" && ! grep -qE "^(SCRIPT )?ERROR" "$log"; then
-    printf "  ok    %-28s %4d с\n" "$name" "$secs"
+    printf "  ok    %-40s %4d с\n" "$label" "$secs"
   else
-    printf "  FAIL  %-28s %4d с  (код %d, журнал %s)\n" "$name" "$secs" "$code" "$log"
+    printf "  FAIL  %-40s %4d с  (код %d, журнал %s)\n" "$label" "$secs" "$code" "$log"
     grep -E "FAIL|ERROR" "$log" | head -8 | sed 's/^/          /'
-    fails+=("$name")
+    fails+=("$label")
   fi
 done
 
 echo
 if [ ${#fails[@]} -eq 0 ]; then
-  echo "ИТОГ: ВСЕ ТЕСТЫ ПРОШЛИ (${#tests[@]})"
+  echo "ИТОГ: ВСЕ ТЕСТЫ ПРОШЛИ (${#runs[@]})"
 else
-  echo "ИТОГ: ПРОВАЛЕНО ${#fails[@]} из ${#tests[@]}: ${fails[*]}"
+  echo "ИТОГ: ПРОВАЛЕНО ${#fails[@]} из ${#runs[@]}: ${fails[*]}"
   exit 1
 fi

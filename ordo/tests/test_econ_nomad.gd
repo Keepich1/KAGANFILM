@@ -41,7 +41,11 @@ func _init() -> void:
 	SimHarness.check(e.players.hq_b[p] == 0 and e.has_hq(p), "ставка в арбе: hq_b = 0, но игрок жив")
 	SimHarness.check(e.arba_cargo(arbas[0]) != 0 and e.buildings.valid(e.arba_cargo(arbas[0])), "arba_cargo → постройка")
 	SimHarness.check(e.players.pop_used[p] == 2, "арбы мест не занимают")
-	SimHarness.check(k.nav.check_place(p, k.b(&"boz"), KIP + Vector2(0, -36), 0) == NavApi.Why.OK, "место лагеря свободно (штампы сняты)")
+	# штампы сняты: клетки следа свободны (на настоящей сетке check_place ещё скажет NO_TERRITORY — ставка в арбе)
+	var free_cells := true
+	for v in k.nav.place_cells(p, k.b(&"boz"), KIP + Vector2(0, -36), 0):
+		free_cells = free_cells and v != NavApi.Why.OVERLAP
+	SimHarness.check(free_cells, "место лагеря свободно (штампы сняты): %d" % k.nav.check_place(p, k.b(&"boz"), KIP + Vector2(0, -36), 0))
 	# развернуть в 120 м
 	var to := KIP + Vector2(0, -120)
 	c0 = k.events.head
