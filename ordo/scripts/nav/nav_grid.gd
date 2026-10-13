@@ -201,6 +201,7 @@ func structure_at(p: Vector2) -> int:
 
 
 func static_grid() -> PackedByteArray:
+	_sync_deposits()
 	var g := PackedByteArray()
 	g.resize(w * h)
 	for c in _static_cells:

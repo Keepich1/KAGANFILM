@@ -93,6 +93,12 @@ func battle() -> BattleSim:
 	return sim
 
 
+## Сетки NAV заново (после MapSetup: в static_grid уже есть ядра жил, которых не было при setup)
+func sync_grids() -> void:
+	if nav and nav.w > 0:
+		sim.set_grids(nav.origin, nav.w, nav.h, nav.static_grid(), nav.speed_grid())
+
+
 # ---------------------------------------------------------------- жизнь
 
 func spawn(owner: int, team: int, type_id: StringName, pos: Vector2, heading: float) -> int:

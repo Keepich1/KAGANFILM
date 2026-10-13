@@ -91,6 +91,9 @@ func setup(map: Dictionary, players: Array, p_seed: int, p_rules_id := &"GOROD")
 	orders.setup(self)
 	query = GameQueryImpl.new(self)
 	MapSetup.populate(self, map, players_cfg)
+	# ядра жил (2×2 клетки камня и золота) NAV знает только после расстановки — отдать ядру столкновений
+	if port.has_method("sync_grids"):
+		port.call("sync_grids")
 	_nav_seen = nav.version
 
 

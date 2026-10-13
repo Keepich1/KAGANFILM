@@ -1614,8 +1614,8 @@ func structure_clear(st: int) -> void:
 					end_melee(s)  # свалка у стены кончилась: строй, сон
 
 
-## Разбудить спящих, чьё тело задевает прямоугольник структуры st (кроме своих ворот), и сразу вытолкнуть
-## к ближней стене (как _collide; иначе стоящий на месте уснул бы снова до _collide). Клетки хэша над
+## Разбудить спящих (и бодрых в покое), чьё тело задевает прямоугольник структуры st (кроме своих ворот), и
+## сразу вытолкнуть к ближней стене (как _collide; иначе стоящий на месте уснул бы снова до _collide). Клетки хэша над
 ## прямоугольником (+ наибольший радиус); хэш переложит их при ближайшей сборке (_hq).
 func _wake_under(st: int) -> void:
 	if _hash_dirty:
@@ -1639,9 +1639,11 @@ func _wake_under(st: int) -> void:
 		for gx in range(cx0, cx1 + 1):
 			var v := _head[gz * gn + gx]
 			while v >= 0:
-				if u_sleep[v] == 1 and not (own_gate and u_side[v] == team) \
+				# бодрых в покое тоже: иначе _try_sleep (до _collide) усыпит их внутри, и столкновение их не тронет
+				if u_life[v] == Life.ALIVE and not (own_gate and u_side[v] == team) \
 						and _st_contains(st, u_x[v], u_z[v], t_radius[u_type[v]]):
-					_wake(v)
+					if u_sleep[v] == 1:
+						_wake(v)
 					var q := _st_push(st, u_x[v], u_z[v], t_radius[u_type[v]])
 					u_x[v] = q.x
 					u_z[v] = q.y
@@ -3671,6 +3673,24 @@ func _separate_city() -> void:
 								dx = BattleRng.hash01(u * 7 + v) - 0.5
 								dz = BattleRng.hash01(v * 13 + u) - 0.5
 								d = sqrt(dx * dx + dz * dz)
+							# лоб в лоб: идущий по приказу MOVE (быстрее 0,7 м/с) упёрся в стоящего на своей линии
+							# (ряды работников, точки пути по центрам клеток) — толчок строго назад, и оба стоят вечно.
+							# Ось толчка — чуть вбок (вправо по ходу идущего): он обходит стоящего. Толкотня у мест
+							# строя — как была
+							var vxu := u_vx[u]
+							var vzu := u_vz[u]
+							var sp2 := vxu * vxu + vzu * vzu
+							if sp2 > 0.5 and sq_order[u_squad[u]] == Order.MOVE \
+									and u_vx[v] * u_vx[v] + u_vz[v] * u_vz[v] < 0.01:
+								var ahead := vxu * dx + vzu * dz
+								var cross := vxu * dz - vzu * dx
+								if ahead > 0.0 and cross * cross < 0.04 * sp2 * d * d:
+									var sp := sqrt(sp2)
+									dx -= vzu / sp * d * 0.4
+									dz += vxu / sp * d * 0.4
+									var dn := sqrt(dx * dx + dz * dz)
+									dx *= d / dn
+									dz *= d / dn
 							var over := (rr - d) / d
 							var mv := t_mass[u_type[v]]
 							var ku := mv / (mu + mv)
