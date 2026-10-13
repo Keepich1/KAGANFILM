@@ -1,0 +1,32 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/menu/main_menu.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/world.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/camp/camp.tscn" id="3"]
+[ext_resource type="Script" path="res://scripts/battle/ambient.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/battle/battle_view.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/menu/menu_camera.gd" id="6"]
+
+[node name="MainMenu" type="Node3D"]
+script = ExtResource("1")
+
+[node name="World" parent="." instance=ExtResource("2")]
+
+[node name="Camp" parent="." instance=ExtResource("3")]
+
+[node name="Life" type="Node3D" parent="."]
+
+[node name="Ambient" type="Node" parent="Life"]
+script = ExtResource("4")
+scenario_path = NodePath("")
+
+[node name="View" type="Node3D" parent="Life"]
+script = ExtResource("5")
+scenario_path = NodePath("")
+ambient_path = NodePath("../Ambient")
+
+[node name="CamMenu" type="Camera3D" parent="."]
+current = true
+fov = 44.0
+far = 6000.0
+script = ExtResource("6")

@@ -19,12 +19,17 @@ const QUALITY_HIGH := "high"
 const QUALITY_MEDIUM := "medium"
 const QUALITY_LOW := "low"
 const SETTINGS_PATH := "user://settings.cfg"
+## Главное меню (сцена по умолчанию проекта)
+const MENU_SCENE := "res://scenes/menu/main_menu.tscn"
 
 var quality := QUALITY_HIGH
 ## Откуда качество: arg (ключ), saved (выбор игрока), auto (по видеокарте), shot (съёмка), mobile
 var quality_source := "default"
 var seed := 1
 var scene_time := 0.0
+## Громкость (главная шина, 0..1) и окно во весь экран — настройки игрока (главное меню)
+var volume := 0.8
+var fullscreen := false
 ## Живой ветер — зеркало global ordo_wind (RenderingServer отдаёт глобальные uniform только
 ## в редакторе): xy — куда дует по мировым x/z, z — сила (×6 м/с), w — порывистость.
 ## Менять через set_wind(), чтобы шейдеры и эффекты на процессоре видели одно и то же.
@@ -50,6 +55,8 @@ func _ready() -> void:
 	var g: Variant = ProjectSettings.get_setting("shader_globals/ordo_wind", {})
 	if g is Dictionary and (g as Dictionary).get("value") is Vector4:
 		wind = (g as Dictionary)["value"]
+	if not _capturing():
+		_load_prefs()
 	if _args.has("quality"):
 		quality = _args["quality"]
 		quality_source = "arg"
@@ -74,6 +81,24 @@ func arg(name: String, default_value := "") -> String:
 
 func has_arg(name: String) -> bool:
 	return _args.has(name)
+
+
+## Ключ запуска из кода (главное меню → «Город»: faction, seed): сцена читает его так же, как из командной строки
+func set_arg(name: String, value: String) -> void:
+	_args[name] = value
+
+
+func clear_arg(name: String) -> void:
+	_args.erase(name)
+
+
+## Перейти в главное меню (из среза — Esc, из «Города» — меню паузы); пусто — меню нет (запуск сцены напрямую)
+func to_menu() -> bool:
+	if not ResourceLoader.exists(MENU_SCENE):
+		return false
+	get_tree().paused = false
+	get_tree().change_scene_to_file(MENU_SCENE)
+	return true
 
 
 ## Сменить качество; remember — запомнить выбор игрока (user://settings.cfg)
@@ -118,6 +143,54 @@ func is_low() -> bool:
 
 func is_medium() -> bool:
 	return quality == QUALITY_MEDIUM
+
+
+## Esc в срезе — назад в главное меню (у «Города» — своё меню паузы). При съёмке — нет.
+func _unhandled_input(event: InputEvent) -> void:
+	if _capturing() or not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if (event as InputEventKey).keycode != KEY_ESCAPE:
+		return
+	var cur := get_tree().current_scene
+	if cur and cur.scene_file_path == "res://scenes/slice.tscn" and to_menu():
+		get_viewport().set_input_as_handled()
+
+
+## Громкость 0..1 (главная шина) и окно во весь экран — из настроек игрока
+func set_volume(v: float, remember := true) -> void:
+	volume = clampf(v, 0.0, 1.0)
+	var bus := AudioServer.get_bus_index("Master")
+	if bus >= 0:
+		AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(volume, 0.0001)))
+		AudioServer.set_bus_mute(bus, volume <= 0.001)
+	if remember:
+		_save_value("audio", "volume", volume)
+
+
+func set_fullscreen(on: bool, remember := true) -> void:
+	fullscreen = on
+	if not _capturing() and DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED)
+	if remember:
+		_save_value("display", "fullscreen", on)
+
+
+func _save_value(section: String, key: String, v: Variant) -> void:
+	if _capturing():
+		return
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value(section, key, v)
+	cfg.save(SETTINGS_PATH)
+
+
+func _load_prefs() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return
+	set_volume(float(cfg.get_value("audio", "volume", 0.8)), false)
+	if bool(cfg.get_value("display", "fullscreen", false)):
+		set_fullscreen(true, false)
 
 
 func _process(delta: float) -> void:

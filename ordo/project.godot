@@ -1,12 +1,12 @@
-; Ордо — срез стиля (этап 0 ТЗ). Godot 4.7, Forward+ на ПК, Mobile на телефонах.
+; Ордо: главное меню → срез стиля «Сражение» и режим «Город». Godot 4.7, Forward+ на ПК, Mobile на телефонах.
 
 config_version=5
 
 [application]
 
-config/name="Ордо — срез стиля"
-config/description="Лагерь кыпчаков на закате и столкновение двух отрядов. Этап 0 ТЗ «Ордо»."
-run/main_scene="res://scenes/slice.tscn"
+config/name="Ордо"
+config/description="Стратегия: Коканд и кыпчаки. Сражение (срез стиля) и «Город» против ИИ."
+run/main_scene="res://scenes/menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
