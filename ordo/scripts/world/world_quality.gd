@@ -5,8 +5,8 @@ extends Node
 ##                   живописный фильтр, густая трава, подробные модели дальше. Вид как в срезе;
 ##                   дешевле то, чего не видно (кадры до/после — отчёт perf2): живописный фильтр
 ##                   на мониторе выше 1080p считается в кадре 1080 точек по высоте и бережно
-##                   увеличивается (на 1080p — прежний полный путь); сглаживание SMAA вместо MSAA 2×
-##                   (поверх фильтра мазков разницы не видно, а MSAA удваивал глубину и цвет);
+##                   увеличивается (на 1080p — прежний полный путь); сглаживание SMAA вместо MSAA 4×
+##                   (настройка проекта: глубина и цвет кадра хранились вчетверо);
 ##                   карта теней 4096 вместо 8192 (размытие тени вдвое меньше в точках карты —
 ##                   та же мягкость в метрах); сетка тумана 128 × 128 × 64 слоя в глубину (было 128);
 ##                   юниты дальше 126 м (за вторым каскадом) теней не отбрасывают.
@@ -24,8 +24,8 @@ extends Node
 ## Ключи сравнения (автору — проверить на своём ПК с F9, что дала каждая мера, и вернуть прежнее):
 ##   --upscale=fsr1|fsr2|bilinear — способ увеличения; --post=full|half|off — живописный фильтр;
 ##   --post_cap=0 — фильтр «Высокого» в полном кадре на любом мониторе (как было), --post_cap=1440 — до 1440p;
-##   --aa=msaa|smaa|fxaa|off — сглаживание; --shadow_atlas=8192 — карта теней (размытие подстраивается);
-##   --fog_grid=128 --fog_depth=128 — сетка объёмного тумана.
+##   --aa=msaa|msaa2|smaa|fxaa|off — сглаживание (msaa — 4×, как было);
+##   --shadow_atlas=8192 — карта теней (размытие подстраивается); --fog_grid=128 --fog_depth=128 — сетка тумана.
 
 const HIGH := "high"
 const MEDIUM := "medium"
@@ -35,7 +35,7 @@ const LEVELS := [HIGH, MEDIUM, LOW]
 const NAMES := {HIGH: "Высокое", MEDIUM: "Среднее", LOW: "Низкое"}
 
 ## Числа уровней. scale — доля разрешения 3D, upscale — как растянуть до экрана; aa — сглаживание:
-## msaa (MSAA из настроек проекта, 2×) / smaa / fxaa; post — живописный фильтр: full / half (половина
+## msaa (MSAA из настроек проекта, 4×) / smaa / fxaa; post — живописный фильтр: full / half (половина
 ## разрешения) / off; post_cap — кадр выше стольких точек фильтр считает уменьшенным до этой высоты
 ## (0 — без предела); shadow_atlas — сторона карты теней солнца (размытие тени в точках карты
 ## подстраивается: та же мягкость в метрах, что у 8192 со значением сцены).
@@ -266,20 +266,27 @@ static func apply_viewport(vp: Viewport, level: String) -> void:
 	# FSR 1: резкость мягче обычной (0 — самая резкая) — мазки фильтра не «звенят»
 	vp.fsr_sharpness = 0.4 if scale < 1.0 else ProjectSettings.get_setting("rendering/scaling_3d/fsr_sharpness", 0.2)
 	var aa := aa_mode(level, up)
+	# msaa — как в настройках проекта (4×), msaa2 / msaa4 — явно (сравнение)
 	var msaa: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
-	vp.msaa_3d = msaa if aa == "msaa" and not _has_arg("nomsaa") else Viewport.MSAA_DISABLED
+	match aa:
+		"msaa2":
+			msaa = Viewport.MSAA_2X
+		"msaa4":
+			msaa = Viewport.MSAA_4X
+	vp.msaa_3d = msaa if aa.begins_with("msaa") and not _has_arg("nomsaa") else Viewport.MSAA_DISABLED
 	match aa:
 		"smaa":
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA
 		"fxaa":
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
-		"msaa":
+		"msaa", "msaa2", "msaa4":
 			vp.screen_space_aa = ProjectSettings.get_setting("rendering/anti_aliasing/quality/screen_space_aa", 0)
 		_:
 			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 
 
-## Сглаживание уровня: msaa / smaa / fxaa / off (--aa=… подменяет; FSR 2 сглаживает сам — off)
+## Сглаживание уровня: msaa (как в проекте, 4×) / msaa2 / msaa4 / smaa / fxaa / off
+## (--aa=… подменяет; FSR 2 сглаживает сам — off)
 static func aa_mode(level: String, upscale: String = "") -> String:
 	if upscale == "fsr2":
 		return "off"

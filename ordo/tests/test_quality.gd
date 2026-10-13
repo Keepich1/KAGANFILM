@@ -56,7 +56,7 @@ func _check(ok: bool, what: String) -> void:
 func _check_perf2() -> void:
 	print("[perf2: сглаживание, тени, туман]")
 	var h := WorldQuality.preset("high")
-	_check(WorldQuality.aa_mode("high") == "smaa", "«Высокое» — SMAA (MSAA 2× выключен)")
+	_check(WorldQuality.aa_mode("high") == "smaa", "«Высокое» — SMAA (MSAA 4× проекта выключен)")
 	_check(WorldQuality.aa_mode("medium") == "msaa", "«Среднее» — MSAA, как было")
 	_check(WorldQuality.aa_mode("low") == "fxaa", "«Низкое» — FXAA, как было")
 	_check(WorldQuality.aa_mode("high", "fsr2") == "off", "FSR 2 сглаживает сам")
