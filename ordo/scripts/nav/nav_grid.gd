@@ -21,6 +21,18 @@ extends NavApi
 ## info — Terrain.info() (size, spacing, origin) + необязательные ключи NAV:
 ##   teams (2) — слои скольких команд построить сразу (остальные — по первому запросу, до 4);
 ##   flat (false) — без рельефа (тесты на больших сетках); rules — словарь правил (иначе GOROD).
+##
+## Для пакетов:
+##   • ECON: постройки — stamp_building; звенья стен и арыков — stamp_link(h, team, a, b, тип) с концами
+##     из plan_wall (ключи "a", "b"); ворота — stamp_link по концам из snap_on_wall ("a", "b") после unstamp
+##     звеньев из "removes"; башня на стене — unstamp "removes", затем stamp_building. Стройка (SITE)
+##     штампуется сразу. Жилы (NodeDefs.blocks_cells > 0) NAV берёт из EconApi.nodes сам — в ближайшем
+##     такте (service) или штампе; снимает, когда ECON освобождает слот узла.
+##   • CORE: static_grid() — после MapSetup (в нём и ядра жил); speed_grid() — 16, вода 9. Путь: pts без
+##     начальной точки (первая — снаружи постройки, если юнит стоял в ней); билеты отпускать (release).
+##   • GAME: service(tick) — каждый такт (в нём перемечивание графа). reachable, find_now и service —
+##     только из симуляции; check_place, place_cells, plan_wall, snap_on_wall, ring_slots — откуда угодно.
+##   • econ и port NAV держит слабо (WeakRef): их держит владелец (GameSim / тест).
 
 const W_BREACH := 4.0
 const W_WATER := 2.0
