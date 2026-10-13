@@ -2,8 +2,9 @@ extends SceneTree
 ## Проверка уровней качества без графики:
 ##   godot --headless --path ordo --script res://tests/test_quality.gd
 ## Порядок F2, числа уровней, выбор уровня по имени видеокарты (первый запуск).
-## Ускорение видеокарты (perf2): сглаживание и тени «Высокого», живописный фильтр в уменьшенном кадре
-## на мониторах выше 1080p, дерево кусков земли — ни щелей, ни двойной земли, нигде не грубее прежнего.
+## Ускорение видеокарты (perf2): сглаживание и тени «Высокого», тени толпы только в ближних каскадах,
+## живописный фильтр в уменьшенном кадре на мониторах выше 1080p, дерево кусков земли — ни щелей,
+## ни двойной земли, нигде не грубее прежнего.
 
 var _fails := 0
 
@@ -39,6 +40,7 @@ func _init() -> void:
 		var got := WorldQuality.gpu_tier(name)
 		_check(got == int(cases[name]), "%s → %d (ждали %d)" % [name, got, cases[name]])
 	_check_perf2()
+	_check_crowd_cascades()
 	_check_post_scale()
 	_check_terrain_tree()
 	print("")
@@ -72,6 +74,59 @@ func _check_perf2() -> void:
 		var mv := float(WorldQuality.preset("medium")[k])
 		var lv := float(WorldQuality.preset("low")[k])
 		_check(hv >= mv and mv >= lv, "%s: высокое ≥ среднее ≥ низкое" % k)
+
+
+## Тени толпы — только в первых каскадах солнца (CrowdLayer.shadow_pass_limit → crowd_lod.w):
+## порог полуширины прохода между каскадом, что покрывает дальность теней юнитов, и следующим
+func _check_crowd_cascades() -> void:
+	print("[толпа: тени только в ближних каскадах]")
+	# солнце среза: 4 каскада, доли 0,06 / 0,18 / 0,45, смешивание каскадов; камера 50° по высоте, 16:9
+	var splits := [0.06, 0.18, 0.45]
+	var ty := tan(deg_to_rad(25.0))
+	var tx := ty * 16.0 / 9.0
+	for level in ["high", "medium", "low"]:
+		var p := WorldQuality.preset(level)
+		var count := int(p.shadow_splits)
+		var dist := CrowdLayer.cascade_distances(0.05, 4000.0, float(p.shadow_dist), count, splits)
+		var radii := CrowdLayer.cascade_radii(tx, ty, dist, true)
+		var lim := CrowdLayer.shadow_pass_limit(radii, dist, float(p.crowd_shadow))
+		print("    %s: дальности %s, полуширина %s, порог %.0f м" % [level, _round_all(dist), _round_all(radii), lim])
+		var grows := true
+		for i in radii.size() - 1:
+			grows = grows and radii[i + 1] > radii[i] * 1.8
+		_check(grows, "%s: каскады растут вдвое и больше — порог надёжно между ними" % level)
+		if level == "low":
+			_check(lim == 0.0, "«Низкое» (2 каскада, тени юнитов 60 м): юниты во всех каскадах, как было")
+			continue
+		# дальность теней юнитов покрывает второй каскад: юниты — в первом и втором, порог между вторым и третьим
+		_check(dist[2] >= float(p.crowd_shadow) - 1.0 and dist[1] < float(p.crowd_shadow),
+			"%s: тени юнитов (%.0f м) — в пределах второго каскада (%.0f м)" % [level, p.crowd_shadow, dist[2]])
+		_check(lim > radii[1] * 1.3 and lim < radii[2] / 1.3,
+			"%s: первые два каскада (до %.0f м) рисуют юнитов, третий и четвёртый (от %.0f м) — нет" % [level, radii[1], radii[2]])
+	# без смешивания каскадов — тоже между вторым и третьим; узкая камера — тоже
+	var d4 := CrowdLayer.cascade_distances(0.05, 4000.0, 700.0, 4, splits)
+	for t in [Vector2(0.3, 0.17), Vector2(1.2, 0.68)]:
+		for blend in [false, true]:
+			var r := CrowdLayer.cascade_radii(t.x, t.y, d4, blend)
+			var lim := CrowdLayer.shadow_pass_limit(r, d4, 126.0)
+			_check(lim > r[1] and lim < r[2], "угол %.2f, смешивание %s: порог %.0f м между %.0f и %.0f" % [
+				t.y, blend, lim, r[1], r[2]])
+	# дальность теней юнитов дальше второго каскада — порог после третьего; дальше всех — без порога
+	var r4 := CrowdLayer.cascade_radii(tx, ty, d4, true)
+	var lim3 := CrowdLayer.shadow_pass_limit(r4, d4, 200.0)
+	_check(lim3 > r4[2] and lim3 < r4[3], "тени юнитов 200 м — первые три каскада")
+	_check(CrowdLayer.shadow_pass_limit(r4, d4, 400.0) == 0.0, "тени юнитов дальше третьего каскада — во всех")
+	# камера ближе дальности теней (короткий far): каскады короче, порог тоже
+	var dn := CrowdLayer.cascade_distances(0.05, 100.0, 700.0, 4, splits)
+	_check(CrowdLayer.shadow_pass_limit(CrowdLayer.cascade_radii(tx, ty, dn, true), dn, 126.0) == 0.0,
+		"камера видит не дальше 100 м — тени юнитов во всех каскадах")
+
+
+func _round_all(a: PackedFloat32Array) -> String:
+	var out: Array[String] = []
+	for v in a:
+		out.append(str(roundi(v)))
+	return "[%s]" % ", ".join(out)
 
 
 ## Живописный фильтр: в каком кадре считаются мазки
