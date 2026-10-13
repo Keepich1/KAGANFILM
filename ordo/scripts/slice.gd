@@ -289,7 +289,8 @@ func _info(what: int, shadow: bool) -> int:
 	return RenderingServer.viewport_get_render_info(get_viewport().get_viewport_rid(), t, what)
 
 
-## Толпа по LOD: подробных, облегчённых, облегчённых без тени (CrowdLayer.lod_counts)
+## Толпа по LOD: подробных, облегчённых, с тенью (CrowdLayer.lod_counts; по блокам — юнит на границе
+## полос может быть посчитан дважды)
 func _crowd_line() -> String:
 	var c := PackedInt32Array([0, 0, 0])
 	for v: BattleView in [battle.get_node_or_null("View") as BattleView,
@@ -301,7 +302,7 @@ func _crowd_line() -> String:
 				var k: PackedInt32Array = l.lod_counts()
 				for i in 3:
 					c[i] += k[i]
-	return "Толпа: подробных %d · облегчённых %d · без тени %d" % [c[0], c[1], c[2]]
+	return "Толпа: подробных %d · облегчённых %d · с тенью %d" % [c[0], c[1], c[2]]
 
 
 ## Эффекты за секунду: клубов дыма и пыли, залпов стеной (общий запас частиц BattleFx)

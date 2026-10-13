@@ -7,9 +7,13 @@ extends Node3D
 ## (WorldQuality «crowd_shadow»: на «Высоком» — первые два каскада солнца, 126 м) и только в тех
 ## каскадах, что эту дальность покрывают: в дальних каскадах (они охватывают и ближнее поле)
 ## юниты не рисуются — порог полуширины прохода (shadow_pass_limit) уходит в шейдер, crowd_lod.w.
-## Ключи сравнения: --crowd_cascades=all — юниты во всех каскадах, как было (none — без теней юнитов,
-## проверка); --crowd_shadow=700 — дальность теней юнитов, м (уровень качества — 126 / 90 / 60).
-## Три MultiMeshInstance3D: LOD0, LOD1 с тенью и LOD1 без тени. Буфер экземпляров делится на
+## Тень подробной моделью — только в первом каскаде солнца (near_shadow_distance, на «Высоком» ≈ 52 м):
+## дальше точка карты теней (≈ 13 см во втором каскаде) крупнее разницы моделей, и тень юнита
+## рисует облегчённая модель — в проходах теней треугольников вдвое меньше.
+## Ключи сравнения: --crowd_cascades=all — юниты во всех каскадах и тень LOD0 у всех подробных, как было
+## (none — без теней юнитов, проверка); --crowd_shadow=700 — дальность теней юнитов, м (уровень — 126 / 90 / 60).
+## Четыре MultiMeshInstance3D (Part): LOD0 с тенью (ближе первого каскада), LOD0 без тени, LOD1 без тени
+## и «Тень» — облегчённая модель только в проходах теней. Буфер экземпляров делится на
 ## блоки по BLOCK мест; каждый кадр блок по своим границам и камере уходит в те MultiMesh,
 ## чьей полосе дальности он может принадлежать (на границе — в оба). Точный выбор по юниту —
 ## в шейдере (shaders/crowd.gdshader, crowd_lod): лишние там сжимаются в точку до расчёта позы,
@@ -40,8 +44,13 @@ const DRIFT_SPEED := 15.0
 const FAR := 1.0e9
 ## Группа солнца мира (World кладёт в неё свой DirectionalLight3D): по нему — каскады теней
 const SUN_GROUP := &"ordo_sun"
-## Части слоя: подробная модель, облегчённая с тенью, облегчённая без тени
-enum Part { LOD0, LOD1, LOD1_NO_SHADOW }
+## Тень подробной моделью — до конца первого каскада солнца и ещё столько, м (юниты у края кадра,
+## тени к камере)
+const NEAR_SHADOW_PAD := 10.0
+## Части слоя: подробная модель с тенью (ближе near_shadow_distance), подробная без тени,
+## облегчённая без тени, тень облегчённой моделью (только проходы теней)
+enum Part { LOD0_NEAR, LOD0, LOD1, SHADOW }
+const PARTS := 4
 
 ## Дальность смены LOD0 → LOD1, м
 var lod_distance: float = 90.0:
@@ -61,6 +70,7 @@ var _lod_d := 90.0          # дальность LOD с учётом уровн�
 var _shadow_d := 126.0      # дальше юниты теней не отбрасывают
 var _far_shadow := true     # облегчённые юниты отбрасывают тень («Низкое» — нет)
 var _casc_limit := 0.0      # порог полуширины прохода теней (0 — во всех каскадах), см. shadow_pass_limit
+var _near_d := 90.0         # ближе — тень подробной моделью (первый каскад), дальше — облегчённой
 var _casc_mode := ""        # ключ --crowd_cascades: "" — по каскадам, all — во всех, none — ни в одном
 # границы блоков (ступни юнитов), сколько «пути» набежало к их пересчёту
 var _blo := PackedVector3Array()
@@ -71,7 +81,7 @@ var _drift_t := -1.0
 var _scan := 0
 var _full_scan := true
 var _cam := Vector3(INF, INF, INF)  # камера последнего деления
-var _counts := PackedInt32Array([0, 0, 0])
+var _counts := PackedInt32Array([0, 0, 0, 0])
 
 ## Запас границ: копья, знамёна, лежащие тела выходят за ступни
 const AABB_PAD_LO := Vector3(3.0, 1.0, 3.0)
@@ -96,9 +106,9 @@ func setup(p_unit_id: String, p_capacity: int) -> void:
 		_buf[i * STRIDE] = 1.0
 		_buf[i * STRIDE + 5] = 1.0
 		_buf[i * STRIDE + 10] = 1.0
-	var names := ["LOD0", "LOD1", "LOD1_NoShadow"]
-	for part in 3:
-		var data := _load(UnitRegistry.mesh_path(unit_id, 0 if part == Part.LOD0 else 1))
+	var names := ["LOD0", "LOD0_NoShadow", "LOD1", "Shadow"]
+	for part in PARTS:
+		var data := _load(UnitRegistry.mesh_path(unit_id, 0 if part <= Part.LOD0 else 1))
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
@@ -113,7 +123,7 @@ func setup(p_unit_id: String, p_capacity: int) -> void:
 		add_child(mmi)
 		_mm.append(mm)
 		_mmi.append(mmi)
-	_counts = PackedInt32Array([0, 0, 0])
+	_counts = PackedInt32Array([0, 0, 0, 0])
 	_full_scan = true
 	_apply_lod()
 	_dirty = true
@@ -172,10 +182,16 @@ func get_visible_count() -> int:
 	return _visible
 
 
-## Сколько юнитов слоя в последнем кадре ушло в LOD0, в LOD1 с тенью и в LOD1 без тени
-## (по блокам: юнит на границе полос может быть в двух — шейдер оставит один)
+## Сколько юнитов слоя в последнем кадре ушло в подробную модель, в облегчённую и в тень
+## (по блокам: юнит на границе полос может быть в двух частях — шейдер оставит одну)
 func lod_counts() -> PackedInt32Array:
-	return _counts
+	return PackedInt32Array([_counts[Part.LOD0_NEAR] + _counts[Part.LOD0], _counts[Part.LOD1],
+		_counts[Part.LOD0_NEAR] + _counts[Part.SHADOW]])
+
+
+## Дальность тени подробной моделью (первый каскад солнца), м
+func near_shadow_distance() -> float:
+	return _near_d
 
 
 ## Самый быстрый путь (бой на тысячи юнитов): сам буфер слоя, по 16 чисел на экземпляр —
@@ -230,11 +246,13 @@ func _on_quality(_level: String) -> void:
 func _flush() -> void:
 	if _mm.is_empty():
 		return
-	# порог каскадов зависит от угла камеры, кадра и солнца — пересчёт дёшев, меняется редко
-	var lim := _shadow_limit(_camera())
-	if absf(lim - _casc_limit) > 0.01 * maxf(lim, _casc_limit):
-		_casc_limit = lim
+	# каскады зависят от угла камеры, кадра и солнца — пересчёт дёшев, меняется редко
+	var sc := _shadow_cfg(_camera())
+	if absf(sc.x - _casc_limit) > 0.01 * maxf(sc.x, _casc_limit) or absf(sc.y - _near_d) > 0.05:
+		_casc_limit = sc.x
+		_near_d = sc.y
 		_set_bands()
+		_cam = Vector3(INF, INF, INF)  # полосы частей сдвинулись — поделить заново
 	var cam := _camera_pos()
 	if not _dirty and cam.distance_squared_to(_cam) < 0.25:
 		return
@@ -313,8 +331,8 @@ func _partition(cam: Vector3) -> void:
 		dmin[b] = cam.distance_to(cam.clamp(lo, hi))
 		dmax[b] = cam.distance_to(Vector3(lo.x if cam.x > (lo.x + hi.x) * 0.5 else hi.x,
 			lo.y if cam.y > (lo.y + hi.y) * 0.5 else hi.y, lo.z if cam.z > (lo.z + hi.z) * 0.5 else hi.z))
-	var sd := _shadow_d if _far_shadow else -1.0
-	for part in 3:
+	var send := _shadow_end()
+	for part in PARTS:
 		var out := PackedFloat32Array()
 		var run0 := -1
 		var run1 := -1
@@ -323,13 +341,17 @@ func _partition(cam: Vector3) -> void:
 		var lo3 := Vector3(INF, INF, INF)
 		var hi3 := -Vector3(INF, INF, INF)
 		for b in nb:
+			# блок в части, если его полоса дальности [dmin, dmax] задевает полосу части
 			var take := false
-			if part == Part.LOD0:
-				take = dmin[b] < _lod_d
-			elif part == Part.LOD1:
-				take = dmax[b] >= _lod_d and dmin[b] < sd
-			else:
-				take = dmax[b] >= _lod_d and dmin[b] >= sd
+			match part:
+				Part.LOD0_NEAR:
+					take = dmin[b] < _near_d
+				Part.LOD0:
+					take = dmax[b] >= _near_d and dmin[b] < _lod_d
+				Part.LOD1:
+					take = dmax[b] >= _lod_d
+				_:
+					take = dmax[b] >= _near_d and dmin[b] < send
 			if not take:
 				continue
 			var i0 := b * BLOCK
@@ -378,7 +400,7 @@ func _camera_pos() -> Vector3:
 
 
 func _apply_lod() -> void:
-	if _mmi.size() < 3:
+	if _mmi.size() < PARTS:
 		return
 	# уровень качества (WorldQuality): «Высокое» — LOD 90 м, тени юнитов до 126 м; «Среднее» —
 	# ×0,75 и тени до 90 м; «Низкое» — ×0,5, тени до 60 м и облегчённые юниты без теней
@@ -391,37 +413,51 @@ func _apply_lod() -> void:
 		_casc_mode = String(ordo.call("arg", "crowd_cascades", ""))
 		# --crowd_shadow=700 — дальность теней юнитов, м (сравнение: все юниты с тенью, как было)
 		_shadow_d = float(ordo.call("arg", "crowd_shadow", str(_shadow_d)))
-	_casc_limit = _shadow_limit(_camera())
+	var sc := _shadow_cfg(_camera())
+	_casc_limit = sc.x
+	_near_d = sc.y
 	_set_bands()
 	_cam = Vector3(INF, INF, INF)  # поделить заново
 	_dirty = true
 
 
-## Полосы частей в шейдер (crowd_lod: дальность LOD, дальность теней, порог каскадов) и тени частей
+## Конец теней юнитов, м: дальность теней толпы («Низкое» — облегчённые без тени: не дальше LOD0)
+func _shadow_end() -> float:
+	return _shadow_d if _far_shadow else minf(_shadow_d, _lod_d)
+
+
+## Полосы частей в шейдер (crowd_lod: от, до, дальность теней, порог каскадов) и тени частей:
+## LOD0 ближе _near_d — с тенью подробной моделью; LOD0 дальше и LOD1 — без тени;
+## «Тень» — облегчённая модель от _near_d до конца теней, только в проходах теней
 func _set_bands() -> void:
-	if _mmi.size() < 3:
+	if _mmi.size() < PARTS:
 		return
-	var bands := [Vector4(0.0, _lod_d, _shadow_d, _casc_limit),
-		Vector4(_lod_d, FAR, _shadow_d if _far_shadow else 0.0, _casc_limit), Vector4(_lod_d, FAR, 0.0, 0.0)]
-	for part in 3:
+	var send := _shadow_end()
+	var bands := [Vector4(0.0, _near_d, _near_d, _casc_limit), Vector4(_near_d, _lod_d, 0.0, 0.0),
+		Vector4(_lod_d, FAR, 0.0, 0.0), Vector4(_near_d, send, send, _casc_limit)]
+	var modes := [GeometryInstance3D.SHADOW_CASTING_SETTING_ON, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY]
+	for part in PARTS:
 		var mmi := _mmi[part]
 		mmi.visibility_range_begin = 0.0
 		mmi.visibility_range_end = 0.0
 		mmi.set_instance_shader_parameter("crowd_lod", bands[part])
-		var shadow := part == Part.LOD0 or (part == Part.LOD1 and _far_shadow)
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.cast_shadow = modes[part]
 
 
-## Порог каскадов для камеры cam и солнца мира (группа SUN_GROUP, World): 0 — без порога (нет солнца
-## с тенью, камера не перспективная или дальность теней толпы покрывает только последний каскад)
-func _shadow_limit(cam: Camera3D) -> float:
+## Каскады для камеры cam и солнца мира (группа SUN_GROUP, World): x — порог полуширины прохода
+## теней (0 — без порога), y — дальность тени подробной моделью (_near_d: конец первого каскада
+## + NEAR_SHADOW_PAD, не дальше LOD0 и конца теней). Нет солнца с тенью или камера не перспективная —
+## без порога, тень подробной моделью у всех LOD0 (как без деления по каскадам).
+func _shadow_cfg(cam: Camera3D) -> Vector2:
+	var whole := minf(_lod_d, _shadow_end())
 	if _casc_mode == "none":
-		return 0.001
+		return Vector2(0.001, whole)
 	if _casc_mode == "all" or cam == null or cam.projection != Camera3D.PROJECTION_PERSPECTIVE or not is_inside_tree():
-		return 0.0
+		return Vector2(0.0, whole)
 	var sun := get_tree().get_first_node_in_group(SUN_GROUP) as DirectionalLight3D
 	if sun == null or not sun.shadow_enabled:
-		return 0.0
+		return Vector2(0.0, whole)
 	var count := 1
 	match sun.directional_shadow_mode:
 		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS:
@@ -436,7 +472,8 @@ func _shadow_limit(cam: Camera3D) -> float:
 		[sun.directional_shadow_split_1, sun.directional_shadow_split_2, sun.directional_shadow_split_3])
 	var radii := cascade_radii(t * aspect if by_height else t, t if by_height else t / aspect, dist,
 		sun.directional_shadow_blend_splits)
-	return shadow_pass_limit(radii, dist, _shadow_d)
+	var near := minf(dist[1] + NEAR_SHADOW_PAD, whole) if count > 1 else whole
+	return Vector2(shadow_pass_limit(radii, dist, _shadow_d), near)
 
 
 ## Дальности каскадов тени солнца, м (как у движка, RendererSceneCull): d[0] — ближняя плоскость
