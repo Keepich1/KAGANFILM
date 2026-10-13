@@ -52,14 +52,14 @@ func _stage(id: String) -> SubViewport:
 	vp.add_child(layer)
 	layer.setup(id, 1)
 	var skel := String(info.get("skeleton", "human"))
-	var state := AnimSpec.Horse.IDLE if skel == "rider" else AnimSpec.Human.IDLE
+	var state: int = AnimSpec.Horse.IDLE if skel == "rider" else AnimSpec.Human.IDLE
 	layer.set_instance(0, Transform3D(Basis(Vector3.UP, deg_to_rad(-20.0)), Vector3.ZERO), AnimSpec.custom(state, 0.3, 0.0, 0.0))
 	layer.set_visible_count(1)
 	var h := float(info.get("height", 2.0))
 	var cam := Camera3D.new()
 	cam.fov = 30.0
-	var target := Vector3(0, h * (0.72 if skel == "human" else 0.62), 0)
-	var dist := h * (0.95 if skel == "human" else 1.55)
+	var target := Vector3(0, h * (0.8 if skel == "human" else 0.7), 0)
+	var dist := h * (1.15 if skel == "human" else 1.75)
 	cam.position = target + Vector3(sin(deg_to_rad(18.0)), 0.18, cos(deg_to_rad(18.0))) * dist
 	vp.add_child(cam)
 	cam.look_at(target, Vector3.UP)
