@@ -112,11 +112,14 @@ func _rebuild(d: Dictionary) -> void:
 			add_child(bar)
 			_slots.append({"button": slot, "icon": ic, "bar": bar})
 		x += BuildingTable.QMAX * (SLOT + 6) + 28.0
+	var step := 0.0
+	var ab: Dictionary = defs.b_ability[bt] if bt >= 0 and bt < defs.b_ability.size() else {}
+	var own := hud.query.buildings().valid(_handle) and hud.query.buildings().owner[hud.query.buildings().slot(_handle)] == hud.player
 	if not trains.is_empty():
 		var tt := UiTheme.label(tr("Нанять"), UiTheme.head_bold(), 19, true)
 		tt.position = Vector2(x, 0)
 		add_child(tt)
-		var step := clampf((size.x - x) / maxf(1.0, trains.size()), TRAIN + 18.0, 124.0)
+		step = clampf((size.x - x - (TRAIN + 40.0 if not ab.is_empty() else 0.0)) / maxf(1.0, trains.size()), TRAIN + 18.0, 124.0)
 		for i in trains.size():
 			var t: Dictionary = trains[i]
 			var bx := x + i * step + (step - TRAIN) * 0.5 - 8.0
@@ -161,6 +164,41 @@ func _rebuild(d: Dictionary) -> void:
 				why.add_theme_color_override("font_color", UiTheme.RED)
 				add_child(why)
 				break
+	# умение здания (Ҳашар у Урды, ECONOMY §2.6): кнопка в панели, клавиша V
+	if not ab.is_empty() and own and int(d.get("state", 0)) == BuildingTable.State.ACTIVE:
+		var ax := x + trains.size() * step + 24.0
+		var at := UiTheme.label(tr("Умение"), UiTheme.head_bold(), 19, true)
+		at.position = Vector2(ax - 8.0, 0)
+		add_child(at)
+		var b := Button.new()
+		b.name = "Ability"
+		b.position = Vector2(ax, 30)
+		b.size = Vector2(TRAIN, TRAIN)
+		b.focus_mode = Control.FOCUS_NONE
+		var nm_ab := RtsInput.ability_name(ab)
+		b.tooltip_text = "%s (V)\n%s" % [nm_ab, tr("Действует %d с, перезарядка %d с") % [int(ab.get("duration_s", 0)), int(ab.get("cooldown_s", 0))]]
+		if ab.has("build_mult"):
+			b.tooltip_text += "\n" + tr("Стройка и ремонт ×%s") % String.num(float(ab["build_mult"]), 1)
+		b.pressed.connect(func() -> void:
+			if hud.input:
+				hud.input.use_ability(_handle))
+		add_child(b)
+		var ic := TextureRect.new()
+		ic.texture = UiTheme.icon("ord", "build")
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.position = Vector2(8, 8)
+		ic.size = Vector2(TRAIN - 16, TRAIN - 16)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(ic)
+		var key := UiTheme.label("V", UiTheme.text(800), 13)
+		key.position = Vector2(TRAIN - 18, TRAIN - 20)
+		key.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+		b.add_child(key)
+		var an := UiTheme.label(nm_ab, UiTheme.text(700), 14, true)
+		an.position = Vector2(ax - 20.0, 96)
+		an.size = Vector2(TRAIN + 40.0, 18)
+		an.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		add_child(an)
 
 
 ## Цена значками: [значок ресурса][число] по порядку ресурсов
@@ -226,6 +264,10 @@ func _update(d: Dictionary) -> void:
 	var water := float(d.get("water", -1.0))
 	if water >= 0.0:
 		lines.append(tr("Полив: есть — урожай полный") if water > 0.5 else tr("Сухо (лалми) — урожай четверть"))
+	# сеть воды тўғона: «Сув 6/8» (занято / мест; ECONOMY §2.3) — если GameQuery даёт net
+	var net: Dictionary = d.get("net", {})
+	if int(net.get("places", 0)) > 0:
+		lines.append(tr("Сув %d/%d — мест у воды") % [int(net.get("used", 0)), int(net.get("places", 0))])
 	var gar: Dictionary = d.get("gar", {})
 	if int(gar.get("cap", 0)) > 0:
 		lines.append(tr("Гарнизон: %d / %d") % [int(gar.get("n", 0)), int(gar.get("cap", 0))])

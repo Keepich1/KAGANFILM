@@ -165,13 +165,23 @@ func _test_side(p: int) -> void:
 	SimHarness.check(hud.bottom.building.visible, "выбрана ставка — панель здания")
 	var trains := 0
 	for ch in hud.bottom.building.get_children():
-		if ch is Button and ch.size.x >= CityBuildingPanel.TRAIN:
+		if ch is Button and ch.size.x >= CityBuildingPanel.TRAIN and ch.name != "Ability":
 			trains += 1
 	SimHarness.check(trains == (panel.get("trains", []) as Array).size(), "кнопок найма = trains (%d)" % trains)
 	log.clear()
 	hud.train(hq, int(panel["trains"][0]["utype"]))
 	SimHarness.check(log.size() == 1 and (log[0] as PackedInt32Array) == SimCmd.train(hq, int(panel["trains"][0]["utype"]), 1),
 		"кнопка найма → TRAIN(ставка, работник, 1)")
+	# умение ставки: у Урды — кнопка Ҳашара (из Defs.b_ability), у кыпчаков — нет
+	var abtn := hud.bottom.building.get_node_or_null("Ability") as Button
+	var has_ab := not defs.b_ability[defs.f_hq[f]].is_empty()
+	SimHarness.check((abtn != null) == has_ab, "кнопка умения ставки: %s" % ("есть" if has_ab else "нет"))
+	if abtn:
+		log.clear()
+		abtn.emit_signal("pressed")
+		var said := hud.notes.visible_notes()
+		SimHarness.check(log.size() == 1 if RtsInput.has_builder("ability") else (not said.is_empty() and String(said[0]["text"]).contains("Ҳашар")),
+			"кнопка Ҳашара — приказ или записка «ещё не готово»")
 	# записки: печать по событию
 	var ev := city.events()
 	hud.notes.poll()
