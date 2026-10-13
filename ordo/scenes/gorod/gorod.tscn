@@ -1,0 +1,95 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scenes/gorod/gorod.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/world.tscn" id="2"]
+[ext_resource type="Script" path="res://scripts/contract/fake_city_driver.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/view/field_view.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/view/building_view.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/view/node_view.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/view/unit_view.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/view/herd_view.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/view/ghost_view.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/view/selection_view.gd" id="10"]
+[ext_resource type="Script" path="res://scripts/view/city_fx.gd" id="11"]
+[ext_resource type="Script" path="res://scripts/fx/battle_fx.gd" id="12"]
+[ext_resource type="Script" path="res://scripts/camera/rts_camera.gd" id="13"]
+[ext_resource type="Script" path="res://scripts/view/overlay_view.gd" id="14"]
+
+[node name="Gorod" type="Node3D"]
+script = ExtResource("1")
+
+[node name="World" parent="." instance=ExtResource("2")]
+
+[node name="Driver" type="Node" parent="."]
+script = ExtResource("3")
+
+[node name="Views" type="Node3D" parent="."]
+
+[node name="Fields" type="Node" parent="Views"]
+script = ExtResource("4")
+
+[node name="Buildings" type="Node3D" parent="Views"]
+script = ExtResource("5")
+
+[node name="Nodes" type="Node3D" parent="Views"]
+script = ExtResource("6")
+
+[node name="Units" type="Node3D" parent="Views"]
+script = ExtResource("7")
+scenario_path = NodePath("../../Driver")
+ambient_path = NodePath("")
+
+[node name="Herds" type="Node3D" parent="Views"]
+script = ExtResource("8")
+
+[node name="Ghost" type="Node3D" parent="Views"]
+script = ExtResource("9")
+
+[node name="Selection" type="Node3D" parent="Views"]
+script = ExtResource("10")
+
+[node name="CityFx" type="Node" parent="Views"]
+script = ExtResource("11")
+
+[node name="Fx" type="Node3D" parent="."]
+script = ExtResource("12")
+scenario_path = NodePath("../Driver")
+
+[node name="Cameras" type="Node3D" parent="."]
+
+[node name="CamRTS" type="Camera3D" parent="Cameras"]
+current = true
+fov = 45.0
+far = 3000.0
+script = ExtResource("13")
+focus = Vector3(186, 0, 52)
+distance = 165.0
+yaw_deg = -58.0
+
+[node name="CamShot" type="Camera3D" parent="Cameras"]
+fov = 45.0
+near = 0.25
+far = 3000.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Overlay" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("14")
+
+[node name="CityHud" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="RtsInput" type="Node" parent="."]

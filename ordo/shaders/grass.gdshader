@@ -25,6 +25,10 @@ uniform vec4 fade = vec4(-1.0, 0.0, 60.0, 80.0);   // от камеры: поя�
 uniform float density_comp = 1.0;                  // при прореживании пучки чуть крупнее
 uniform vec4 clearings[48];                        // поляны без травы: (x, z, радиус, 1)
 uniform int clearing_count = 0;
+// «Город» (VIEW, FieldView): маска травы R8 по карте — 0 под постройками и полями, иначе трава 0..1
+// (вытоптанные пастбища реже и ниже). Срез её не включает.
+uniform bool use_city_mask = false;
+uniform sampler2D city_mask : hint_default_white, filter_linear, repeat_disable;
 
 group_uniforms colors;
 uniform vec4 base_color : source_color = vec4(0.17, 0.19, 0.11, 1.0);
@@ -92,6 +96,11 @@ void vertex() {
 		}
 	}
 	float height = mix(min_height, max_height, gm.g) * (0.5 + 1.0 * h4 * h4 + 0.2 * h6) * clump_scale * density_comp;
+	if (use_city_mask) {
+		float cm = textureLod(city_mask, muv, 0.0).r;
+		keep *= step(0.06, cm) * step(h6 * 0.85, cm + 0.08);
+		height *= mix(0.45, 1.0, cm);
+	}
 	float is_plume = COLOR.r;
 	float kov = step(h5, gm.b * 1.1);
 	// у каждого пучка своё число остей: часть остей прячется

@@ -68,6 +68,18 @@ func set_clearings(list: Array) -> void:
 		m.set_shader_parameter("clearing_count", mini(list.size(), MAX_CLEARINGS))
 
 
+## «Город» (VIEW, FieldView): маска травы R8 на всю карту (4 м на пиксель): 0 — травы нет
+## (постройки, поля), иначе — густота и рост пастбища. null — без маски (как в срезе).
+## Поляны set_clearings работают вместе с маской.
+func set_mask(tex: Texture2D) -> void:
+	var mats: Array[ShaderMaterial] = ring_materials()
+	if material:
+		mats.append(material)
+	for m in mats:
+		m.set_shader_parameter("use_city_mask", tex != null)
+		m.set_shader_parameter("city_mask", tex)
+
+
 ## Материалы колец (у каждого кольца свой — разные размеры участков).
 func ring_materials() -> Array[ShaderMaterial]:
 	var out: Array[ShaderMaterial] = []
