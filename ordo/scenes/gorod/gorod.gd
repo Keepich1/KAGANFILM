@@ -36,6 +36,8 @@ signal series_done
 
 ## Выделение (до RtsInput из UI)
 var selection := SelectionModel.new()
+## Игра (I4): интерфейс и управление над GameDriver; null — драйвер не GameDriver (FakeCity, ряды образцов)
+var play: GorodPlay
 
 var _ordo: Node
 var _series: Array = []
@@ -58,6 +60,13 @@ func _ready() -> void:
 		selection_view.selection = selection
 	else:
 		selection = selection_view.selection
+	if driver is GameDriver and shot_set == &"city":
+		play = GorodPlay.attach(self, driver as GameDriver, camera, ghost, selection, overlay)
+		# проверка первой играбельной сборки: партия по сценарию с кадрами (--playthrough=DIR [--only=…])
+		if _ordo and _ordo.has_arg("playthrough"):
+			world.environment_node.environment.volumetric_fog_temporal_reprojection_enabled = false
+			_set_fast.call_deferred(true)
+			GorodPlaythrough.start(self, String(_ordo.arg("playthrough")), String(_ordo.arg("only", "")).split(",", false))
 	if _ordo and _ordo.has_arg("skip") and driver.sim:
 		for i in int(float(_ordo.arg("skip")) * 30.0):
 			driver.step()

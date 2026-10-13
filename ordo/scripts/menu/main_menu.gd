@@ -143,6 +143,10 @@ func _choose(id: String) -> void:
 			if _ordo:
 				_ordo.set_arg("faction", id)
 				_ordo.clear_arg("replay")
+				# новая партия — новое зерно (карта та же; бой, набеги и случайности ИИ — свои)
+				if not _ordo.has_arg("seed") or _ordo.has_arg("menu_seed"):
+					_ordo.set_arg("seed", str(randi_range(1, 999999)))
+					_ordo.set_arg("menu_seed", "1")
 			_go(GOROD, tr("Город: за Коканд") if id == "kokand" else tr("Город: за кыпчаков"))
 		"settings":
 			_open_settings()
@@ -381,8 +385,7 @@ func _gap(h: float) -> Control:
 
 func _footer_text() -> String:
 	var v := String(ProjectSettings.get_setting("application/config/version", ""))
-	var s := tr("Godot 4.7 · рабочая сборка")
-	return (tr("Сборка ") + v + " · " + s) if v != "" else s
+	return (tr("Сборка %s · Godot 4.7") % v) if v != "" else tr("Godot 4.7 · рабочая сборка")
 
 
 # ---------------------------------------------------------------- настройки

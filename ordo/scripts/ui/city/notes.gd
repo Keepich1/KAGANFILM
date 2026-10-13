@@ -105,6 +105,9 @@ func describe(kind: int, a: int, b: int, c: int) -> Dictionary:
 		E.HERD_RETURNED:
 			return {"text": tr("Стадо вернулось"), "seal": Seal.GREEN}
 		E.IRRIGATION_CHANGED:
+			# первый расчёт сети в начале партии — не новость
+			if hud.query.tick() < 90:
+				return {}
 			return {"text": tr("Вода в арыках изменилась"), "seal": Seal.GOLD}
 		E.CMD_REJECTED:
 			return {"text": reject_text(b), "seal": Seal.RED}

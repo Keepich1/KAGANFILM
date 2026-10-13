@@ -1,9 +1,9 @@
 class_name CityMenu
 extends Control
 ## Меню игры (кнопка ≡ на балке, F10, Esc при пустом выделении): лист «самаркандской бумаги» поверх
-## затемнённого мира — «Продолжить», «Управление» (памятка клавиш ТЗ §10), «Начать заново», «Выйти».
+## затемнённого мира — «Продолжить», «Управление» (памятка клавиш ТЗ §10), «Начать заново», «В главное меню».
 ## Пока меню открыто, симуляция стоит (SimDriver.paused) и ввод в мир выключен; закрытие возвращает как было.
-## «Начать заново» и «Выйти» — сигналы CityHud (restart_requested / quit_requested); если их никто не
+## «Начать заново» и «В главное меню» — сигналы CityHud (restart_requested / quit_requested); если их никто не
 ## слушает, сцена перезагружается / игра закрывается.
 
 signal closed
@@ -74,7 +74,7 @@ func setup(p_hud: CityHud) -> void:
 	box.size = Vector2(W - 160, H - 130)
 	box.add_theme_constant_override("separation", 12)
 	_sheet.add_child(box)
-	for it in [["Продолжить", close], ["Управление", show_help], ["Начать заново", _restart], ["Выйти", _quit]]:
+	for it in [["Продолжить", close], ["Управление", show_help], ["Начать заново", _restart], ["В главное меню", _quit]]:
 		var b := Button.new()
 		b.text = tr(it[0])
 		b.custom_minimum_size = Vector2(0, 56)
