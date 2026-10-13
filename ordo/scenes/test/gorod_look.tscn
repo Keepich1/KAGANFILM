@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/gorod/gorod.tscn" id="1"]
+
+[node name="GorodLook" instance=ExtResource("1")]
+shot_set = &"look"
+
+[node name="CamRTS" parent="Cameras" index="0"]
+focus = Vector3(35, 0, -70)
+distance = 150.0
+yaw_deg = -20.0

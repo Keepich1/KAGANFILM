@@ -3,8 +3,11 @@ extends RefCounted
 ## Серия кадров проверки вида «Города» (VIEW, ARCHITECTURE §19.5): стройки на разных стадиях, стена,
 ## призрак зелёный и красный, работники (рубят, копают, строят, несут), выделение, стада, лагерь.
 ##   tools/shot.sh res://scenes/gorod/gorod.tscn out.png -- --skip=6 --series=/abs/dir [--only=sites,ghost_bad]
+##   tools/shot.sh res://scenes/test/gorod_look.tscn out.png -- --series=/abs/dir   (ряды образцов, LOOK_SHOTS)
 ## Камера — RtsCamera.go_to(x, z, расстояние, азимут) или «на юнита за работой» (work = AnimSpec.WORK_*);
 ## с pitch (градусы) — своя камера CamShot с этим наклоном (крупные планы ниже, чем у стратегии).
+## Юнит за работой берётся у своей цели (рубит — у живого дерева, копает — у жилы, строит — у стройки,
+## несёт — на ходу) и не из нагрузки --stress; нет такого сейчас — город шагает дальше (до 40 с).
 
 ## [имя, {view: Vector4 | work: aux, near: Vector2, dist, yaw, ghost: ..., select: ...}]
 const SHOTS := [
@@ -29,6 +32,82 @@ const SHOTS := [
 	["overview_world", {"view": Vector4(170, 170, 260, -25), "hide_views": true}],
 ]
 
+## Ряды образцов (scenes/test/gorod_look.tscn): все постройки обеих сторон готовыми, стройки на трёх
+## стадиях и руины — на ровном месте к югу от долины; камера по рядам (row — номер ряда)
+const LOOK_SHOTS := [
+	["look_kokand", {"row": 0}],
+	["look_kokand2", {"row": 1}],
+	["look_kipchak", {"row": 2}],
+	["look_kipchak2", {"row": 3}],
+	["look_sites", {"row": 4}],
+	["look_sites2", {"row": 5}],
+	["look_ghost", {"view": Vector4(20, -6, 46, -30), "pitch": 34.0, "ghost": ["uy", Vector2(14, -8), 0],
+		"wall": ["devor", [Vector2(-6, -4), Vector2(40, -40)]]}],
+	["look_all", {"view": Vector4(35, -70, 150, -20), "pitch": 42.0}],
+]
+## Где ряды: x от LOOK_X0 до LOOK_X1, первый ряд — от z = LOOK_Z0 на юг (−z); фасады (+Z) — к камере
+const LOOK_X0 := -40.0
+const LOOK_X1 := 112.0
+const LOOK_Z0 := -24.0
+const LOOK_KOKAND := ["urda", "uy", "dala", "tegirmon", "ombor", "togon", "aryk", "xumdon", "bozor", "kazarma",
+	"otxona", "topxona", "temirchixona", "devor", "tosh", "darvoza", "burj"]
+const LOOK_KIPCHAK := ["ordo", "boz", "koroo", "ken", "jooker", "jylky", "kurultai", "kiyiz", "temirchi", "chep",
+	"darbaza", "munara"]
+## Стройки на трёх стадиях (‰) и руина — заместители и модели
+const LOOK_SITES := ["uy", "kazarma", "urda", "boz", "ordo"]
+const LOOK_STAGES := [250, 550, 850]
+
+## Прямоугольники рядов образцов (x, z) после place_lineup
+static var rows: Array[Rect2] = []
+
+
+## Набор кадров сцены: «look» — ряды образцов, иначе — город
+static func shots(set_name: StringName) -> Array:
+	return LOOK_SHOTS if set_name == &"look" else SHOTS
+
+
+## Поставить ряды образцов в поддельный город (сцена gorod_look; FakeCity — подделка, не правила игры)
+static func place_lineup(city: FakeCity) -> void:
+	rows.clear()
+	if city == null:
+		return
+	var d := city.defs()
+	var items: Array = []           # [ряд-группа, id, состояние, прогресс]
+	for id: String in LOOK_KOKAND:
+		items.append([0, id, BuildingTable.State.ACTIVE, 0])
+	for id: String in LOOK_KIPCHAK:
+		items.append([1, id, BuildingTable.State.ACTIVE, 0])
+	for id: String in LOOK_SITES:
+		for k: int in LOOK_STAGES:
+			items.append([2, id, BuildingTable.State.SITE, k])
+		items.append([2, id, BuildingTable.State.RUIN, 0])
+	var x := LOOK_X0
+	var z := LOOK_Z0
+	var depth := 0.0
+	var group := 0
+	var row := Rect2(LOOK_X0, LOOK_Z0, 0, 0)
+	for it: Array in items:
+		var ty := d.building(StringName(it[1]))
+		if ty < 0:
+			continue
+		var sz := d.b_size[ty]
+		if (int(it[0]) != group or x + sz.x > LOOK_X1) and x > LOOK_X0:
+			rows.append(Rect2(row.position.x, z - depth, x - row.position.x, depth))
+			z -= depth + 8.0
+			x = LOOK_X0
+			depth = 0.0
+			row = Rect2(LOOK_X0, z, 0, 0)
+		group = int(it[0])
+		var c := Vector2(x + sz.x * 0.5, z - sz.y * 0.5)
+		var owner := FakeCity.KOK if d.b_faction[ty] == "kokand" else FakeCity.KIP
+		var b: int = city.call("_add", owner, StringName(it[1]), c, 0, it[2])
+		if int(it[2]) == BuildingTable.State.SITE:
+			city.buildings().progress[b] = int(it[3])
+		x += sz.x + 5.0
+		depth = maxf(depth, sz.y)
+	if x > LOOK_X0:
+		rows.append(Rect2(row.position.x, z - depth, x - row.position.x, depth))
+
 
 static func setup(scene: GorodScene, s: Array) -> void:
 	var cfg: Dictionary = s[1]
@@ -40,17 +119,32 @@ static func setup(scene: GorodScene, s: Array) -> void:
 	(scene.get_node("HUD") as CanvasLayer).visible = not bool(cfg.get("hide_views", false))
 	scene.selection.set_selection(PackedInt32Array())
 	var view := Vector4.ZERO
+	var pitch := float(cfg.get("pitch", -1.0))
 	if cfg.has("view"):
 		view = cfg["view"]
+	elif cfg.has("row"):
+		# ряд образцов: середина ряда, расстояние по ширине
+		var r: Rect2 = rows[mini(int(cfg["row"]), rows.size() - 1)] if not rows.is_empty() else Rect2()
+		var c := r.get_center()
+		view = Vector4(c.x, c.y, r.size.x * 0.62 + 16.0, -14.0)
+		pitch = 30.0
 	elif cfg.has("work"):
-		var u := _worker(q, float(cfg["work"]), cfg.get("near", Vector2.ZERO))
+		var aux := float(cfg["work"])
+		var u := -1
+		# нужного работника сейчас нет у цели — город шагает дальше (до 40 с)
+		for i in 1200:
+			u = _worker(q, aux, cfg.get("near", Vector2.ZERO))
+			if u >= 0:
+				break
+			scene.driver.step()
 		var sim := q.battle()
 		var at: Vector2 = Vector2(sim.u_x[u], sim.u_z[u]) if u >= 0 else cfg.get("near", Vector2.ZERO)
+		print("[город] кадр %s: работник %d в (%.1f, %.1f)" % [s[0], u, at.x, at.y])
 		view = Vector4(at.x, at.y, float(cfg.get("dist", 18.0)), _clear_yaw(q, at, float(cfg.get("yaw", -60.0))))
-	if cfg.has("pitch"):
+	if pitch >= 0.0:
 		var shot := scene.get_node("Cameras/CamShot") as Camera3D
 		var f := Vector3(view.x, Terrain.height_at(view.x, view.y), view.y)
-		var p := deg_to_rad(float(cfg["pitch"]))
+		var p := deg_to_rad(pitch)
 		var y := deg_to_rad(view.w)
 		var pos := f + Vector3(sin(y) * cos(p), sin(p), cos(y) * cos(p)) * view.z
 		pos.y = maxf(pos.y, Terrain.height_at(pos.x, pos.z) + 2.0)
@@ -72,12 +166,11 @@ static func setup(scene: GorodScene, s: Array) -> void:
 		var wt := defs.building(StringName(w[0]))
 		var pts := PackedVector2Array(w[1])
 		var plan := q.plan_wall(0, wt, pts)
-		# звенья на чужих постройках — красные (заглушка навигации проверяет только край карты)
+		# звенья на постройках — красные (заглушка навигации проверяет только край карты)
 		var why: PackedByteArray = plan["why"]
 		var centers: PackedVector2Array = plan["centers"]
 		for i in centers.size():
-			var h := q.pick(0, centers[i], 0.1)
-			if Ids.kind(h) == Ids.Kind.BUILDING:
+			if _on_building(q, centers[i], 1.0):
 				why[i] = NavApi.Why.OVERLAP
 		plan["why"] = why
 		# призрак постройки и цепочка стены в одном кадре (для проверки обоих видов сразу)
@@ -123,18 +216,67 @@ static func _clear_yaw(q: GameQuery, at: Vector2, want: float) -> float:
 	return yaw + angle_difference(deg_to_rad(yaw), deg_to_rad(want)) * 0.35 * 180.0 / PI
 
 
-## Юнит за работой aux, ближайший к near (−1 — нет)
+## Точка p на следе постройки (кроме стен и звеньев) с запасом pad, м
+static func _on_building(q: GameQuery, p: Vector2, pad: float) -> bool:
+	var bt := q.buildings()
+	var defs := q.defs()
+	for b in bt.hw:
+		if bt.state[b] == BuildingTable.State.FREE or bt.btype[b] < 0:
+			continue
+		var k := defs.b_kind[bt.btype[b]]
+		if k == Defs.BKind.WALL or k == Defs.BKind.LINK:
+			continue
+		var l := (p - Vector2(bt.x[b], bt.z[b])).rotated(bt.rot[b])
+		var e := defs.b_size[bt.btype[b]] * 0.5 + Vector2(pad, pad)
+		if absf(l.x) <= e.x and absf(l.y) <= e.y:
+			return true
+	return false
+
+
+## Юнит за работой aux у своей цели, ближайший к near (−1 — нет). Юнитов нагрузки (--stress) не берём.
 static func _worker(q: GameQuery, aux: float, near: Vector2) -> int:
 	var sim := q.battle()
+	var last := sim.n if GorodStress.first_unit < 0 else mini(sim.n, GorodStress.first_unit)
 	var best := -1
 	var bd := INF
-	for u in sim.n:
+	for u in last:
 		if sim.u_life[u] != BattleSim.Life.ALIVE or sim.u_act[u] != BattleSim.Act.WORK:
 			continue
 		if absf(sim.u_work[u] - aux) > 0.01:
 			continue
-		var d := Vector2(sim.u_x[u], sim.u_z[u]).distance_squared_to(near)
-		if d < bd:
-			bd = d
-			best = u
+		var p := Vector2(sim.u_x[u], sim.u_z[u])
+		var d := p.distance_squared_to(near)
+		if d >= bd or not _at_work(q, aux, p, Vector2(sim.u_vx[u], sim.u_vz[u]).length()):
+			continue
+		bd = d
+		best = u
 	return best
+
+
+## Работник в p со скоростью spd — у своей цели: рубит — у живого дерева, копает — у жилы (не поле),
+## строит — у стройки; несёт — идёт
+static func _at_work(q: GameQuery, aux: float, p: Vector2, spd: float) -> bool:
+	if aux >= AnimSpec.WORK_CARRY - 0.01:
+		return spd > 0.3
+	if spd > 0.1:
+		return false
+	if aux >= AnimSpec.WORK_BUILD - 0.01:
+		var bt := q.buildings()
+		var defs := q.defs()
+		for b in bt.hw:
+			if bt.state[b] == BuildingTable.State.SITE and bt.btype[b] >= 0:
+				var r := defs.b_size[bt.btype[b]].length() * 0.5 + 3.0
+				if p.distance_squared_to(Vector2(bt.x[b], bt.z[b])) < r * r:
+					return true
+		return false
+	var nt := q.nodes()
+	var tree := aux < AnimSpec.WORK_DIG - 0.01
+	for n in nt.hw:
+		if nt.ntype[n] < 0 or nt.amount_milli[n] == 0:
+			continue
+		if (nt.scatter_ref[n] >= 0) != tree:
+			continue
+		var r := 3.0 if tree else 9.0
+		if p.distance_squared_to(Vector2(nt.x[n], nt.z[n])) < r * r:
+			return true
+	return false

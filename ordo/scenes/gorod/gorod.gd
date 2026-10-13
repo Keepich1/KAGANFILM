@@ -19,6 +19,10 @@ extends Node3D
 
 signal series_done
 
+## Набор кадров серии и сцены: &"city" — город (gorod.tscn), &"look" — ряды образцов построек
+## (scenes/test/gorod_look.tscn: та же сцена, на ровном месте к югу — все постройки, стройки, руины)
+@export var shot_set := &"city"
+
 @onready var world: World = $World
 @onready var driver: SimDriver = $Driver
 @onready var units: UnitView = $Views/Units
@@ -56,6 +60,8 @@ func _ready() -> void:
 		var v := String(_ordo.arg("view")).split_floats(",")
 		if v.size() == 4:
 			camera.go_to(Vector4(v[0], v[1], v[2], v[3]), true)
+	if shot_set == &"look":
+		GorodShots.place_lineup(CityView.query_of(driver) as FakeCity)
 	if _ordo and _ordo.has_arg("stress"):
 		GorodStress.populate(CityView.query_of(driver) as FakeCity, int(_ordo.arg("stress")), 200)
 	if _ordo:
@@ -69,7 +75,7 @@ func _ready() -> void:
 		_series_dir = String(_ordo.arg("series"))
 		DirAccess.make_dir_recursive_absolute(_series_dir)
 		var only := String(_ordo.arg("only", "")).split(",", false)
-		for s: Array in GorodShots.SHOTS:
+		for s: Array in GorodShots.shots(shot_set):
 			if only.is_empty() or only.has(s[0]):
 				_series.append(s)
 		camera.interactive = false

@@ -7,11 +7,15 @@ extends RefCounted
 
 const AREA := Rect2(20, 190, 300, 150)
 
+## Первый юнит нагрузки (−1 — нагрузки нет): серия кадров не берёт их в крупные планы работы
+static var first_unit := -1
+
 
 static func populate(city: FakeCity, units: int, buildings: int) -> void:
 	if city == null:
 		return
 	var sim := city.sim
+	first_unit = sim.n
 	var rng := BattleRng.new(4242)
 	var defs := city.defs()
 	# постройки: дома (MultiMesh), юрты, склады, мастерские, звенья стены — сеткой по лугу
