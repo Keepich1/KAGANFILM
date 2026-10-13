@@ -26,7 +26,11 @@ extends RefCounted
 ##   • пути (set_path, await_path, sq_path/sq_wp), структуры (structure_set/clear, OBB-столкновения, цели
 ##     order_attack_structure, попадания в ev_st_*), сетки NAV (set_grids: _blk_static, _spd), стойки (sq_stance),
 ##     множители игроков (set_owner_mods), сон (sleep_enabled), работа (set_work), буферы ev_* (collect_events);
-##   • пролом: путь с breach_st/breach_wp — у точки перед постройкой отряд ломает её, потом прежний приказ.
+##   • пролом: путь с breach_st/breach_wp — у точки перед постройкой отряд ломает её, потом прежний приказ;
+##   • конец боя (collect_events): цель пала / постройка снесена — HOLD и end_melee (строй, «без дела», сон);
+##     в свалке никто не дерётся — строй снова идёт к цели; порт: hold/stop — end_melee, огонь снимает cease_fire;
+##   • постройку поставили на спящих (§10) — будятся и выталкиваются; место в строю внутри постройки —
+##     его отражение за ближнюю стену (_st_slot_out), у него стоят и спят, не толкаясь.
 ## Шаг города (sleep_enabled, ставить до юнитов): обходит только бодрых и падающих (_aw); спящие лежат в хэше
 ## и будятся врагом в 16 м (блоки _mixed), толчком (2 раза в с), приказом, уроном, сменой мест в отряде.
 ## Хэш города правится на месте (двусвязные списки клеток, маски); срез и город без сна собирают его целиком.
@@ -107,6 +111,7 @@ const WAKE_CHECK_STEPS := 15         # спящие проверяют сдви�
 const SINGLE_TURN := 8.0             # рад/с: разворот якоря одиночки (R2)
 const SINGLE_LEASH := 3.0            # м: якорь одиночки не уходит дальше от него (упёрся — ждёт)
 const STUCK_STEPS := 60              # 2 с без хода у якоря-одиночки → ev_repath
+const BLOCKED_STAND := 1.0           # м: место внутри постройки — у точки снаружи ближе этого стоит (не толкается)
 const WP_REACH := 2.0                # м: точка пути пройдена (у одиночек — 1 м)
 const ST_MELEE_COOL := 1.4           # с: удар по постройке (ECONOMY §1.6: «удар раз в 1,4 с»)
 const ST_BUCKET := 32.0              # м: корзины структур для столкновений
@@ -323,6 +328,7 @@ var _sb_n := 0
 var _sb_origin := Vector2.ZERO
 var _sb: Array[PackedInt32Array] = []
 var _st_live := 0
+var _st_cnt := PackedInt32Array()       # клетки хэша (4 м): сколько построек задевают клетку (+2 м) — фильтр мест
 
 var _head := PackedInt32Array()
 var _next := PackedInt32Array()
@@ -404,6 +410,8 @@ func _make_buckets() -> void:
 	_sb.resize(_sb_n * _sb_n)
 	for i in _sb.size():
 		_sb[i] = PackedInt32Array()
+	_st_cnt.resize(_g_n * _g_n)
+	_st_cnt.fill(0)
 	for st in st_hw:
 		if st_alive[st] == 1:
 			_bucket_add(st)
@@ -1012,6 +1020,7 @@ func order_attack_structure(s: int, st: int, gait := Gait.RUN) -> void:
 	sq_order[s] = Order.ATTACK
 	sq_target[s] = -1
 	sq_st_target[s] = st
+	sq_fire_target[s] = -1  # залпы по прежнему отряду — нет (стрелки бьют постройку сами)
 	sq_gait[s] = gait
 	sq_melee[s] = 0
 	for u in sq_members[s]:
@@ -1044,6 +1053,29 @@ func set_stance(s: int, stance: int) -> void:
 ## Строй снова держит места (сценарий среза после погони; R13 — вместо записи sq_melee снаружи)
 func clear_melee(s: int) -> void:
 	sq_melee[s] = 0
+
+
+## Город: бой отряда окончен (цель пала, постройка снесена, приказ «стоять»): строй снова держит места,
+## натиска нет, цели бойцов сняты — отряд «без дела» (squad_idle) и может уснуть. Срез зовёт clear_melee.
+func end_melee(s: int) -> void:
+	sq_melee[s] = 0
+	sq_couched[s] = 0
+	sq_target[s] = -1
+	for u in sq_members[s]:
+		u_target[u] = -1
+		u_couched[u] = 0
+	_wake_squad(s)
+
+
+## Город: огонь прекращён (стоп, ход, рукопашная, постройка): залпов по отряду нет; вскинувшие,
+## но не выстрелившие опускают ружья (выстрел не уходит)
+func cease_fire(s: int) -> void:
+	sq_fire_target[s] = -1
+	for u in sq_members[s]:
+		if u_fire_t[u] >= 0.0:
+			u_fire_t[u] = -1.0
+			if u_act[u] == Act.AIM:
+				u_act[u] = Act.NONE
 
 
 ## Путь для отряда (R7, от NAV): якорь идёт по точкам; последняя — цель приказа (sq_tx, sq_tz).
@@ -1539,6 +1571,9 @@ func structure_set(st: int, ref: int, team: int, center: Vector2, half: Vector2,
 	if _sb_n == 0:
 		_make_buckets()
 	_bucket_add(st)
+	# спящие под новой постройкой (§10: свои выталкиваются при постановке) — будить: вытолкнет _collide
+	if sleep_enabled and flags & ST_FIELD == 0:
+		_wake_under(st)
 	# пути, которые теперь идут сквозь постройку, — заново (R7)
 	if collect_events and flags & ST_FIELD == 0:
 		for s in squads:
@@ -1576,6 +1611,120 @@ func structure_clear(st: int) -> void:
 				sq_st_target[s] = -1
 				if sq_order[s] == Order.ATTACK and sq_target[s] < 0:
 					order_hold(s)
+					end_melee(s)  # свалка у стены кончилась: строй, сон
+
+
+## Разбудить спящих, чьё тело задевает прямоугольник структуры st (кроме своих ворот), и сразу вытолкнуть
+## к ближней стене (как _collide; иначе стоящий на месте уснул бы снова до _collide). Клетки хэша над
+## прямоугольником (+ наибольший радиус); хэш переложит их при ближайшей сборке (_hq).
+func _wake_under(st: int) -> void:
+	if _hash_dirty:
+		_rebuild_hash()
+	var rmax := 0.0
+	for r in t_radius:
+		rmax = maxf(rmax, r)
+	var c := absf(cos(st_rot[st]))
+	var sn := absf(sin(st_rot[st]))
+	var ex := st_hx[st] * c + st_hz[st] * sn + rmax
+	var ez := st_hx[st] * sn + st_hz[st] * c + rmax
+	var gn := _g_n
+	var go := _g_origin
+	var cx0 := clampi(int((st_cx[st] - ex - go) / _CELL), 0, gn - 1)
+	var cx1 := clampi(int((st_cx[st] + ex - go) / _CELL), 0, gn - 1)
+	var cz0 := clampi(int((st_cz[st] - ez - go) / _CELL), 0, gn - 1)
+	var cz1 := clampi(int((st_cz[st] + ez - go) / _CELL), 0, gn - 1)
+	var own_gate := st_flags[st] & ST_GATE != 0
+	var team := st_team[st]
+	for gz in range(cz0, cz1 + 1):
+		for gx in range(cx0, cx1 + 1):
+			var v := _head[gz * gn + gx]
+			while v >= 0:
+				if u_sleep[v] == 1 and not (own_gate and u_side[v] == team) \
+						and _st_contains(st, u_x[v], u_z[v], t_radius[u_type[v]]):
+					_wake(v)
+					var q := _st_push(st, u_x[v], u_z[v], t_radius[u_type[v]])
+					u_x[v] = q.x
+					u_z[v] = q.y
+					_hq.append(v)
+					_hash_dirty = true
+				v = _next[v]
+
+
+## Точка (x, z) тела радиуса r, вытолкнутая из прямоугольника структуры st к ближней стене (как в _collide)
+func _st_push(st: int, x: float, z: float, r: float) -> Vector2:
+	var c := cos(st_rot[st])
+	var sn := sin(st_rot[st])
+	var dx := x - st_cx[st]
+	var dz := z - st_cz[st]
+	var lx := dx * c - dz * sn
+	var lz := dx * sn + dz * c
+	var ex := st_hx[st] + r
+	var ez := st_hz[st] + r
+	if absf(lx) >= ex or absf(lz) >= ez:
+		return Vector2(x, z)
+	if ex - absf(lx) < ez - absf(lz):
+		lx = ex if lx >= 0.0 else -ex
+	else:
+		lz = ez if lz >= 0.0 else -ez
+	return Vector2(st_cx[st] + lx * c + lz * sn, st_cz[st] - lx * sn + lz * c)
+
+
+## Город: место (x, z) бойца радиуса r команды team внутри постройки (кроме полей и своих ворот) — его
+## отражение за ближнюю стену (с запасом r): разные места остаются разными (строй обтекает постройку);
+## снаружи — само место
+func _st_slot_out(x: float, z: float, team: int, r: float) -> Vector2:
+	var b := _bucket_of(x, z)
+	if b < 0:
+		return Vector2(x, z)
+	for st in _sb[b]:
+		var f := st_flags[st]
+		if f & ST_FIELD != 0 or (f & ST_GATE != 0 and st_team[st] == team):
+			continue
+		var c := cos(st_rot[st])
+		var sn := sin(st_rot[st])
+		var dx := x - st_cx[st]
+		var dz := z - st_cz[st]
+		var lx := dx * c - dz * sn
+		var lz := dx * sn + dz * c
+		var ex := st_hx[st] + r
+		var ez := st_hz[st] + r
+		if absf(lx) >= ex or absf(lz) >= ez:
+			continue
+		if ex - absf(lx) < ez - absf(lz):
+			lx = (2.0 * ex - absf(lx)) * (1.0 if lx >= 0.0 else -1.0)
+		else:
+			lz = (2.0 * ez - absf(lz)) * (1.0 if lz >= 0.0 else -1.0)
+		x = st_cx[st] + lx * c + lz * sn
+		z = st_cz[st] - lx * sn + lz * c
+	return Vector2(x, z)
+
+
+## Город: боец u, чьё место внутри постройки, у точки q снаружи: ближе BLOCKED_STAND, сам не в постройке
+## и ни с кем не толкается — стоит (точки разных мест могут совпасть с чужими местами: иначе толкались бы вечно)
+func _blocked_stand(u: int, q: Vector2) -> bool:
+	var x := u_x[u]
+	var z := u_z[u]
+	if (q.x - x) * (q.x - x) + (q.y - z) * (q.y - z) >= BLOCKED_STAND * BLOCKED_STAND:
+		return false
+	var r := t_radius[u_type[u]]
+	if _st_slot_out(x, z, u_side[u], r) != Vector2(x, z):
+		return false
+	var gn := _g_n
+	var go := _g_origin
+	var cx := clampi(int((x - go) / _CELL), 0, gn - 1)
+	var cz := clampi(int((z - go) / _CELL), 0, gn - 1)
+	for gz in range(maxi(cz - 1, 0), mini(cz + 1, gn - 1) + 1):
+		for gx in range(maxi(cx - 1, 0), mini(cx + 1, gn - 1) + 1):
+			var v := _head[gz * gn + gx]
+			while v >= 0:
+				if v != u and u_life[v] == Life.ALIVE:
+					var rr := r + t_radius[u_type[v]]
+					var dx := u_x[v] - x
+					var dz := u_z[v] - z
+					if dx * dx + dz * dz < rr * rr:
+						return false
+				v = _next[v]
+	return true
 
 
 ## Ближайшая к (x, z) точка прямоугольника структуры (на границе или внутри)
@@ -1643,6 +1792,7 @@ func _bucket_add(st: int) -> void:
 	for bz in range(r.position.y, r.end.y):
 		for bx in range(r.position.x, r.end.x):
 			_sb[bz * _sb_n + bx].append(st)
+	_st_cells(st, 1)
 
 
 func _bucket_remove(st: int) -> void:
@@ -1653,6 +1803,24 @@ func _bucket_remove(st: int) -> void:
 			var k := list.find(st)
 			if k >= 0:
 				list.remove_at(k)
+	_st_cells(st, -1)
+
+
+## Счётчики клеток хэша под прямоугольником структуры (+2 м, как корзины): d = +1 / −1
+func _st_cells(st: int, d: int) -> void:
+	var c := absf(cos(st_rot[st]))
+	var sn := absf(sin(st_rot[st]))
+	var ex := st_hx[st] * c + st_hz[st] * sn + 2.0
+	var ez := st_hx[st] * sn + st_hz[st] * c + 2.0
+	var gn := _g_n
+	var go := _g_origin
+	var x0 := clampi(int((st_cx[st] - ex - go) / _CELL), 0, gn - 1)
+	var x1 := clampi(int((st_cx[st] + ex - go) / _CELL), 0, gn - 1)
+	var z0 := clampi(int((st_cz[st] - ez - go) / _CELL), 0, gn - 1)
+	var z1 := clampi(int((st_cz[st] + ez - go) / _CELL), 0, gn - 1)
+	for gz in range(z0, z1 + 1):
+		for gx in range(x0, x1 + 1):
+			_st_cnt[gz * gn + gx] += d
 
 
 # ================================================================= шаг
@@ -2378,6 +2546,8 @@ func _squad_step(s: int) -> void:
 			# цель — постройка (R8): ближний бой — к ближней точке и в свалку, стрелки — на дистанцию
 			if st_alive[st] == 0:
 				order_hold(s)
+				if collect_events:
+					end_melee(s)  # город: бой окончен — строй, «без дела», сон
 			else:
 				var p := st_nearest(st, sq_cx[s], sq_cz[s])
 				var dpx := p.x - sq_cx[s]
@@ -2400,6 +2570,8 @@ func _squad_step(s: int) -> void:
 						sq_melee[s] = 1
 		elif tgt < 0 or sq_alive[tgt] == 0:
 			order_hold(s)
+			if collect_events:
+				end_melee(s)  # город: цель пала — строй, «без дела», сон (срез: свалку снимает сценарий)
 		else:
 			tx = sq_cx[tgt]
 			tz = sq_cz[tgt]
@@ -2416,11 +2588,20 @@ func _squad_step(s: int) -> void:
 				charge_ordered.emit(s)
 			# строй распадается в свалку, когда враг рядом
 			var engaged := 0
+			var fighting := 0
 			for u in sq_members[s]:
-				if u_life[u] == Life.ALIVE and (u_target[u] >= 0 or u_charged[u] == 1):
-					engaged += 1
-			if engaged * 3 > sq_alive[s] or sq_status[tgt] == Status.FLEE and enemy_d < 30.0:
+				if u_life[u] == Life.ALIVE:
+					if u_target[u] >= 0:
+						fighting += 1
+						engaged += 1
+					elif u_charged[u] == 1:
+						engaged += 1
+			var chase := sq_status[tgt] == Status.FLEE and enemy_d < 30.0
+			if engaged * 3 > sq_alive[s] or chase:
 				sq_melee[s] = 1
+			# город: в свалке никто не дерётся (цель отошла дальше поиска) — строй снова идёт к цели
+			if collect_events and fighting == 0 and not chase and sq_melee[s] == 1:
+				sq_melee[s] = 0
 	# --- путь (R7): промежуточные точки; последняя — цель приказа. wp < 0 — путь ещё не пришёл
 	var path_wait := false
 	if sq_order[s] != Order.HOLD and sq_melee[s] == 0:
@@ -2652,6 +2833,7 @@ func _units_think() -> void:
 	var has_mods := own_mods.size() > 0
 	var has_spd := _spd.size() > 0
 	var obstacles := _st_live > 0 or _blk_static.size() > 0
+	var has_st := _st_live > 0
 	var go := _g_origin
 	var gmax := _g_n - 1
 	var gn := _g_n
@@ -2791,6 +2973,16 @@ func _units_think() -> void:
 			if obstacles and sq_single[s] == 0 and (sq_vx[s] != 0.0 or sq_vz[s] != 0.0) \
 					and point_blocked(p2.x, p2.y, u_side[u]):
 				p2 = _trail_target(s, x, z)
+			elif has_st and sq_vx[s] == 0.0 and sq_vz[s] == 0.0 and (p2.x - x) * (p2.x - x) + (p2.y - z) * (p2.y - z) >= 0.04 \
+					and _st_cnt[clampi(int((p2.y - go) / _CELL), 0, gmax) * gn + clampi(int((p2.x - go) / _CELL), 0, gmax)] != 0:
+				# город: не на месте, а место внутри постройки (поставили на строй) — его отражение за ближнюю стену
+				var q := _st_slot_out(p2.x, p2.y, u_side[u], t_radius[ti])
+				if q != p2:
+					if _blocked_stand(u, q):
+						u_dvx[u] = 0.0
+						u_dvz[u] = 0.0
+						continue
+					p2 = q
 			var ex := p2.x - x
 			var ez := p2.y - z
 			var vx := sq_vx[s] + ex * 1.4
@@ -2851,6 +3043,16 @@ func _think_guard(u: int, s: int, ti: int, vmax: float, stance: int, obstacles: 
 	# место (у одиночки — якорь): скорость якоря + поправка к месту
 	if obstacles and sq_single[s] == 0 and (sq_vx[s] != 0.0 or sq_vz[s] != 0.0) and point_blocked(p.x, p.y, u_side[u]):
 		p = _trail_target(s, x, z)
+	elif _st_live > 0 and sq_vx[s] == 0.0 and sq_vz[s] == 0.0 and (p.x - x) * (p.x - x) + (p.y - z) * (p.y - z) >= 0.04 \
+			and _st_cnt[_cell(p.x, p.y)] != 0:
+		# город: не на месте, а место внутри постройки — его отражение за ближнюю стену
+		var q := _st_slot_out(p.x, p.y, u_side[u], t_radius[ti])
+		if q != p:
+			if _blocked_stand(u, q):
+				u_dvx[u] = 0.0
+				u_dvz[u] = 0.0
+				return
+			p = q
 	var ex := p.x - x
 	var ez := p.y - z
 	var vx := sq_vx[s] + ex * 1.4
@@ -2911,16 +3113,19 @@ func _spd_at(x: float, z: float) -> float:
 ## Спящего сдвинули с места больше чем на 0,5 м (место одиночки — якорь)
 func _pushed_off(u: int) -> bool:
 	var s := u_squad[u]
-	var dx := 0.0
-	var dz := 0.0
-	if sq_single[s] == 1:
-		dx = sq_x[s] - u_x[u]
-		dz = sq_z[s] - u_z[u]
-	else:
-		var p := slot_point(s, u)
-		dx = p.x - u_x[u]
-		dz = p.y - u_z[u]
-	return dx * dx + dz * dz > 0.25
+	var p := Vector2(sq_x[s], sq_z[s]) if sq_single[s] == 1 else slot_point(s, u)
+	var dx := p.x - u_x[u]
+	var dz := p.y - u_z[u]
+	if dx * dx + dz * dz <= 0.25:
+		return false
+	if _st_live > 0 and _st_cnt[_cell(p.x, p.y)] != 0:
+		# место внутри постройки: его место — отражение за стену (как в _units_think)
+		var q := _st_slot_out(p.x, p.y, u_side[u], t_radius[u_type[u]])
+		if q != p:
+			dx = q.x - u_x[u]
+			dz = q.y - u_z[u]
+			return dx * dx + dz * dz > (BLOCKED_STAND + 0.5) * (BLOCKED_STAND + 0.5)
+	return true
 
 
 func _set_desire(u: int, gx: float, gz: float, spd: float, stop: float) -> void:

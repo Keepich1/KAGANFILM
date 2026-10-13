@@ -261,6 +261,7 @@ func attack(hs: PackedInt32Array, target_h: int, run := true) -> void:
 			if sim.st_team[st] == sim.sq_side[s]:
 				continue
 			_clear_work(s)
+			_cancel_fire(s)
 			sim.order_attack_structure(s, st, gait)
 			_set_order(s, K.ATTACK_ST, c, gait, NAN, target_h)
 			_request(PackedInt32Array([s]), PackedVector2Array([c]), c)
@@ -278,6 +279,7 @@ func attack(hs: PackedInt32Array, target_h: int, run := true) -> void:
 			# стрелки: встают на 0,75 дальности и бьют залпами (как сарбозы среза)
 			_fire_at(s, ts, target_h, gait)
 			continue
+		_cancel_fire(s)
 		sim.order_attack(s, ts, gait)
 		if sim.t_charge[ti] > 1.0 and sim.t_flags[ti] & UnitStats.MOUNTED != 0:
 			sim.allow_charge(s, true)
@@ -297,10 +299,13 @@ func stop(hs: PackedInt32Array) -> void:
 	hold(hs)
 
 
+## Стоять (и stop): огонь прекращён, свалка окончена — строй на месте, «без дела», потом сон
 func hold(hs: PackedInt32Array, facing := NAN) -> void:
 	for s in _squads_of(hs):
 		_clear_work(s)
+		_cancel_fire(s)
 		sim.order_hold(s, facing)
+		sim.end_melee(s)
 		_reset_order(s)
 
 
@@ -347,6 +352,7 @@ func form_squad(officer_h: int, candidates: PackedInt32Array, formation := 0) ->
 	_ensure()
 	for u in sim.sq_members[s]:
 		sim.set_work(u, -1.0)
+	_cancel_fire(s)  # вскинутые ружья одиночек — опустить
 	_reset_order(s)
 	return _sh(s)
 
@@ -358,6 +364,7 @@ func disband(s_h: int) -> PackedInt32Array:
 	var s := Ids.slot(s_h)
 	if sim.sq_single[s] == 1:
 		return out
+	_cancel_fire(s)
 	_reset_order(s)
 	for u in sim.disband_squad(s):
 		out.append(_uh(u))
@@ -628,6 +635,11 @@ func _set_order(s: int, kind: int, goal: Vector2, gait: int, facing: float, targ
 	_o_res[s] = null
 
 
+## Огонь стрелков снят (стоп, ход, рукопашная, постройка, сбор и роспуск); цель залпов ставит только _fire_at
+func _cancel_fire(s: int) -> void:
+	sim.cease_fire(s)
+
+
 func _clear_work(s: int) -> void:
 	for u in sim.sq_members[s]:
 		if sim.u_act[u] == BattleSim.Act.WORK or sim.u_work[u] >= 0.0:
@@ -702,6 +714,8 @@ func _fire_at(s: int, ts: int, target_h: int, gait: int) -> void:
 		_request(PackedInt32Array([s]), PackedVector2Array([goal]), goal)
 	else:
 		sim.order_hold(s, facing)
+		if sim.sq_melee[s] == 1:
+			sim.end_melee(s)  # из свалки — к залпам (иначе стоят в свалке и не стреляют)
 		_set_order(s, K.FIRE, me, gait, facing)
 	_o_target[s] = target_h
 	_o_tpos[s] = tp
@@ -713,6 +727,8 @@ func _amove_gait(s: int) -> int:
 
 func _order_move(s: int, goal: Vector2, gait: int, facing: float, kind: int) -> void:
 	_clear_work(s)
+	if kind != K.FIRE:
+		_cancel_fire(s)  # ход — не огонь (FIRE: стрелки идут на дистанцию, цель залпов уже поставлена)
 	sim.order_move(s, goal, gait, facing)
 	sim.await_path(s)
 	_set_order(s, kind, goal, gait, facing)

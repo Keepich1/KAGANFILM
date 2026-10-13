@@ -7,6 +7,9 @@ extends SceneTree
 ## • за 60 с ходьбы через постройки и закрытые клетки никто не стоит внутри; пролом сквозь постройку;
 ## • урон по постройке ±10% от формулы (рукопашная и мушкеты);
 ## • работники (DEFENSIVE) не гонятся дальше 6 м; спящие просыпаются от врага;
+## • атака кончилась (цель пала, постройка снесена, стоп) — отряд «без дела» за 1 с и спит за 5 с;
+##   в свалке никто не дерётся — снова идёт к цели; стоп и ход снимают огонь стрелков;
+## • постройку поставили на спящих — за 0,5 с все снаружи, потом спят, не толкаясь; снесли — на местах;
 ## • прибытие — одна запись на приказ; два прогона — одна сумма; сохранение и загрузка — та же сумма.
 ## Числа замеров печатаются (процессорное время потока).
 
@@ -22,8 +25,11 @@ func _init() -> void:
 	_test_breach()
 	_test_structure_dps()
 	_test_defensive_and_sleep()
+	_test_site_on_sleepers()
 	_test_events()
 	_test_ranged()
+	_test_attack_end()
+	_test_fire_stop()
 	_test_determinism_and_save()
 	_test_perf()
 	SimHarness.finish(self)
@@ -467,6 +473,72 @@ func _test_defensive_and_sleep() -> void:
 	SimHarness.check(back == alive, "вернулись на места (%d из %d)" % [back, alive])
 
 
+# ================================================================= постройка на спящих
+
+func _test_site_on_sleepers() -> void:
+	print("[постройка на спящих: свои выталкиваются (§10)]")
+	for team in [0, 1]:
+		var port := _make_port()
+		var sim := port.sim
+		var base := SimHarness.flat_spot() + Vector2(0, 80)
+		var us := PackedInt32Array()   # номера юнитов: 6 работников и строй из 20
+		for k in 6:
+			us.append(Ids.slot(port.spawn(0, 0, &"dehqon", base + Vector2((k % 3) * 2.0 - 2.0, (k / 3) * 2.0 - 1.0), 0.0)))
+		var sq := Ids.slot(port.spawn_squad(0, 0, &"sarboz", 20, base + Vector2(12, 0), 0.0, &"", 0, 10))
+		us.append_array(sim.sq_members[sq])
+		_tick(port, 200)
+		var asleep := 0
+		for u in us:
+			asleep += sim.u_sleep[u]
+		var before := PackedVector2Array()
+		for u in us:
+			before.append(Vector2(sim.u_x[u], sim.u_z[u]))
+		# площадка дома на работниках и амбар под углом поперёк строя
+		port.structure_set(_bh(2), team, base, Vector2(3, 3), 0.0, BattleSim.ST_BLOCK | BattleSim.ST_SITE)
+		port.structure_set(_bh(4), team, base + Vector2(12, 0), Vector2(3, 2), 0.3, BattleSim.ST_BLOCK)
+		var under := 0   # стояли под постройками (по местам до постановки: structure_set уже вытолкнул)
+		for p: Vector2 in before:
+			if _inside(sim, 2, p.x, p.y) or _inside(sim, 4, p.x, p.y):
+				under += 1
+		_tick(port, 15)
+		var inside := 0
+		for u in us:
+			if _inside(sim, 2, sim.u_x[u], sim.u_z[u]) or _inside(sim, 4, sim.u_x[u], sim.u_z[u]):
+				inside += 1
+		var sleep_t := -1
+		for t in 150:
+			_tick(port)
+			var awake := 0
+			for u in us:
+				awake += 1 - sim.u_sleep[u]
+			if awake == 0:
+				sleep_t = t + 1
+				break
+		var mind := INF
+		for i in us.size():
+			for j in range(i + 1, us.size()):
+				var a := us[i]
+				var b := us[j]
+				mind = minf(mind, Vector2(sim.u_x[a] - sim.u_x[b], sim.u_z[a] - sim.u_z[b]).length())
+		var who := "своей" if team == 0 else "чужой"
+		SimHarness.check(asleep == us.size() and under >= 10, "%s: спали все (%d), под постройками %d" % [who, asleep, under])
+		SimHarness.check(inside == 0, "%s: через 0,5 с внутри никого (%d)" % [who, inside])
+		SimHarness.check(sleep_t > 0, "%s: снаружи снова спят (за %.1f с)" % [who, sleep_t / 30.0])
+		SimHarness.check(mind >= 0.75, "%s: спят, не налезая друг на друга (ближе всех %.2f м)" % [who, mind])
+		# снесли — все на прежних местах и спят
+		port.structure_clear(_bh(2))
+		port.structure_clear(_bh(4))
+		_tick(port, 240)
+		var off := 0
+		var awake2 := 0
+		for i in us.size():
+			var u := us[i]
+			if Vector2(sim.u_x[u], sim.u_z[u]).distance_to(before[i]) > 0.5:
+				off += 1
+			awake2 += 1 - sim.u_sleep[u]
+		SimHarness.check(off == 0 and awake2 == 0, "%s: снесли — на прежних местах (не там %d) и спят (бодрых %d)" % [who, off, awake2])
+
+
 # ================================================================= буферы
 
 func _test_events() -> void:
@@ -553,6 +625,142 @@ func _test_ranged() -> void:
 	print("  выстрелов %d, у врага пало %d, ближе всего %.1f м" % [shots["n"], lost, min_d])
 	SimHarness.check(shots["n"] >= 40 and lost > 0, "стреляют залпами и попадают")
 	SimHarness.check(min_d > 45.0, "в рукопашную не лезут (держат дистанцию)")
+
+
+# ================================================================= конец атаки
+
+## Сколько живых членов отряда s спит
+func _asleep_in(sim: BattleSim, s: int) -> int:
+	var a := 0
+	for u in sim.sq_members[s]:
+		if sim.u_life[u] == BattleSim.Life.ALIVE:
+			a += sim.u_sleep[u]
+	return a
+
+
+## Атака окончена: is_idle за 1 с, сон за 5 с (отряд против отряда, одиночка против работника, постройка);
+## свалка без драки снова идёт к цели
+func _test_attack_end() -> void:
+	print("[конец атаки: без дела и сон]")
+	for case in ["squad", "single", "building"]:
+		var port := _make_port()
+		var sim := port.sim
+		var base := SimHarness.flat_spot()
+		var me := 0
+		var foe := 0
+		if case == "squad":
+			me = port.spawn_squad(0, 0, &"kilichboz", 30, base + Vector2(10, 0), -PI / 2, &"", 0, 15)
+			foe = port.spawn_squad(1, 1, &"dehqon", 5, base + Vector2(-10, 0), PI / 2, &"", 0, 5)
+		elif case == "single":
+			me = port.spawn(1, 1, &"chabuulchu", base + Vector2(-30, 0), PI / 2)
+			foe = port.spawn(0, 0, &"dehqon", base, 0.0)
+		else:
+			foe = _bh(3)
+			port.structure_set(foe, 0, base, Vector2(4, 4), 0.0, BattleSim.ST_BLOCK)
+			me = port.spawn_squad(1, 1, &"jooker", 10, base + Vector2(-30, 0), PI / 2, &"", 0, 5)
+		var s := port.sim.u_squad[Ids.slot(me)] if Ids.kind(me) == Ids.Kind.UNIT else Ids.slot(me)
+		port.attack(PackedInt32Array([me]), foe)
+		var end_t := -1
+		var melee_seen := false
+		for t in 1500:
+			if case == "building" and t == 450:
+				port.structure_clear(foe)   # ECON: HP кончились
+				end_t = t
+			_tick(port)
+			port.take_deaths()
+			port.take_structure_hits()
+			melee_seen = melee_seen or sim.sq_melee[s] == 1
+			if end_t < 0 and (case == "single" and not port.alive(foe) \
+					or case == "squad" and (not port.valid(foe) or sim.sq_alive[Ids.slot(foe)] == 0)):
+				end_t = t
+			if end_t >= 0 and t >= end_t + 30:
+				break
+		var idle_1s := port.is_idle(me)
+		_tick(port, 120)
+		var asleep := _asleep_in(sim, s)
+		SimHarness.check(melee_seen and end_t >= 0, "%s: была свалка, атака окончена (на %.1f с)" % [case, end_t / 30.0])
+		SimHarness.check(idle_1s and sim.sq_melee[s] == 0, "%s: через 1 с — без дела, свалки нет" % case)
+		SimHarness.check(asleep == sim.sq_alive[s], "%s: через 5 с спят (%d из %d)" % [case, asleep, sim.sq_alive[s]])
+	# свалка, где никто не дерётся (враг дальше поиска), — строй снова идёт к цели
+	var port2 := _make_port()
+	var sim2 := port2.sim
+	var base2 := SimHarness.flat_spot()
+	var a := port2.spawn_squad(0, 0, &"kilichboz", 20, base2 + Vector2(40, 0), -PI / 2, &"", 0, 10)
+	var b := port2.spawn_squad(1, 1, &"jooker", 10, base2 + Vector2(-20, 0), PI / 2, &"", 0, 5)
+	port2.attack(PackedInt32Array([a]), b)
+	_tick(port2)
+	sim2.sq_melee[Ids.slot(a)] = 1   # как после свалки, из которой враг ушёл
+	var d0 := port2.pos(a).distance_to(port2.pos(b))
+	_tick(port2, 60)
+	var d1 := port2.pos(a).distance_to(port2.pos(b))
+	SimHarness.check(d1 < d0 - 5.0, "свалка без драки — снова к цели (%.1f → %.1f м)" % [d0, d1])
+	# стоп посреди свалки: свалки нет, натиска нет; бьют только тех, кто вплотную (HOLD)
+	var melee_at := -1
+	for t in 900:
+		_tick(port2)
+		port2.take_deaths()
+		if sim2.sq_melee[Ids.slot(a)] == 1:
+			melee_at = t
+			break
+	port2.stop(PackedInt32Array([a]))
+	var sa := Ids.slot(a)
+	var melee_after := sim2.sq_melee[sa]
+	_tick(port2, 30)
+	var far := 0
+	for u in sim2.sq_members[sa]:
+		var tg := sim2.u_target[u]
+		if sim2.u_life[u] == BattleSim.Life.ALIVE and tg >= 0 \
+				and Vector2(sim2.u_x[tg] - sim2.u_x[u], sim2.u_z[tg] - sim2.u_z[u]).length() > 8.0:
+			far += 1
+	SimHarness.check(melee_at >= 0 and melee_after == 0 and sim2.sq_melee[sa] == 0 and far == 0,
+		"стоп посреди свалки (на %.1f с) — свалки нет, за дальними не гонятся (%d)" % [melee_at / 30.0, far])
+
+
+## Огонь: стоп — ни выстрела за 10 с; ход прочь — цели залпов нет; атака постройки — залпов по отряду нет
+func _test_fire_stop() -> void:
+	print("[стрелки: стоп и ход снимают огонь]")
+	for how in ["stop", "move", "building"]:
+		var port := _make_port()
+		var sim := port.sim
+		var base := SimHarness.flat_spot()
+		var sar := port.spawn_squad(0, 0, &"sarboz", 40, base + Vector2(70, 0), -PI / 2, &"yuzboshi", 0, 20)
+		var joo := port.spawn_squad(1, 1, &"jooker", 30, base + Vector2(-20, 0), PI / 2, &"", 0, 15)
+		var b := _bh(5)
+		port.structure_set(b, 1, base + Vector2(70, 40), Vector2(3, 3), 0.0, BattleSim.ST_BLOCK)
+		var shots := {"n": 0}
+		var on_shot := func(_u: int, _m: Vector3, _d: Vector3, _h: bool) -> void:
+			shots["n"] = int(shots["n"]) + 1
+		sim.shot.connect(on_shot)
+		port.attack(PackedInt32Array([sar]), joo)
+		_tick(port, 300)
+		var before := int(shots["n"])
+		var s := Ids.slot(sar)
+		match how:
+			"stop":
+				port.stop(PackedInt32Array([sar]))
+			"move":
+				port.move(PackedInt32Array([sar]), base + Vector2(140, 0))
+			"building":
+				port.attack(PackedInt32Array([sar]), b)
+		var fire_off := sim.sq_fire_target[s] < 0
+		shots["n"] = 0
+		var aimed_at_squad := 0
+		for t in 300:
+			_tick(port)
+			port.take_deaths()
+			port.take_structure_hits()
+			for u in sim.sq_members[s]:
+				if sim.u_fire_t[u] >= 0.0 and sim.u_aim[u] >= 0:
+					aimed_at_squad += 1
+		sim.shot.disconnect(on_shot)
+		SimHarness.check(before > 0 and fire_off, "%s: стреляли (%d), цель залпов снята" % [how, before])
+		if how == "building":
+			SimHarness.check(aimed_at_squad == 0 and int(shots["n"]) > 0,
+				"по постройке стреляют (%d), по отряду — нет" % shots["n"])
+		else:
+			SimHarness.check(int(shots["n"]) == 0 and aimed_at_squad == 0, "%s: за 10 с ни выстрела (%d)" % [how, shots["n"]])
+		if how == "stop":
+			SimHarness.check(port.is_idle(sar), "стоп: без дела")
 
 
 # ================================================================= детерминизм, сохранение
