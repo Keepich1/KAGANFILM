@@ -3,7 +3,10 @@ extends RefCounted
 ## Население, содержание, голод, подать (ARCHITECTURE §11; ECONOMY §1.4, §1.5, §2.5).
 ##   • предел = min(500, Σ pop_cap готовых построек; свёрнутые и сворачиваемые — 0);
 ##   • содержание — Σ UnitEcon.upkeep живых бойцов, списывается раз в upkeep_every_s (остаток копится);
-##   • голод: еды не хватило на списание → еда 0, famine = 1, FAMINE(1), множители голода в ядро;
+##   • голод (ECONOMY §1.5, T9): еды не хватило на списание И приход еды меньше расхода (доход за минуту
+##     вместе с этим списанием < 0) → еда 0, famine = 1, FAMINE(1), множители голода в ядро; если приход
+##     покрывает содержание (еду тратят сразу, как пришла), голода нет: еда 0, недостача — долгом в upk_acc
+##     (не больше минуты содержания), спишется со следующим списанием;
 ##     через desert_after_s — дезертирство: каждые desert_every_s каждый отряд теряет 3% (не меньше 1),
 ##     первыми — дальние от ставки; одиночки считаются одним отрядом (иначе ушли бы все разом); конец — когда еды снова end_food (50) и больше: FAMINE(0);
 ##   • подать: пока есть Бозор, раз в tax.every_s — tax_min целых (HP ≥ 50%) Уй и Урды; в голод — нет.
@@ -65,13 +68,27 @@ func _charge(e: EconomySim, p: int, every: int) -> void:
 		return
 	charge = charge * e.mods.upkeep_milli(e, p) / 1000
 	var i := p * e.R + e.r_food
-	e.p_flow[i] -= charge
 	if P.res[i] >= charge:
 		P.res[i] -= charge
-	else:
-		P.res[i] = 0
-		if P.famine[p] == 0:
-			_start_famine(e, p)
+		e.p_flow[i] -= charge
+		return
+	# не хватило: съели, что было; остальное — голод или долг
+	var eaten := maxi(P.res[i], 0)
+	var short := charge - eaten
+	P.res[i] = 0
+	if P.famine[p] == 1:
+		e.p_flow[i] -= charge
+		return
+	# доход еды за минуту (окно p_hist, прошлые списания уже в нём) вместе с этим списанием
+	var net := int(P.income[i] + e.p_flow[i]) - charge
+	if net >= 0:
+		# приход покрывает расход: голода нет; недостача — долгом в upk_acc (до минуты содержания)
+		e.p_flow[i] -= eaten
+		var m := maxi(e.mods.upkeep_milli(e, p), 1)
+		upk_acc[p] = mini(upk_acc[p] + int(short) * 1800 * 1000 / m, int(e.p_upkeep[p]) * 1800)
+		return
+	e.p_flow[i] -= charge
+	_start_famine(e, p)
 
 
 func _start_famine(e: EconomySim, p: int) -> void:

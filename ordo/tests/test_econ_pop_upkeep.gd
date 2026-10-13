@@ -8,6 +8,7 @@ const HQ := Vector2(90, 0)
 func _init() -> void:
 	_upkeep()
 	_famine()
+	_famine_income()
 	_queue()
 	_pop_cap()
 	_unique()
@@ -72,6 +73,43 @@ func _famine() -> void:
 	k.run_s(1.0)
 	mods = stub.owner_mods.get(p, PackedFloat32Array())
 	SimHarness.check(e.players.famine[p] == 0 and is_equal_approx(mods[BattleSim.MOD_ATK], 1.0), "50 еды и больше — голод кончился")
+
+
+## T9 (ECONOMY §1.5): голод — когда еды 0 И приход меньше расхода. 10 сарбозов (7 еды в минуту), приходит
+## 450 в минуту и сразу тратится (еда всё время у нуля) — голода нет; приход 3 в минуту — голод
+func _famine_income() -> void:
+	print("[голод: приход против расхода]")
+	for case in [[7500, false], [50, true]]:
+		var k := EconKit.make()
+		var p := k.kokand(HQ, 0)
+		var e := k.econ
+		for i in 10:
+			k.unit(p, &"sarboz", HQ + Vector2(20 + i, 20))
+		k.set_res(p, "food", 0.0)
+		var spend := PackedInt32Array()
+		spend.resize(e.R)
+		var c0 := k.events.head
+		var famine_s := 0
+		for t in 1800:
+			if k.tick % 30 == 5:
+				# приход за секунду (как сдача работников) и сразу трата (найм, стройка)
+				e.add_res(p, k.r(&"food"), case[0])
+				spend[k.r(&"food")] = e.res(p, k.r(&"food"))
+				e.pay(p, spend)
+			k.step()
+			if k.tick % 30 == 0 and e.players.famine[p] == 1:
+				famine_s += 1
+		var inc := e.players.income[p * e.R + k.r(&"food")] / 1000.0
+		if case[1]:
+			SimHarness.check(famine_s >= 50 and k.count_ev(SimEvents.Ev.FAMINE, c0) == 1,
+				"приход 3/мин < расхода 7/мин, еда 0 — голод (%d с из 60)" % famine_s)
+		else:
+			var stub := k.port as CombatPortStub
+			var mods: PackedFloat32Array = stub.owner_mods.get(p, PackedFloat32Array())
+			SimHarness.check(famine_s == 0 and k.count_ev(SimEvents.Ev.FAMINE, c0) == 0
+				and (mods.is_empty() or is_equal_approx(mods[BattleSim.MOD_ATK], 1.0)),
+				"приход 450/мин > расхода 7/мин, еда всё время 0 — голода нет (доход %+.0f/мин)" % inc)
+			SimHarness.check(e.popn.upk_acc[p] <= int(e.p_upkeep[p]) * 1800, "недостача — долгом не больше минуты содержания")
 
 
 func _queue() -> void:
