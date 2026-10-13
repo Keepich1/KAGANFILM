@@ -25,10 +25,15 @@ extends RefCounted
 ##   • u_side/sq_side — команда, u_owner/sq_owner — игрок; victory_mode, flee_mode, team_home;
 ##   • пути (set_path, await_path, sq_path/sq_wp), структуры (structure_set/clear, OBB-столкновения, цели
 ##     order_attack_structure, попадания в ev_st_*), сетки NAV (set_grids: _blk_static, _spd), стойки (sq_stance),
-##     множители игроков (set_owner_mods), сон (sleep_enabled), работа (set_work), буферы ev_* (collect_events).
+##     множители игроков (set_owner_mods), сон (sleep_enabled), работа (set_work), буферы ev_* (collect_events);
+##   • пролом: путь с breach_st/breach_wp — у точки перед постройкой отряд ломает её, потом прежний приказ.
+## Шаг города (sleep_enabled, ставить до юнитов): обходит только бодрых и падающих (_aw); спящие лежат в хэше
+## и будятся врагом в 16 м (блоки _mixed), толчком (2 раза в с), приказом, уроном, сменой мест в отряде.
+## Хэш города правится на месте (двусвязные списки клеток, маски); срез и город без сна собирают его целиком.
 ## Фон (SimStepper): во время step() массивы u_*/sq_*/st_* меняются только на месте, никогда не переприсваиваются;
-## новые юниты и отряды (растут массивы) — только вне step(), со стороны порта. Хэш строится в конце шага
-## (и при изменениях снаружи — лениво), поэтому запросы порта между шагами видят точные позиции.
+## новые юниты и отряды (растут массивы) — только вне step(), со стороны порта. Хэш готов в конце шага
+## (и при изменениях снаружи — лениво при запросе), поэтому запросы порта между шагами видят точные позиции;
+## запросы тоже правят хэш — звать их только между шагами (или после BattleView.sync_sim()).
 
 signal shot(unit: int, muzzle: Vector3, dir: Vector3, hit: bool)  ## выстрел: дым и вспышка у дула
 signal volley(squad: int, rank: int, center: Vector3, count: int)  ## первая пуля шеренги
@@ -891,6 +896,8 @@ func _free_squad(s: int) -> void:
 	for t in squads:
 		if sq_target[t] == s:
 			sq_target[t] = -1
+		if _br_target[t] == s:
+			_br_target[t] = -1  # пролом вернёт приказ без этой цели
 		if sq_fire_target[t] == s:
 			sq_fire_target[t] = -1
 			sq_volley_rank[t] = -1
@@ -2321,8 +2328,22 @@ func _squad_step(s: int) -> void:
 		sq_dorm[s] = 0
 		rout.emit(s, Vector3(sq_cx[s], 0.0, sq_cz[s]))
 		return
-	# --- движение якоря строя
-	var spd := squad_speed(s)
+	# --- движение якоря строя: скорость — как squad_speed(s), без вызовов
+	var spd := t_speed[ti]
+	var gait := sq_gait[s]
+	if gait == Gait.WALK:
+		spd *= t_walk[ti]
+	elif gait == Gait.TROT:
+		spd *= 0.72
+	var fm := sq_form[s]
+	if fm == Formation.COLUMN:
+		spd *= 1.15
+	elif fm == Formation.SQUARE:
+		spd *= 0.35
+	if has_mods:
+		spd *= owner_mod(sq_owner[s], MOD_SPEED)
+	var stam := sq_stam[s]
+	spd *= 1.0 if stam >= STAMINA_TIRED else 0.7 + 0.3 * stam / STAMINA_TIRED
 	if not single:
 		# отставание бойцов от мест в строю (раз в 3 шага — дорого); у одиночки его нет (R2);
 		# город: отряд, где все спят и стоят (центр не менялся), не пересчитывает — никто не сдвинулся
@@ -2712,7 +2733,10 @@ func _units_think() -> void:
 			if u_couched[u] == 1 and u_charged[u] == 0:
 				tg = -1  # на разгоне не отвлекаемся
 			else:
-				var c := _nearest_enemy_raider(u, engage_r) if t_flags[ti] & UnitStats.RAIDER != 0 else nearest_enemy(u, engage_r)
+				var c := -1
+				# город: в блоке юнита и соседних (≥ 16 м вокруг) чужих нет — искать нечего (тот же ответ −1)
+				if not sleep_on or engage_r > 16.0 or _bmask_n[_ublk[u]] & ~(1 << u_side[u]) != 0:
+					c = _nearest_enemy_raider(u, engage_r) if t_flags[ti] & UnitStats.RAIDER != 0 else nearest_enemy(u, engage_r)
 				# бегущих гонят только по приказу атаки
 				if c >= 0 and sq_status[u_squad[c]] == Status.FLEE and sq_order[s] != Order.ATTACK:
 					c = -1
@@ -2799,7 +2823,7 @@ func _think_guard(u: int, s: int, ti: int, vmax: float, stance: int, obstacles: 
 		var reach := t_radius[ti] + t_reach[ti] + 0.5
 		if stance == Stance.DEFENSIVE:
 			reach += DEF_REACH_PAD
-		if tg < 0 and (u + steps) % 3 == 0:
+		if tg < 0 and (u + steps) % 3 == 0 and (not sleep_enabled or _bmask_n[_ublk[u]] & ~(1 << u_side[u]) != 0):
 			var c := nearest_enemy(u, reach)
 			if c >= 0 and sq_status[u_squad[c]] != Status.FLEE:
 				tg = c
