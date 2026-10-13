@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://ssfe88m0m2sg"
-path="res://.godot/imported/Banner.glb-90b909bff4f2ac4c5eba82ef7f87e41f.scn"
+uid="uid://bb7mpjlu2exmm"
+path="res://.godot/imported/bozor_site_lod1.glb-131231fabe36fd159ac8402956bdfb3c.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Banner.glb"
-dest_files=["res://.godot/imported/Banner.glb-90b909bff4f2ac4c5eba82ef7f87e41f.scn"]
+source_file="res://assets/models/kokand/bozor_site_lod1.glb"
+dest_files=["res://.godot/imported/bozor_site_lod1.glb-131231fabe36fd159ac8402956bdfb3c.scn"]
 
 [params]
 

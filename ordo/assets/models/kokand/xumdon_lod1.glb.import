@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dr4gajlk3ir76"
-path="res://.godot/imported/Water.glb-3e97a33651700c3bba85ecfd10bb3ab0.scn"
+uid="uid://c0m3wyshdwpe7"
+path="res://.godot/imported/xumdon_lod1.glb-565ced8ba896fd3075b2625cdc5ebc7c.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Water.glb"
-dest_files=["res://.godot/imported/Water.glb-3e97a33651700c3bba85ecfd10bb3ab0.scn"]
+source_file="res://assets/models/kokand/xumdon_lod1.glb"
+dest_files=["res://.godot/imported/xumdon_lod1.glb-565ced8ba896fd3075b2625cdc5ebc7c.scn"]
 
 [params]
 

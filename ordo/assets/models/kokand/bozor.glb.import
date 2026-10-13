@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://b8p8qoptucv0r"
-path="res://.godot/imported/Crop.glb-63d2428a426195a9458568f6bbc32b35.scn"
+uid="uid://d0kejxkuw7e33"
+path="res://.godot/imported/bozor.glb-0086502b97e26ebc1772de6a28708c4a.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Crop.glb"
-dest_files=["res://.godot/imported/Crop.glb-63d2428a426195a9458568f6bbc32b35.scn"]
+source_file="res://assets/models/kokand/bozor.glb"
+dest_files=["res://.godot/imported/bozor.glb-0086502b97e26ebc1772de6a28708c4a.scn"]
 
 [params]
 

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://s7u1bmvh5b5m"
-path="res://.godot/imported/Awning.glb-5d6bb07e537e80c66199182549c9ab1d.scn"
+uid="uid://daxpte5m8lpk8"
+path="res://.godot/imported/xumdon_site.glb-50ba5e25ba53f57a9498dc66de3c39dc.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Awning.glb"
-dest_files=["res://.godot/imported/Awning.glb-5d6bb07e537e80c66199182549c9ab1d.scn"]
+source_file="res://assets/models/kokand/xumdon_site.glb"
+dest_files=["res://.godot/imported/xumdon_site.glb-50ba5e25ba53f57a9498dc66de3c39dc.scn"]
 
 [params]
 

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://btpvk1c12yrvp"
-path="res://.godot/imported/DevorEnd.glb-2eb709d7d4f1197de3098809f00cbb6d.scn"
+uid="uid://bur4oej6aykmf"
+path="res://.godot/imported/bozor_ruin_lod1.glb-19f6825a331aca2915ee1d22edd71032.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/DevorEnd.glb"
-dest_files=["res://.godot/imported/DevorEnd.glb-2eb709d7d4f1197de3098809f00cbb6d.scn"]
+source_file="res://assets/models/kokand/bozor_ruin_lod1.glb"
+dest_files=["res://.godot/imported/bozor_ruin_lod1.glb-19f6825a331aca2915ee1d22edd71032.scn"]
 
 [params]
 

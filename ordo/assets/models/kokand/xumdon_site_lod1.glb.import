@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://clkqglgrw6o67"
-path="res://.godot/imported/Devor.glb-487cac553509bc68e35ecdad75e8f15f.scn"
+uid="uid://bp5scf3dvmqlj"
+path="res://.godot/imported/xumdon_site_lod1.glb-20b1876ee00bd848d4290b40220842a1.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Devor.glb"
-dest_files=["res://.godot/imported/Devor.glb-487cac553509bc68e35ecdad75e8f15f.scn"]
+source_file="res://assets/models/kokand/xumdon_site_lod1.glb"
+dest_files=["res://.godot/imported/xumdon_site_lod1.glb-20b1876ee00bd848d4290b40220842a1.scn"]
 
 [params]
 

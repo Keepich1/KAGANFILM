@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://chyc5bfptpo1d"
-path="res://.godot/imported/Ground.glb-6e5598121114a4cb96f55ab7f06809eb.scn"
+uid="uid://drr3a2bgkh0wf"
+path="res://.godot/imported/xumdon_ruin.glb-fb1047c8b0c77371d73212f89ec823f3.scn"
 
 [deps]
 
-source_file="res://assets/models/kokand/Ground.glb"
-dest_files=["res://.godot/imported/Ground.glb-6e5598121114a4cb96f55ab7f06809eb.scn"]
+source_file="res://assets/models/kokand/xumdon_ruin.glb"
+dest_files=["res://.godot/imported/xumdon_ruin.glb-fb1047c8b0c77371d73212f89ec823f3.scn"]
 
 [params]
 

@@ -89,11 +89,11 @@ def patch_glb(path, pivots=None, groups=None):
 
 
 def write_model(out_dir, name, model: Model):
-    for name, m, _ in model.nodes:
+    for node_name, m, _ in model.nodes:
         if not m.has_color:
             m.C[:] = 1.0
             m.has_color = True
-        if name not in model.pivots:
+        if node_name not in model.pivots:
             # ничего ниже земли (обломки руин, повёрнутые куски): ТЗ 11.6
             m.P[:, 1] = np.maximum(m.P[:, 1], -0.03)
     gl_nodes = [(n, m, MAT[k]) for n, m, k in model.nodes if m is not None and m.tris]
