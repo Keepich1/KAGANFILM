@@ -75,7 +75,7 @@ static func _alive(q: GameQuery, h: int) -> bool:
 			if bs == null:
 				return true
 			var s := Ids.slot(h)
-			return s < bs.squads and bs.sq_alive[s] > 0
+			return s < bs.squads and bs.sq_gen[s] == Ids.gen(h) and bs.sq_alive[s] > 0
 		Ids.Kind.BUILDING:
 			var bt := q.buildings()
 			return bt != null and bt.valid(h) and bt.state[bt.slot(h)] != BuildingTable.State.RUIN

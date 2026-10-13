@@ -238,7 +238,7 @@ GAME. Полезная нагрузка `a/b/c` каждого `Ev` — в ша�
 | `CombatPort` | `CombatPortStub` (прямые ходы со скоростью `UnitStats`, без боя) | ECON, GAME, NAV — до I1/I2 |
 | `NavApi` | `NavStub` (открытое поле, путь — прямо к цели) | CORE, ECON, GAME — до I1 |
 | `EconApi` | `EconStub` (таблицы, старт, стройки; приказы пишутся в `calls`) | NAV, GAME — до I2/I3 |
-| `GameQuery` | `FakeCity` (настоящий `BattleSim`: город Коканда и лагерь кыпчаков) | VIEW, UI — до I4 |
+| `GameQuery` | `FakeCity` (настоящий `BattleSim`: город Коканда и лагерь кыпчаков); узел `FakeCityDriver extends SimDriver` | VIEW, UI — до I4 |
 
 `SimHarness.make_stubs()` собирает связку заглушек; `tests/run_all.sh` запускает все тесты
 (`tests/run_all.sh econ` — только с «econ» в имени).

@@ -53,11 +53,15 @@ func _test_classes() -> void:
 	print("[классы договора]")
 	var objs := [SimEvents.new(), Defs.build(), CombatPort.new(), CombatPortStub.new(), NavApi.new(), PathResult.new(),
 		NavStub.new(), EconApi.new(), EconStub.new(), PlayerTable.new(), BuildingTable.new(), NodeTable.new(),
-		HerdTable.new(), GameQuery.new(), FakeCity.new(), SelectionModel.new(), ScatterData.new(), SimHarness.new()]
+		HerdTable.new(), GameQuery.new(), FakeCity.new(), SelectionModel.new(), ScatterData.new(), SimHarness.new(),
+		SimDriver.new(), FakeCityDriver.new()]
 	var ok := true
 	for o: Object in objs:
 		ok = ok and o != null
 	SimHarness.check(ok, "создаются %d классов (+ Ids, SimCmd — статические)" % objs.size())
+	for o: Object in objs:
+		if o is Node:
+			o.free()
 	for pair in [[CombatPort, CombatPortStub], [NavApi, NavStub], [EconApi, EconStub], [GameQuery, FakeCity]]:
 		var missing := _missing_overrides(pair[0], pair[1])
 		SimHarness.check(missing.is_empty(), "%s перекрывает все методы %s %s" % [
@@ -347,3 +351,20 @@ func _test_fake_city() -> void:
 	SimHarness.check(sel.selected.size() == 4 and sel.groups[0].size() == 4 and sel.recall_group(0).size() == 4, "выделение: prune и группы")
 	city.submit(0, SimCmd.move(own.slice(0, 1), Vector2(150, 60)))
 	SimHarness.check(city.submitted.size() == 1 and city.submitted[0][SimCmd.H_PLAYER] == 0, "приказ принят")
+	var worker := -1
+	for u in sim.n:
+		if sim.u_act[u] == BattleSim.Act.WORK:
+			worker = u
+			break
+	SimHarness.check(worker >= 0 and sim.u_work[worker] >= 0.0 and city.unit_index(city.unit_handle(worker)) == worker,
+		"работа в ядре: Act.WORK + u_work, описатель с u_gen")
+	# узел-драйвер: шаги, сигналы ядра, alpha
+	var drv := FakeCityDriver.new()
+	drv.autostart = false
+	var starts := [0]
+	drv.started.connect(func(_s: int) -> void: starts[0] += 1)
+	drv.start(3)
+	var t0 := drv.query.tick()
+	drv._process(0.2 + 0.001)
+	SimHarness.check(starts[0] == 1 and drv.query.tick() == t0 + 6 and drv.sim == drv.city.sim, "FakeCityDriver: 0,2 с = 6 тактов")
+	drv.free()

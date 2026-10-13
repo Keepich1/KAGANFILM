@@ -7,7 +7,7 @@ extends GameQuery
 ##     кыпчаки (игрок 1, команда 1) — лагерь среза (−60, 20): юрты, короо, жылкы, кен, частокол, мунара;
 ##   • стройки на разных стадиях (растут, достраиваются, BUILDING_DONE, потом снова стройка), руины;
 ##   • 40 одиночек-работников ходят по кругу: к дереву/залежи/полю/стройке → работа (u_act = WORK,
-##     вид работы — work_aux / u_work) → назад с грузом (WORK_CARRY) → сдача (RES_DELIVERED);
+##     вид работы — BattleSim.u_work) → назад с грузом (WORK_CARRY) → сдача (RES_DELIVERED);
 ##   • 3 отряда: сарбозы маршируют, жоокеры ходят у лагеря, киличбозы бьются с налётчиками-жоокерами
 ##     (налёт повторяется: RAID_WARNING → RAID_STARTED → бой → RAID_ENDED);
 ##   • деревья карты (ScatterData) и залежи, 2 стада, трава и полив, ресурсы растут;
@@ -24,14 +24,13 @@ const KOK := 0
 const KIP := 1
 const KOK_HQ := Vector2(184, 56)
 const KIP_HQ := Vector2(-60, 20)
-const ACT_WORK := 4                     # BattleSim.Act.WORK (до объявления в ядре)
+const ACT_WORK := BattleSim.Act.WORK
 const FIGHT_AT := Vector2(112, 132)
 const RAID_EVERY := 3600                # тактов между набегами (2 мин)
 const RAID_WARN := 900                  # предупреждение за 30 с
 const HOTKEYS := ["Q", "W", "E", "R", "T", "A", "S", "D", "F", "G", "Z", "X", "C", "V"]
 
 var sim: BattleSim
-var work_aux := PackedFloat32Array()    # вид работы по юнитам ядра, −1 — нет (зеркало u_work)
 var submitted: Array[PackedInt32Array] = []
 
 var _tick := 0
@@ -252,7 +251,6 @@ func _build_units() -> void:
 	sim.order_attack(_raiders, _defenders, BattleSim.Gait.RUN)
 	sim.allow_charge(_raiders, true)
 	_raid_on = true
-	_sync_unit_arrays()
 
 
 # ================================================================= такт
@@ -264,7 +262,6 @@ func step() -> void:
 	_script_squads()
 	_script_raid()
 	sim.step()
-	_sync_unit_arrays()
 	_scan_deaths()
 	_grow_sites()
 	if _tick % 30 == 0:
@@ -479,7 +476,6 @@ func _train_one() -> void:
 	sim.sq_single[s] = 1
 	_scripted[s] = true
 	_go(s, door + Vector2(-8.0 - (_trained % 5) * 2.0, -10.0 + (_trained / 5 % 8) * 2.5))
-	_sync_unit_arrays()
 	var u := sim.sq_members[s][0]
 	_events.push(SimEvents.Ev.TRAINED, KOK, unit_handle(u), _buildings.handle(urda), _defs.unit(&"dehqon"), door)
 
@@ -621,7 +617,7 @@ func selection_info(hs: PackedInt32Array) -> Dictionary:
 			var t := sim.type_ids[sim.sq_type[s]]
 			cards.append({"type": t, "name": tr(UnitStats.get_stats(t).get("name", t)), "count": sim.sq_alive[s],
 				"hp": hp / alive, "morale": sim.sq_morale[s] / 100.0, "stamina": sim.sq_stam[s] / 100.0,
-				"banner": sim.sq_banner[s] >= 0, "squad": Ids.make(Ids.Kind.SQUAD, s, 1)})
+				"banner": sim.sq_banner[s] >= 0, "squad": Ids.make(Ids.Kind.SQUAD, s, sim.sq_gen[s])})
 	for t: String in singles:
 		cards.append({"type": t, "name": tr(UnitStats.get_stats(t).get("name", t)), "count": singles[t][0],
 			"hp": singles[t][1] / singles[t][0], "morale": 1.0, "stamina": 1.0, "banner": false, "squad": 0})
@@ -774,19 +770,13 @@ func minimap(p: int) -> Dictionary:
 # ================================================================= служебное
 
 func _ugen(u: int) -> int:
-	return 1
+	return sim.u_gen[u]
 
 
-## Массивы FakeCity по юнитам ядра растут вместе с ним
-func _sync_unit_arrays() -> void:
-	while work_aux.size() < sim.n:
-		work_aux.append(-1.0)
-
-
+## Работа как CombatPort.set_work (R15): Act.WORK + u_work; FakeCity пишет ядро сам — это подделка
 func _set_work(u: int, aux: float) -> void:
-	_sync_unit_arrays()
-	work_aux[u] = aux
-	sim.u_act[u] = ACT_WORK if aux >= 0.0 else BattleSim.Act.NONE
+	sim.u_work[u] = aux if aux >= 0.0 else -1.0
+	sim.u_act[u] = BattleSim.Act.WORK if aux >= 0.0 else BattleSim.Act.NONE
 
 
 func _go(s: int, to: Vector2) -> void:

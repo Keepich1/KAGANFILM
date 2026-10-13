@@ -317,18 +317,18 @@ func _pay(p: int, cost: PackedInt32Array) -> void:
 		players.res[p * players.R + r] -= cost[r]
 
 
-## Флаги структуры ядра (BattleSim.ST_*: BLOCK 1, WALL 2, GATE 4, TOWER 8, FIELD 16, HQ 32, SITE 64)
+## Флаги структуры ядра (BattleSim.ST_*)
 func _st_flags(btype: int, active: bool) -> int:
 	var f := 0
 	match defs.b_kind[btype]:
-		Defs.BKind.WALL: f |= 2
-		Defs.BKind.GATE: f |= 4
-		Defs.BKind.TOWER: f |= 8
-		Defs.BKind.FIELD: f |= 16
+		Defs.BKind.WALL: f |= BattleSim.ST_WALL
+		Defs.BKind.GATE: f |= BattleSim.ST_GATE
+		Defs.BKind.TOWER: f |= BattleSim.ST_TOWER
+		Defs.BKind.FIELD: f |= BattleSim.ST_FIELD
 	if defs.b_flags[btype] & Defs.BF_BLOCKS:
-		f |= 1
+		f |= BattleSim.ST_BLOCK
 	if defs.b_flags[btype] & Defs.BF_HQ:
-		f |= 32
+		f |= BattleSim.ST_HQ
 	if not active:
-		f |= 64
+		f |= BattleSim.ST_SITE
 	return f
