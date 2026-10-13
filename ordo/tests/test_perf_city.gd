@@ -2,16 +2,26 @@ extends SceneTree
 ## Замер «Города» под нагрузкой (ARCHITECTURE §16, §15 GAME): 600 работников + 300 бойцов + 200 построек +
 ## 100 звеньев стен, 60 с; ИИ-кыпчаки с базой и защитой; каждые 10 с один отряд из 30 идёт через город
 ## (~100 юнитов в движении); замер — после 3 с разгона. Печатает среднее / p99 / худшее по системам такта
-## (GameSim.Ph) и проваливает тест выше целей §16 по средним: ядро ≤ 3 мс, экономика ≤ 1 мс, пути ≤ 2 мс, ИИ ≤ 0.3 мс,
-## приказы + победа + сумма ≤ 0.2 мс, всё ≤ 6.5 мс. Берёт настоящие реализации, если они уже в проекте;
-## на заглушках числа ядра, путей и экономики — только порядок величины.
+## (GameSim.Ph) и проваливает тест выше целей §16 «ср. (p99)»: ядро ≤ 3 (5) мс, экономика ≤ 1 (2), пути ≤ 2 (4),
+## ИИ ≤ 0.3 (1), приказы + победа + сумма ≤ 0.2, всё ≤ 6.5 (10). Берёт настоящие реализации, если они уже в проекте
+## (GameSim.impl_for: --impl=stub или ORDO_IMPL=stub — заглушки); на заглушках числа ядра, путей и экономики —
+## только порядок величины.
+##
+## Занятая машина. В шапке — loadavg и число ЦП. Фазы меряются часами (стена); кроме того, весь такт — по
+## процессорному времени потока (Linux: /proc/thread-self/schedstat, как у VIEW --perf_cpu). Если стена / ЦП
+## больше BUSY (чужие процессы отнимают ЦП), проверки идут по числам, делённым на это отношение, — в выводе
+## помечено «поправка ×1/k». На свободной машине (k ≈ 1) проверки — по чистой стене. Итог на занятой
+## машине — ориентир; ворота §16 — на свободной (I1/I3).
 ##   godot --headless --path ordo --script res://tests/test_perf_city.gd
 
 
 class Prof:
 	var cur := PackedInt32Array()
 	var rows: Array[PackedInt32Array] = []
+	## Процессорное время потока за такт, мкс (пусто, если schedstat нет)
+	var cpu := PackedInt32Array()
 	var _last := 0
+	var _cpu0 := -1
 
 	func _init() -> void:
 		cur.resize(GameSim.Ph.COUNT)
@@ -19,21 +29,37 @@ class Prof:
 			rows.append(PackedInt32Array())
 
 	func begin() -> void:
+		_cpu0 = Prof.thread_cpu_usec()
 		_last = Time.get_ticks_usec()
 
 	func mark(ph: int) -> void:
 		var now := Time.get_ticks_usec()
 		rows[ph].append(now - _last)
 		_last = now
+		if ph == GameSim.Ph.CHECKSUM and _cpu0 >= 0:
+			var c := Prof.thread_cpu_usec()
+			if c >= 0:
+				cpu.append(c - _cpu0)
+
+	## Процессорное время этого потока, мкс; −1 — нет /proc/thread-self/schedstat
+	static func thread_cpu_usec() -> int:
+		var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+		if f == null:
+			return -1
+		return int(f.get_line().split(" ")[0]) / 1000
 
 
 const SECONDS := 60
+## Стена / ЦП выше этого — машина занята, проверки с поправкой
+const BUSY := 1.25
 
 
 func _init() -> void:
+	print(_load_line())
 	var g := GameSim.new()
+	g.impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
 	g.setup(MapValley.MAP, SimHarness.default_players(), 13)
-	print("реализации: порт %s, навигация %s, экономика %s" % [_cls(g.port), _cls(g.nav), _cls(g.econ)])
+	print("реализации: ", g.impl_names())
 	var squads := _populate(g)
 	var q := g.query as GameQueryImpl
 	var n0 := q.units_of(0).size()
@@ -61,8 +87,16 @@ func _init() -> void:
 	SimHarness.finish(self)
 
 
-func _cls(o: Object) -> String:
-	return (o.get_script() as Script).get_global_name()
+## Шапка: loadavg (1, 5, 15 мин) и число ЦП — по ней видно, что замер шёл на занятой машине
+func _load_line() -> String:
+	var cores := OS.get_processor_count()
+	var f := FileAccess.open("/proc/loadavg", FileAccess.READ)
+	if f == null:
+		return "нагрузка машины: loadavg нет, ЦП %d" % cores
+	var la := f.get_line().split(" ")
+	var l1 := float(la[0])
+	return "нагрузка машины: loadavg %s %s %s на %d ЦП%s" % [la[0], la[1], la[2], cores,
+		"  — ЗАНЯТА, стена завышена" if l1 > cores else ""]
 
 
 ## Город Коканда: 594 работника сеткой (на работу — к деревьям и жилам), 10 отрядов по 30, 200 домов
@@ -110,33 +144,66 @@ func _populate(g: GameSim) -> PackedInt32Array:
 
 func _report(prof: Prof) -> void:
 	var names := ["приказы", "ИИ", "экономика (pre)", "пути", "ядро", "экономика (post)", "экономика (медл.)", "победа", "сумма"]
-	var avg := PackedFloat64Array()
+	var n := prof.rows[0].size()
 	var total := PackedInt32Array()
-	total.resize(prof.rows[0].size())
+	var econ := PackedInt32Array()
+	var game := PackedInt32Array()
+	total.resize(n)
+	econ.resize(n)
+	game.resize(n)
 	print("")
 	print("  система              ср., мс   p99, мс   худш., мс")
 	for ph in GameSim.Ph.COUNT:
 		var r := prof.rows[ph]
-		var s := 0
 		for i in r.size():
-			s += r[i]
 			total[i] += r[i]
-		avg.append(s / 1000.0 / maxi(r.size(), 1))
-		print("  %-18s %8.3f  %8.3f  %9.3f" % [names[ph], avg[ph], _p99(r), _worst(r)])
-	var tsum := 0
-	for v in total:
-		tsum += v
-	var tavg := tsum / 1000.0 / maxi(total.size(), 1)
-	print("  %-18s %8.3f  %8.3f  %9.3f" % ["всего", tavg, _p99(total), _worst(total)])
+			if ph == GameSim.Ph.ECON_PRE or ph == GameSim.Ph.ECON_POST or ph == GameSim.Ph.ECON_SLOW:
+				econ[i] += r[i]
+			if ph == GameSim.Ph.ORDERS or ph == GameSim.Ph.VICTORY or ph == GameSim.Ph.CHECKSUM:
+				game[i] += r[i]
+		print("  %-18s %8.3f  %8.3f  %9.3f" % [names[ph], _avg(r), _p99(r), _worst(r)])
+	print("  %-18s %8.3f  %8.3f  %9.3f" % ["экономика (такт)", _avg(econ), _p99(econ), _worst(econ)])
+	print("  %-18s %8.3f  %8.3f  %9.3f" % ["всего", _avg(total), _p99(total), _worst(total)])
+	# занятость: стена / процессорное время потока за те же такты
+	var k := 1.0
+	if prof.cpu.size() == n and n > 0:
+		var cpu_sum := 0
+		var wall_sum := 0
+		for i in n:
+			cpu_sum += prof.cpu[i]
+			wall_sum += total[i]
+		k = maxf(1.0, float(wall_sum) / maxf(float(cpu_sum), 1.0))
+		# по тактам schedstat ступенчат (шаг планировщика, ~4 мс) — верно только среднее
+		print("  %-18s %8.3f  (по тактам — ступенями планировщика, только среднее)" % ["всего (ЦП потока)", _avg(prof.cpu)])
+		print("  стена / ЦП = %.2f%s" % [k, "  — машина занята: проверки с поправкой ×1/%.2f" % k if k > BUSY else ""])
+	else:
+		print("  ЦП потока не измерить (нет /proc/thread-self/schedstat): проверки по стене")
 	print("")
-	SimHarness.check(avg[GameSim.Ph.KERNEL] <= 3.0, "ядро ≤ 3 мс (%.3f)" % avg[GameSim.Ph.KERNEL])
-	var econ := avg[GameSim.Ph.ECON_PRE] + avg[GameSim.Ph.ECON_POST] + avg[GameSim.Ph.ECON_SLOW]
-	SimHarness.check(econ <= 1.0, "экономика ≤ 1 мс (%.3f)" % econ)
-	SimHarness.check(avg[GameSim.Ph.NAV] <= 2.0, "пути ≤ 2 мс (%.3f)" % avg[GameSim.Ph.NAV])
-	SimHarness.check(avg[GameSim.Ph.AI] <= 0.3, "ИИ ≤ 0.3 мс (%.3f)" % avg[GameSim.Ph.AI])
-	var game := avg[GameSim.Ph.ORDERS] + avg[GameSim.Ph.VICTORY] + avg[GameSim.Ph.CHECKSUM]
-	SimHarness.check(game <= 0.2, "приказы + победа + сумма ≤ 0.2 мс (%.3f)" % game)
-	SimHarness.check(tavg <= 6.5, "всё ≤ 6.5 мс (%.3f)" % tavg)
+	var f := k if k > BUSY else 1.0
+	var tag := "" if f == 1.0 else ", поправка ×1/%.2f" % f
+	# цели §16: [название, ряд, ср., p99 (0 — без p99)]
+	var gates := [
+		["ядро", prof.rows[GameSim.Ph.KERNEL], 3.0, 5.0],
+		["экономика", econ, 1.0, 2.0],
+		["пути", prof.rows[GameSim.Ph.NAV], 2.0, 4.0],
+		["ИИ", prof.rows[GameSim.Ph.AI], 0.3, 1.0],
+		["приказы + победа + сумма", game, 0.2, 0.0],
+		["всё", total, 6.5, 10.0],
+	]
+	for gt: Array in gates:
+		var r: PackedInt32Array = gt[1]
+		var a := _avg(r) / f
+		SimHarness.check(a <= float(gt[2]), "%s: ср. ≤ %s мс (%.3f%s)" % [gt[0], str(gt[2]), a, tag])
+		if float(gt[3]) > 0.0:
+			var p := _p99(r) / f
+			SimHarness.check(p <= float(gt[3]), "%s: p99 ≤ %s мс (%.3f%s)" % [gt[0], str(gt[3]), p, tag])
+
+
+func _avg(r: PackedInt32Array) -> float:
+	var s := 0
+	for v in r:
+		s += v
+	return s / 1000.0 / maxi(r.size(), 1)
 
 
 func _p99(r: PackedInt32Array) -> float:
