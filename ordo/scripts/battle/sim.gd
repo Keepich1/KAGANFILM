@@ -251,6 +251,8 @@ var sq_trail: Array[PackedVector2Array] = []   # последние 8 точек
 var sq_used := PackedByteArray()        # 1 — слот отряда занят, 0 — свободен (R1)
 var sq_stuck := PackedInt32Array()      # шагов якорь-одиночка ждёт своего бойца (упёрся)
 var sq_dorm := PackedByteArray()        # 1 — одиночка спит: шаг отряда и центр пропускаются (R12)
+var _real_sq := PackedInt32Array()      # настоящие отряды (город: поиск ближайшего вражеского отряда)
+var _rs_dirty := true
 
 # зеркало структур (индекс = слот здания ECON)
 var st_hw := 0
@@ -315,6 +317,7 @@ var _cmask := PackedInt32Array()
 var _bmask := PackedInt32Array()
 var _bmask_n := PackedInt32Array()      # блок и его 8 соседей (сон: враг ближе ~16 м будит)
 var _ublk := PackedInt32Array()         # блок юнита при последней сборке хэша (сон)
+var _ucell := PackedInt32Array()        # клетка юнита при последней сборке (−1 — считать заново)
 # места в строю: смещения считаются один раз на отряд, пока не сменились строй и ширина
 var _so_x := PackedFloat32Array()
 var _so_y := PackedFloat32Array()
@@ -329,6 +332,7 @@ func _init(p_seed := 1) -> void:
 
 
 func _alloc_grid() -> void:
+	_ucell.fill(-1)
 	_head.resize(_g_n * _g_n)
 	_head.fill(-1)
 	_cmask.resize(_g_n * _g_n)
@@ -694,6 +698,7 @@ func _new_squad(side: int, type_i: int, pos: Vector2, heading: float, owner := -
 	sq_used[s] = 1
 	sq_stuck[s] = 0
 	sq_dorm[s] = 0
+	_rs_dirty = true
 	return s
 
 
@@ -825,6 +830,7 @@ func _free_unit(u: int) -> void:
 ## Освободить отряд: на него больше никто не целится; слот — в свободные
 func _free_squad(s: int) -> void:
 	sq_used[s] = 0
+	_rs_dirty = true
 	sq_members[s].clear()
 	sq_alive[s] = 0
 	sq_order[s] = Order.HOLD
@@ -1322,6 +1328,11 @@ func enemy_within(team: int, pos: Vector2, r: float) -> bool:
 func nearest_enemy_at(team: int, pos: Vector2, r: float) -> int:
 	if _hash_dirty:
 		_rebuild_hash()
+	return _nearest_enemy_pos(team, pos, r)
+
+
+## То же без пересборки хэша (внутри шага)
+func _nearest_enemy_pos(team: int, pos: Vector2, r: float) -> int:
 	var gn := _g_n
 	var go := _g_origin
 	var foe := ~(1 << team)
@@ -1586,13 +1597,11 @@ func _rebuild_hash() -> void:
 	_head.fill(-1)
 	_cmask.fill(0)
 	_bmask.fill(0)
-	var dil := sleep_enabled
-	if dil:
-		_bmask_n.fill(0)
-		if _ublk.size() < n:
-			_ublk.resize(n)
 	if _next.size() < n:
 		_next.resize(n)
+	if sleep_enabled:
+		_rebuild_hash_city()
+		return
 	var go := _g_origin
 	var gn := _g_n
 	var bn := _b_n
@@ -1608,12 +1617,41 @@ func _rebuild_hash() -> void:
 		_head[c] = u
 		var bit := 1 << u_side[u]
 		_cmask[c] |= bit
-		var b := (cz >> _BLK_SHIFT) * bn + (cx >> _BLK_SHIFT)
-		if dil:
+		_bmask[(cz >> _BLK_SHIFT) * bn + (cx >> _BLK_SHIFT)] |= bit
+
+
+## Хэш города: спящие берут клетку и блок из прошлой сборки (они не двигались); блоки с соседями (сон)
+func _rebuild_hash_city() -> void:
+	_bmask_n.fill(0)
+	if _ublk.size() < n:
+		var old := _ucell.size()
+		_ublk.resize(n)
+		_ucell.resize(n)
+		for u in range(old, n):
+			_ucell[u] = -1
+	var go := _g_origin
+	var gn := _g_n
+	var bn := _b_n
+	var gmax := gn - 1
+	for u in n:
+		if u_life[u] != Life.ALIVE:
+			continue
+		var c := _ucell[u]
+		var b := _ublk[u]
+		if u_sleep[u] == 0 or c < 0:
+			var cx := clampi(int((u_x[u] - go) / _CELL), 0, gmax)
+			var cz := clampi(int((u_z[u] - go) / _CELL), 0, gmax)
+			c = cz * gn + cx
+			b = (cz >> _BLK_SHIFT) * bn + (cx >> _BLK_SHIFT)
+			_ucell[u] = c
 			_ublk[u] = b
-			if _bmask[b] & bit == 0:
-				_dilate(b, bit)
-		_bmask[b] |= bit
+		_next[u] = _head[c]
+		_head[c] = u
+		var bit := 1 << u_side[u]
+		_cmask[c] |= bit
+		if _bmask[b] & bit == 0:
+			_bmask[b] |= bit
+			_dilate(b, bit)
 
 
 ## Блок и 8 соседей получают бит стороны (сон: враг ближе ~16 м будит)
@@ -1805,6 +1843,8 @@ func _update_centroid(s: int) -> void:
 
 
 func _nearest_enemy_squad(s: int) -> int:
+	if sleep_enabled:
+		return _nearest_enemy_squad_city(s)
 	var best := -1
 	var bd := INF
 	for t in squads:
@@ -1814,6 +1854,46 @@ func _nearest_enemy_squad(s: int) -> int:
 		if d < bd:
 			bd = d
 			best = t
+	return best
+
+
+## Город: ближайший вражеский отряд — среди настоящих отрядов (список) и одиночек ближе ENEMY_NEAR
+## (хэш); одиночки дальше 50 м не в счёт (их сотни — работники)
+func _nearest_enemy_squad_city(s: int) -> int:
+	if _rs_dirty:
+		_rs_dirty = false
+		_real_sq.clear()
+		for t in squads:
+			if sq_used[t] == 1 and sq_single[t] == 0:
+				_real_sq.append(t)
+	var best := -1
+	var bd := INF
+	var side := sq_side[s]
+	var cx := sq_cx[s]
+	var cz := sq_cz[s]
+	for t in _real_sq:
+		if sq_side[t] == side or sq_alive[t] == 0:
+			continue
+		var d := Vector2(sq_cx[t] - cx, sq_cz[t] - cz).length_squared()
+		if d < bd or (d == bd and t < best):
+			bd = d
+			best = t
+	if bd > ENEMY_NEAR * ENEMY_NEAR:
+		var e := _nearest_enemy_pos(side, Vector2(cx, cz), ENEMY_NEAR)
+		if e >= 0:
+			var t2 := u_squad[e]
+			if t2 >= 0 and sq_single[t2] == 1:
+				var d2 := Vector2(sq_cx[t2] - cx, sq_cz[t2] - cz).length_squared()
+				if d2 < bd:
+					best = t2
+	else:
+		var e2 := _nearest_enemy_pos(side, Vector2(cx, cz), sqrt(bd))
+		if e2 >= 0:
+			var t3 := u_squad[e2]
+			if t3 >= 0 and sq_single[t3] == 1:
+				var d3 := Vector2(sq_cx[t3] - cx, sq_cz[t3] - cz).length_squared()
+				if d3 < bd:
+					best = t3
 	return best
 
 
@@ -2875,6 +2955,7 @@ func _try_sleep(u: int) -> void:
 	u_sleep[u] = 1
 	if sq_single[s] == 1:
 		sq_dorm[s] = 1
+	_ucell[u] = -1  # сдвинулся на этом шаге — клетку при сборке хэша посчитать заново
 	# спит на месте: прошлый шаг = этот (вид не качает его между ними; шаг начала его пропускает)
 	u_px[u] = u_x[u]
 	u_pz[u] = u_z[u]

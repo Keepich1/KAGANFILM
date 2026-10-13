@@ -256,7 +256,8 @@ func _inside(sim: BattleSim, st: int, x: float, z: float) -> bool:
 
 func _test_structure_dps() -> void:
 	print("[урон по постройке]")
-	for case in [["chabuulchu", 20, false], ["jooker", 20, false], ["sarboz", 20, true]]:
+	for case in [["chabuulchu", 20, false, 1.0], ["jooker", 20, false, 1.0], ["sarboz", 20, true, 1.0],
+			["jooker", 20, false, 0.75]]:
 		var port := _make_port()
 		var sim := port.sim
 		var base := SimHarness.flat_spot()
@@ -265,6 +266,10 @@ func _test_structure_dps() -> void:
 		var tid: String = case[0]
 		var n: int = case[1]
 		var ranged: bool = case[2]
+		var atk: float = case[3]
+		if atk != 1.0:
+			# голод игрока 1 (R11): атака × 0,75
+			port.set_owner_mods(1, PackedFloat32Array([atk, 1.0, 1.0, 1.0, 1.0]))
 		var sh := port.spawn_squad(1, 1, StringName(tid), n, base + Vector2(-50, 0), PI / 2, &"", 0, 10)
 		port.attack(PackedInt32Array([sh]), b, not ranged)
 		var first := -1
@@ -286,9 +291,9 @@ func _test_structure_dps() -> void:
 			per = float(st["attack"]) * float(st["vs_building"]) / BattleSim.ST_MELEE_COOL
 		var secs := (2400 - first) / 30.0
 		var dps := dmg / 100.0 / maxf(secs, 0.1)
-		var want := per * n
-		print("  %s ×%d: %.2f HP/с, формула %.2f HP/с (первое попадание на %.1f с)" % [tid, n, dps, want, first / 30.0])
-		SimHarness.check_range(dps / want, 0.9, 1.1, "%s: урон по постройке / формула" % tid)
+		var want := per * n * atk
+		print("  %s ×%d (атака ×%.2f): %.2f HP/с, формула %.2f HP/с (первое попадание на %.1f с)" % [tid, n, atk, dps, want, first / 30.0])
+		SimHarness.check_range(dps / want, 0.9, 1.1, "%s ×%.2f: урон по постройке / формула" % [tid, atk])
 		SimHarness.check(sim.st_alive[7] == 1, "ядро само HP постройки не меняет")
 
 
@@ -473,11 +478,50 @@ func _test_perf() -> void:
 	print("  1000 одиночек без дела: %.2f мс/шаг (худший %.2f), спят %d" % [avg, worst / 1000.0, asleep])
 	SimHarness.check(asleep >= 990, "спят почти все (%d)" % asleep)
 	SimHarness.check(avg <= 2.0, "1000 одиночек без дела ≤ 2 мс/шаг (%.2f)" % avg)
+	_city_at_rest()
 	# свалка 1213: срез (ядро по умолчанию) и город (сон, буферы, тела) — тот же бой
 	var base_ms := _melee(false)
 	var city_ms := _melee(true)
 	print("  свалка 1213: срез %.2f мс/шаг, город %.2f мс/шаг" % [base_ms, city_ms])
 	SimHarness.check(city_ms <= base_ms * 1.15, "свалка в городе не медленнее среза (±15%% на шум)")
+
+
+## Город в покое (§16): 600 работников за работой, 300 бойцов в строю стоят, 100 одиночек ходят туда-обратно
+func _city_at_rest() -> void:
+	var port := _make_port({"reserve_units": 1200, "reserve_squads": 800})
+	var sim := port.sim
+	var base := SimHarness.flat_spot() + Vector2(-100, -100)
+	var aux := [AnimSpec.WORK_CHOP, AnimSpec.WORK_DIG, AnimSpec.WORK_BUILD]
+	for k in 600:
+		# город Коканда и стан кыпчаков в 250 м друг от друга (враг ближе 16 м будит спящих)
+		var t := k % 2
+		var h := port.spawn(t, t, &"dehqon" if t == 0 else &"malchy",
+			base + Vector2((k / 2 % 15) * 4.0 + t * 250.0, (k / 30) * 4.0), 0.0)
+		port.set_work(h, aux[k % 3])
+	for k in 3:
+		port.spawn_squad(0, 0, &"sarboz" if k != 1 else &"nayzachi", 100, base + Vector2(30 + k * 60, 120), 0.0, &"yuzboshi", 0, 50)
+	var walkers := PackedInt32Array()
+	for k in 100:
+		walkers.append(port.spawn(0, 0, &"jooker", base + Vector2(180 + (k % 10) * 2.0, (k / 10) * 2.0), 0.0))
+	_tick(port, 240)
+	var t0 := _cpu_us()
+	var worst := 0
+	for i in 600:
+		if i % 150 == 0:
+			for k in walkers.size():
+				var h := walkers[k]
+				port.move(PackedInt32Array([h]), base + Vector2(180 + (k % 10) * 2.0, (k / 10) * 2.0 + (40.0 if (i / 150) % 2 == 0 else 0.0)))
+		var s0 := _cpu_us()
+		_tick(port)
+		worst = maxi(worst, _cpu_us() - s0)
+	var avg := (_cpu_us() - t0) / 600.0 / 1000.0
+	var asleep := 0
+	for u in sim.n:
+		asleep += sim.u_sleep[u]
+	print("  город в покое (600 работают, 300 в строю, 100 ходят): %.2f мс/шаг (худший %.2f), спят %d из %d" % [
+		avg, worst / 1000.0, asleep, sim.n])
+	# цель §16 — 3 мс; на общей машине разброс замеров ~20%, ворота — 3,6 мс
+	SimHarness.check(avg <= 3.6, "город в покое: цель 3 мс/шаг, предел 3,6 (%.2f)" % avg)
 
 
 func _melee(city: bool) -> float:

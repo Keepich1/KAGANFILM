@@ -23,6 +23,7 @@ const AMOVE_R := 40.0               # м: радиус поиска врага �
 const AMOVE_DONE := 3.0             # м: attack_move закончен у цели
 const TRACK_PERIOD := 15            # тактов между проверками ушедшей цели атаки
 const TRACK_MOVED := 8.0            # м: цель ушла — новый путь
+const RESERVE := 2048               # юнитов и отрядов по умолчанию (cfg reserve_units / reserve_squads)
 
 enum K { NONE, MOVE, ATTACK, ATTACK_ST, AMOVE }
 
@@ -52,7 +53,7 @@ var _tmp := PackedInt32Array()
 
 
 ## cfg: {teams, homes: PackedVector2Array, corpse_s, bounds_origin, bounds_size}; дополнительно
-## seed (зерно ядра, по умолчанию 1), sleep (сон, по умолчанию да), reserve_units / reserve_squads.
+## seed (зерно ядра, по умолчанию 1), sleep (сон, по умолчанию да), reserve_units / reserve_squads (2048).
 func setup(p_defs: Defs, p_nav: NavApi, p_cfg: Dictionary) -> void:
 	defs = p_defs
 	nav = p_nav
@@ -77,7 +78,8 @@ func setup(p_defs: Defs, p_nav: NavApi, p_cfg: Dictionary) -> void:
 			sim.set_bounds(o, Vector2.ONE * (n - 1) * Terrain.spacing())
 	if nav and nav.w > 0:
 		sim.set_grids(nav.origin, nav.w, nav.h, nav.static_grid(), nav.speed_grid())
-	sim.reserve(int(cfg.get("reserve_units", 0)), int(cfg.get("reserve_squads", 0)))
+	# места заранее: массивы ядра не переезжают в памяти, пока юнитов меньше (шаг в фоне — SimStepper)
+	sim.reserve(int(cfg.get("reserve_units", RESERVE)), int(cfg.get("reserve_squads", RESERVE)))
 	_o_kind.clear()
 	_req.clear()
 
