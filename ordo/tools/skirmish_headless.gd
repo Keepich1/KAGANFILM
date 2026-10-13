@@ -2,7 +2,8 @@ extends SceneTree
 ## Автобои «Города» без графики (ТЗ 14 «автобои ИИ против ИИ»; ARCHITECTURE §15): N матчей ИИ против ИИ,
 ## стороны меняются местами через матч; каждый матч проверяется повтором (вторая прогонка из записи
 ## должна дать те же контрольные суммы), запись повтора кладётся в renders/skirmish/.
-## Запуск — tools/skirmish_headless.sh N [--minutes=M] [--seed=S] [--difficulty=D] [--stub]
+## Запуск — tools/skirmish_headless.sh N [--minutes=M] [--seed=S] [--difficulty=D] [--stub | --impl=stub]
+## (реализации — GameSim.impl_for: по умолчанию настоящие, если они в проекте; ORDO_IMPL=stub — тоже заглушки)
 ##   godot --headless --path ordo --script res://tools/skirmish_headless.gd -- --n=2 --minutes=15
 ## Код выхода 1 — повтор разошёлся с матчем.
 
@@ -20,9 +21,9 @@ func _init() -> void:
 	var diff := clampi(int(_args.get("difficulty", "0")), 0, 2)
 	var out_dir := String(_args.get("out", "res://renders/skirmish"))
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out_dir))
-	var impl := {}
+	var impl := GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
 	if _args.has("stub"):
-		impl = {"port": "stub", "nav": "stub", "econ": "stub"}
+		impl = GameSim.impl_for(PackedStringArray(["--impl=stub"]))
 	var fails := 0
 	var wins := {"kokand": 0, "kipchak": 0, "—": 0}
 	print("Автобои «Города»: матчей %d, по %.0f мин, зерно с %d, сложность %d" % [n, minutes, seed0, diff])
@@ -35,7 +36,7 @@ func _init() -> void:
 		g.impl = impl
 		g.setup(MapValley.MAP, players, seed0 + m)
 		if m == 0:
-			print("реализации: порт %s, навигация %s, экономика %s" % [_cls(g.port), _cls(g.nav), _cls(g.econ)])
+			print("реализации: ", g.impl_names())
 		var end := roundi(minutes * 60.0 * 30.0)
 		var t0 := Time.get_ticks_usec()
 		while g.tick < end and not g.over:
@@ -63,10 +64,6 @@ func _init() -> void:
 	print("Итог: Коканд %d, кыпчаки %d, без победителя %d; повторов разошлось: %d" % [wins["kokand"], wins["kipchak"], wins["—"], fails])
 	print("ИТОГ: ", "ВСЁ ПРОШЛО" if fails == 0 else "ПРОВАЛОВ: %d" % fails)
 	quit(1 if fails > 0 else 0)
-
-
-func _cls(o: Object) -> String:
-	return (o.get_script() as Script).get_global_name()
 
 
 func _clock(t: int) -> String:

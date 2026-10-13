@@ -9,6 +9,11 @@ extends RefCounted
 
 const Err := EconApi.Err
 const Op := SimCmd.Op
+## SPAWN: точка приказа — не дальше этого от края набегов (map.raid_edges; RaidDirector раскладывает отряды
+## волны в ±14 м поперёк курса) …
+const SPAWN_EDGE_R := 40.0
+## … или от своей ставки: полразмера ставки + столько (дверь и площадка перед ней)
+const SPAWN_DOOR_R := 12.0
 
 var applied := 0
 var rejected := 0
@@ -21,6 +26,7 @@ var _nav: NavApi
 var _econ: EconApi
 var _events: SimEvents
 var _victory: Victory
+var _edges := PackedVector2Array()
 
 
 ## Части игры (без ссылки на сам GameSim — иначе цикл ссылок RefCounted)
@@ -32,6 +38,7 @@ func setup(p_game: GameSim) -> void:
 	_econ = p_game.econ
 	_events = p_game.events
 	_victory = p_game.victory
+	_edges = p_game.raid_edges
 
 
 func apply(cmd: PackedInt32Array) -> void:
@@ -344,7 +351,9 @@ func _form_squad(p: int, ids: PackedInt32Array) -> int:
 	return Err.OK
 
 
-## SPAWN — только ИИ при rules.ai_free_waves (волны набега даром); якорь — точка из приказа
+## SPAWN — только ИИ при rules.ai_free_waves (волны набега даром). Якорь (ARCHITECTURE §8) — край набегов
+## карты (SPAWN_EDGE_R) или дверь своей ставки (SPAWN_DOOR_R); офицер — нет (−1) или офицер своей стороны.
+## Так волну не поставить в чужой базе — ни из ИИ, ни из повтора, консоли или сети.
 func _spawn(p: int, cmd: PackedInt32Array) -> int:
 	var P := _econ.players
 	if P.ctrl[p] != PlayerTable.Ctrl.AI or not bool(_rules.get("ai_free_waves", false)):
@@ -352,9 +361,16 @@ func _spawn(p: int, cmd: PackedInt32Array) -> int:
 	var u := SimCmd.arg(cmd, 0)
 	var count := SimCmd.arg(cmd, 1)
 	var officer := SimCmd.arg(cmd, 5)
-	if u >= _defs.unit_ids.size() or officer >= _defs.unit_ids.size() or count > SimCmd.MAX_IDS:
+	if u < 0 or u >= _defs.unit_ids.size() or officer < -1 or officer >= _defs.unit_ids.size() \
+			or count <= 0 or count > SimCmd.MAX_IDS:
 		return -Err.INVALID
-	var at := _nav.nearest_passable(P.team[p], SimCmd.arg_pos(cmd, 2))
+	var f := P.faction[p]
+	if officer >= 0 and (f < 0 or officer != _defs.f_officer[f]):
+		return -Err.NOT_ALLOWED
+	var want := SimCmd.arg_pos(cmd, 2)
+	if not _spawn_anchor_ok(p, want):
+		return -Err.NOT_ALLOWED
+	var at := _nav.nearest_passable(P.team[p], want)
 	var heading := SimCmd.arg_angle(cmd, 4)
 	if is_nan(heading):
 		heading = 0.0
@@ -366,6 +382,23 @@ func _spawn(p: int, cmd: PackedInt32Array) -> int:
 		var mt := _defs.unit(_port.type_id(m))
 		_events.push(SimEvents.Ev.UNIT_SPAWNED, p, m, Ids.NULL, mt, _port.pos(m))
 	return Err.OK
+
+
+## Точка SPAWN у края набегов или у двери своей ставки
+func _spawn_anchor_ok(p: int, at: Vector2) -> bool:
+	for e in _edges:
+		if e.distance_squared_to(at) <= SPAWN_EDGE_R * SPAWN_EDGE_R:
+			return true
+	var B := _econ.buildings
+	var hq := _econ.players.hq_b[p]
+	if hq == Ids.NULL or not B.valid(hq):
+		return false
+	var b := B.slot(hq)
+	if B.state[b] != BuildingTable.State.ACTIVE:
+		return false
+	var sz := _defs.b_size[B.btype[b]]
+	var r := maxf(sz.x, sz.y) * 0.5 + SPAWN_DOOR_R
+	return Vector2(B.x[b], B.z[b]).distance_squared_to(at) <= r * r
 
 
 func _reject(cmd: PackedInt32Array, reason: int) -> void:

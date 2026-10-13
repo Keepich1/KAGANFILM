@@ -184,6 +184,11 @@ func _muster(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 		var hq := AiController.hq_pos(gq, enemy)
 		target = hq if hq != Vector2.INF else _bounds.get_center()
 	edge = _pick_edge(target)
+	if _edges.is_empty():
+		# карта без краёв набегов: волна выходит из своей ставки (второй якорь SPAWN, ARCHITECTURE §8)
+		var own := AiController.hq_pos(gq, player)
+		if own != Vector2.INF:
+			edge = own
 	var heading := AiController.cardinal(target - edge)
 	var side := _side_of(heading)
 	var officer: int = gq.defs().f_officer[_faction] if _faction >= 0 else -1

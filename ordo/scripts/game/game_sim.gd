@@ -40,6 +40,8 @@ var players_cfg: Array[Dictionary] = []
 var impl := {}
 ## Объект замеров (тесты): mark(фаза: int)
 var prof: Object = null
+## Края набегов карты (map.raid_edges): якоря Op.SPAWN (Orders) вместе с дверью своей ставки
+var raid_edges := PackedVector2Array()
 ## Игра кончилась (Victory): остались игроки одной команды; winner — команда (−1 — никто)
 var over: bool:
 	get:
@@ -59,6 +61,9 @@ func setup(map: Dictionary, players: Array, p_seed: int, p_rules_id := &"GOROD")
 	defs = impl.get("defs", null) if impl.get("defs", null) is Defs else Defs.shared()
 	rules = defs.rules_of(rules_id)
 	map_id = String(map.get("id", "valley"))
+	raid_edges.clear()
+	for e: Vector2 in map.get("raid_edges", []):
+		raid_edges.append(e)
 	players_cfg.clear()
 	for pc: Dictionary in players:
 		players_cfg.append(pc.duplicate(true))
@@ -73,9 +78,10 @@ func setup(map: Dictionary, players: Array, p_seed: int, p_rules_id := &"GOROD")
 	for pc: Dictionary in players_cfg:
 		teams = maxi(teams, int(pc.get("team", 0)) + 1)
 	nav.setup(Terrain.info(), defs, econ, port)
+	# seed — зерно BattleRng ядра (CombatPortBattle: BattleSim.new(seed)); без него у всех игр один бой
 	port.setup(defs, nav, {"teams": maxi(teams, 2), "homes": MapSetup.homes(map, players_cfg),
 		"corpse_s": rules.get("corpse_s", -1), "bounds_origin": nav.origin,
-		"bounds_size": Vector2(nav.w, nav.h) * NavApi.CELL, "victory": "none", "flee": "home"})
+		"bounds_size": Vector2(nav.w, nav.h) * NavApi.CELL, "victory": "none", "flee": "home", "seed": seed})
 	econ.setup(defs, rules, port, nav, events, seed)
 	queue = CommandQueue.new()
 	queue.input_delay = maxi(1, int(rules.get("input_delay", 1)))
@@ -165,6 +171,30 @@ static func from_replay(d: Dictionary) -> GameSim:
 	return Replay.make_game(d)
 
 
+## Выбор реализаций для тестов и автобоёв (значение impl до setup): режим из ключа --impl=auto|stub
+## (аргументы после «--») или переменной ORDO_IMPL; по умолчанию auto — настоящие NavGrid / CombatPortBattle /
+## EconomySim, если они уже в проекте, иначе заглушки. stub — всегда заглушки.
+## Аргументы и окружение передаёт вызывающий (тест): сама симуляция ОС не читает.
+static func impl_for(user_args: PackedStringArray, env := "") -> Dictionary:
+	var mode := env.strip_edges().to_lower()
+	for a in user_args:
+		if a.begins_with("--impl="):
+			mode = a.substr(7).strip_edges().to_lower()
+	if mode == "stub":
+		return {"port": "stub", "nav": "stub", "econ": "stub"}
+	return {}
+
+
+## Взяты ли настоящие реализации (ни одной заглушки среди порта, навигации и экономики)
+func real_impl() -> bool:
+	return not (port is CombatPortStub) and not (nav is NavStub) and not (econ is EconStub)
+
+
+## Какие реализации взяты: «порт CombatPortBattle, навигация NavGrid, экономика EconomySim»
+func impl_names() -> String:
+	return "порт %s, навигация %s, экономика %s" % [_cls(port), _cls(nav), _cls(econ)]
+
+
 # ================================================================= служебное
 
 func _apply_notes(a: AiController) -> void:
@@ -189,6 +219,18 @@ func _make(key: String, cls: StringName, stub: GDScript) -> Object:
 		if path != "":
 			return (load(path) as GDScript).new()
 	return stub.new()
+
+
+## Имя класса реализации; у подмены теста (внутренний класс) — имя ближайшего предка с «+»
+static func _cls(o: Object) -> String:
+	var sc: Script = o.get_script() if o != null else null
+	var own := true
+	while sc != null:
+		if sc.get_global_name() != &"":
+			return String(sc.get_global_name()) + ("" if own else "+")
+		sc = sc.get_base_script()
+		own = false
+	return "—"
 
 
 static func _class_path(cls: StringName) -> String:

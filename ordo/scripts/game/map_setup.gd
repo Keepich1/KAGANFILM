@@ -10,6 +10,8 @@ const CLEAR_R := 26.0            # деревья ближе к ставке н�
 const SEARCH_STEP := 8.0         # шаг поиска места для базы ИИ, м
 const SEARCH_MAX_R := 150.0
 const GARRISON_TOWERS := false   # этап 2 (R16): лучники в башнях; пока отряд стоит у башни
+## Причины места, которые готовой базе ИИ не мешают (см. _free_spot)
+const FREE_WHY := [NavApi.Why.OK, NavApi.Why.NO_RES, NavApi.Why.NOT_NEAR, NavApi.Why.NO_TERRITORY]
 
 
 ## Для CombatPort.setup: точки «домой» по командам (ставка первого игрока команды)
@@ -329,7 +331,7 @@ static func _place(game: GameSim, p: int, bt: int, at: Vector2, rot_q: int, hq: 
 		return Ids.NULL
 	var nav := game.nav
 	var c := nav.snap(bt, at, rot_q)
-	if nav.check_place(p, bt, c, rot_q) == NavApi.Why.OK:
+	if _free_spot(nav, p, bt, c, rot_q):
 		return game.econ.spawn_building(p, bt, c, rot_q, true)
 	var rings := int(SEARCH_MAX_R / SEARCH_STEP)
 	for ring in range(1, rings + 1):
@@ -346,9 +348,25 @@ static func _place(game: GameSim, p: int, bt: int, at: Vector2, rot_q: int, hq: 
 			var q := nav.snap(bt, at + d * SEARCH_STEP, rot_q)
 			if q.distance_squared_to(hq) < 20.0 * 20.0:
 				continue
-			if nav.check_place(p, bt, q, rot_q) == NavApi.Why.OK:
+			if _free_spot(nav, p, bt, q, rot_q):
 				return game.econ.spawn_building(p, bt, q, rot_q, true)
 	return Ids.NULL
+
+
+## Место для готовой постройки базы ИИ: годится по земле (карта, наложение, вода, уклон, на стене, враг).
+## Правила хозяйства игрока здесь не в счёт — база ставится даром до первого такта: NO_RES (у ИИ нет кирпича
+## на бурж), NOT_NEAR (зону воды Хумдона ECON считает позже, в шаге), NO_TERRITORY.
+static func _free_spot(nav: NavApi, p: int, bt: int, c: Vector2, rot_q: int) -> bool:
+	var why := nav.check_place(p, bt, c, rot_q)
+	if why == NavApi.Why.OK:
+		return true
+	if not FREE_WHY.has(why):
+		return false
+	var cells := nav.place_cells(p, bt, c, rot_q)
+	for v in cells:
+		if not FREE_WHY.has(int(v)):
+			return false
+	return not cells.is_empty()
 
 
 static func _spawned(game: GameSim, p: int, s_h: int, from_b: int) -> void:
