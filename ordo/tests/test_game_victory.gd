@@ -1,8 +1,10 @@
 extends SceneTree
 ## Победа и поражение «Города» (ARCHITECTURE §3 #16, §15 GAME; ТЗ 9): поражение при потере ставки и при
 ## гибели арбы со свёрнутым ордо; VICTORY команде, что осталась; выбывший не приказывает.
-## На заглушках: «разрушение» и «сворачивание» здесь делает тест, записывая таблицы вместо ECON.
-##   godot --headless --path ordo --script res://tests/test_game_victory.gd
+## «Разрушение» ставки тест делает записью в таблицу (на любой реализации). Арба: на настоящей экономике —
+## приказ PACK_ALL и гибель арбы с ордо (CombatPort.kill); на заглушке «сворачивает» сам тест (ArbaEcon).
+## Реализации — GameSim.impl_for: по умолчанию настоящие (если они в проекте), --impl=stub или ORDO_IMPL=stub — заглушки.
+##   godot --headless --path ordo --script res://tests/test_game_victory.gd [-- --impl=stub]
 
 
 ## Заглушка экономики, которая знает груз арб (как EconomySim.arba_cargo)
@@ -13,15 +15,30 @@ class ArbaEcon extends EconStub:
 		return int(cargo.get(u_h, 0))
 
 
+var _impl := {}
+
+
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
+	var real := _real()
 	_test_hq_loss()
+	if real:
+		_test_arba_loss_real()
 	_test_arba_loss()
 	SimHarness.finish(self)
 
 
+## Печатает реализации; true — настоящие
+func _real() -> bool:
+	var g := _game(null)
+	print("реализации: ", g.impl_names())
+	return g.real_impl()
+
+
+## econ — своя заглушка экономики (порт и навигация — тоже заглушки); null — выбранные реализации
 func _game(econ: EconApi) -> GameSim:
 	var g := GameSim.new()
-	g.impl = {"port": "stub", "nav": "stub", "econ": econ}
+	g.impl = {"port": "stub", "nav": "stub", "econ": econ} if econ != null else _impl.duplicate()
 	g.setup(MapValley.MAP, [{"faction": &"kipchak", "team": 0, "ctrl": PlayerTable.Ctrl.HUMAN, "difficulty": 0},
 		{"faction": &"kokand", "team": 1, "ctrl": PlayerTable.Ctrl.AI, "difficulty": 0}], 4)
 	return g
@@ -39,7 +56,7 @@ func _events(g: GameSim, kind: int) -> Array:
 
 func _test_hq_loss() -> void:
 	print("[потеря ставки]")
-	var g := _game(EconStub.new())
+	var g := _game(null)
 	SimHarness.run_s(g, 5.0)
 	SimHarness.check(not g.over and _events(g, SimEvents.Ev.PLAYER_DEFEATED).is_empty(), "5 с — оба в игре")
 	var B := g.econ.buildings
@@ -62,8 +79,51 @@ func _test_hq_loss() -> void:
 	SimHarness.check(rej, "приказ выбывшего — отказ")
 
 
+## Настоящая экономика: PACK_ALL сворачивает лагерь, ордо едет в арбах (BuildingDefs: arbas 2); пока цела
+## хоть одна арба с ордо — в игре; погибли все (ECON разрушает свёрнутое ордо) — поражение
+func _test_arba_loss_real() -> void:
+	print("[арба с ордо — настоящая экономика]")
+	var g := _game(null)
+	SimHarness.run_s(g, 2.0)
+	var P := g.econ.players
+	var ordo := P.hq_b[0]
+	g.submit(0, SimCmd.pack_all(ordo))
+	var arbas := PackedInt32Array()
+	var t0 := g.tick
+	while g.tick - t0 < 30 * 120 and arbas.is_empty():
+		g.step()
+		if P.hq_b[0] == Ids.NULL and g.tick % 15 == 0:
+			arbas = _arbas_with(g, 0, ordo)
+	SimHarness.check(not arbas.is_empty(), "PACK_ALL: ставка свёрнута, ордо в арбах: %d (%.1f с)" % [arbas.size(), (g.tick - t0) / 30.0])
+	if arbas.is_empty():
+		return
+	SimHarness.run_s(g, 3.0)
+	SimHarness.check(not g.over and _events(g, SimEvents.Ev.PLAYER_DEFEATED).is_empty(), "ставка в пути, арбы целы — в игре")
+	for i in arbas.size():
+		g.port.kill(arbas[i])
+		SimHarness.run_s(g, 1.0)
+		var d := _events(g, SimEvents.Ev.PLAYER_DEFEATED)
+		if i < arbas.size() - 1:
+			SimHarness.check(d.is_empty() and not g.over, "погибла арба %d из %d — ордо едет в других, в игре" % [i + 1, arbas.size()])
+		else:
+			SimHarness.check(d.size() == 1 and d[0][0] == 0 and d[0][1] == Victory.REASON_ARBA,
+				"погибли все арбы с ордо — поражение (причина 1): %s" % str(d))
+	SimHarness.check(g.over and g.winner == 1, "победа команды 1")
+
+
+## Арбы игрока p, везущие постройку b_h (EconApi.arba_cargo). Только договор GameQuery: ссылка теста на
+## GameQueryImpl здесь оставляет на выходе Godot «resources still in use» (цикл скриптов GameSim ↔ GameQueryImpl)
+func _arbas_with(g: GameSim, p: int, b_h: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for u in g.query.units_of(p):
+		var ut := g.defs.unit(g.port.type_id(u))
+		if ut >= 0 and g.defs.u_flags[ut] & UnitStats.WAGON and g.econ.arba_cargo(u) == b_h:
+			out.append(u)
+	return out
+
+
 func _test_arba_loss() -> void:
-	print("[арба с ордо]")
+	print("[арба с ордо — заглушка экономики]")
 	var econ := ArbaEcon.new()
 	var g := _game(econ)
 	SimHarness.run_s(g, 2.0)

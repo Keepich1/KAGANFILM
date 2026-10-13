@@ -4,11 +4,16 @@ extends SceneTree
 ##   • ставки далеко друг от друга (ТЗ 8), жилы по правилу ECONOMY §1.1, деревья — из ScatterData;
 ##   • база ИИ (AiDefs.BASE) и отряды защиты стоят; у игрока-человека — только старт;
 ##   • описатели ↔ индексы, pick (свой юнит, здание, узел), selection_info, building_panel / build_menu
-##     (запасной вариант без ECON), orders_for, minimap, raid_eta_ticks.
-##   godot --headless --path ordo --script res://tests/test_game_query.gd
+##     (ECON или запасной вариант без него), orders_for, minimap, raid_eta_ticks, field_dims.
+## Реализации — GameSim.impl_for: по умолчанию настоящие (если они в проекте), --impl=stub или ORDO_IMPL=stub — заглушки.
+##   godot --headless --path ordo --script res://tests/test_game_query.gd [-- --impl=stub]
+
+var _impl := {}
 
 
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
+	print("реализации: ", _game(&"kokand", PlayerTable.Ctrl.HUMAN, &"kipchak", PlayerTable.Ctrl.AI).impl_names())
 	_test_overrides()
 	_test_map()
 	_test_query()
@@ -17,7 +22,7 @@ func _init() -> void:
 
 func _game(f0: StringName, c0: int, f1: StringName, c1: int) -> GameSim:
 	var g := GameSim.new()
-	g.impl = {"port": "stub", "nav": "stub", "econ": "stub"}
+	g.impl = _impl.duplicate()
 	g.setup(MapValley.MAP, [{"faction": f0, "team": 0, "ctrl": c0, "difficulty": 0},
 		{"faction": f1, "team": 1, "ctrl": c1, "difficulty": 0}], 2)
 	return g
@@ -160,9 +165,17 @@ func _test_query() -> void:
 	var bp := q.building_panel(hq)
 	SimHarness.check(bp.get("name", "") == "Урда" and bp["trains"].size() >= 1 and bp["trains"][0]["utype"] == g.defs.unit(&"dehqon"),
 		"building_panel урды: найм деҳқонов")
+	# меню: у ECON — то, что можно ставить (без Сб. 2), запасной вариант — вся вкладка; порядок — вкладки
 	var bm := q.build_menu(0, &"economy")
-	SimHarness.check(bm.size() == (g.defs.f_tabs[g.econ.players.faction[0]]["economy"] as PackedInt32Array).size() and bm[0]["name"] == "Уй",
-		"build_menu «Хозяйство»: %d построек, первая — Уй" % bm.size())
+	var tab: PackedInt32Array = g.defs.f_tabs[g.econ.players.faction[0]]["economy"]
+	var in_tab := not bm.is_empty()
+	var last := -1
+	for e: Dictionary in bm:
+		var k := tab.find(int(e.get("btype", -1)))
+		in_tab = in_tab and k > last
+		last = k
+	SimHarness.check(in_tab and bm.size() <= tab.size() and bm[0]["name"] == "Уй",
+		"build_menu «Хозяйство»: %d из %d построек вкладки по порядку, первая — Уй" % [bm.size(), tab.size()])
 	var ops := PackedInt32Array()
 	for o: Dictionary in q.orders_for(0, us):
 		ops.append(o["op"])
@@ -175,5 +188,9 @@ func _test_query() -> void:
 	SimHarness.check(mm["units"].size() == us.size() + q.units_of(1).size() and mm["nodes"].size() == 10, "minimap: все юниты, 10 жил")
 	SimHarness.check(q.raid_eta_ticks(0) == int(g.defs.ai["RAID"]["peace_ticks"][0]) and q.raid_eta_ticks(1) == -1,
 		"raid_eta_ticks: человеку — мирный период, ИИ — −1")
-	SimHarness.check(q.field_dims() == Vector4i.ZERO, "field_dims: на заглушке полей нет")
+	var fd := q.field_dims()
+	if g.econ is EconStub:
+		SimHarness.check(fd == Vector4i.ZERO, "field_dims: на заглушке полей нет")
+	else:
+		SimHarness.check(fd.x > 0 and fd.y > 0 and fd.z > 0 and fd.w > 0, "field_dims: поля трав и воды ECON %s" % str(fd))
 	SimHarness.check(q.tick() == 0 and q.events() == g.events and q.defs() == g.defs, "tick / events / defs")

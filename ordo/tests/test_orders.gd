@@ -4,8 +4,11 @@ extends SceneTree
 ##   • маршрут: бой → CombatPort, хозяйство → EconApi, работники в боевом приказе уходят с работы;
 ##   • отказы → CMD_REJECTED с причиной: форма, устаревший и чужой описатель, не тот вид, нет ресурсов,
 ##     выбывший игрок, SPAWN не у ИИ, постройка чужой стороны;
-##   • SPAWN у ИИ — отряд и UNIT_SPAWNED на каждого.
-##   godot --headless --path ordo --script res://tests/test_orders.gd
+##   • SPAWN у ИИ — отряд и UNIT_SPAWNED на каждого; только у края набегов или двери своей ставки и только
+##     с офицером своей стороны.
+## Реализации — GameSim.impl_for: по умолчанию настоящие (если они в проекте), --impl=stub или ORDO_IMPL=stub —
+## заглушки. Маршрут приказов всегда на заглушке экономики (она пишет журнал вызовов).
+##   godot --headless --path ordo --script res://tests/test_orders.gd [-- --impl=stub]
 
 const Err := EconApi.Err
 
@@ -22,7 +25,12 @@ class IdleEcon extends EconStub:
 		return out
 
 
+var _impl := {}
+
+
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
+	print("реализации: ", _game().impl_names())
 	_test_queue()
 	_test_routing()
 	_test_rejects()
@@ -30,9 +38,10 @@ func _init() -> void:
 	SimHarness.finish(self)
 
 
+## econ — своя заглушка экономики (тогда порт и навигация — тоже заглушки), иначе выбранные реализации
 func _game(econ: EconApi = null) -> GameSim:
 	var g := GameSim.new()
-	g.impl = {"port": "stub", "nav": "stub", "econ": econ if econ != null else "stub"}
+	g.impl = {"port": "stub", "nav": "stub", "econ": econ} if econ != null else _impl.duplicate()
 	g.setup(MapValley.MAP, SimHarness.default_players(), 3)
 	return g
 
@@ -116,48 +125,106 @@ func _test_rejects() -> void:
 		["ATTACK по несуществующему зданию", SimCmd.attack(w0.slice(0, 1), Ids.make(Ids.Kind.BUILDING, 999, 1)), Err.STALE],
 	]
 	for c: Array in cases:
-		var before := g.orders.rejected
 		var cursor := g.events.head
-		g.submit(c[3] if c.size() > 3 else 0, c[1])
+		var who: int = c[3] if c.size() > 3 else 0
+		g.submit(who, c[1])
 		g.step()
-		var got := _reject_reason(g, cursor)
-		SimHarness.check(g.orders.rejected == before + 1 and got == c[2], "%s → причина %d (ждали %d)" % [c[0], got, c[2]])
-	# нет ресурсов: Казарма 200 дерева + 100 камня, стартовых 400 / 250 — третья и четвёртая не по карману
+		var got := _reject_reason(g, cursor, who)
+		SimHarness.check(_reject_reasons(g, cursor, who).size() == 1 and got == c[2], "%s → причина %d (ждали %d)" % [c[0], got, c[2]])
+	# нет ресурсов: Казарм по карману столько, сколько хватает стартовых (из defs), следующая — NO_RES;
+	# места — годные (check_place == OK) на своей земле у урды, поодаль друг от друга
 	var cursor2 := g.events.head
 	var bz := g.defs.building(&"kazarma")
-	for i in 4:
-		g.submit(0, SimCmd.build(w0.slice(i, i + 1), bz, Vector2(120, 150 + i * 30), 0))
+	var afford := _affordable(g, 0, bz)
+	var spots := _free_spots(g, 0, bz, afford + 1)
+	SimHarness.check(spots.size() == afford + 1, "места под %d Казармы у урды: %d" % [afford + 1, spots.size()])
+	for i in spots.size():
+		g.submit(0, SimCmd.build(w0.slice(i % w0.size(), i % w0.size() + 1), bz, spots[i], 0))
 	g.step()
-	var reasons := _reject_reasons(g, cursor2)
-	SimHarness.check(reasons.has(Err.NO_RES), "четвёртая Казарма — нет ресурсов (NO_RES) %s" % str(reasons))
+	# «нет ресурсов» — EconApi.Err.NO_RES или 100 + NavApi.Why.NO_RES (EconomySim проверяет цену в check_place)
+	var reasons := _reject_reasons(g, cursor2, 0)
+	SimHarness.check(reasons.size() == 1 and (reasons[0] == Err.NO_RES or reasons[0] == 100 + NavApi.Why.NO_RES),
+		"Казарма № %d — нет ресурсов (NO_RES), первые %d стоят: отказы %s" % [afford + 1, afford, str(reasons)])
 	# выбывший игрок
 	g.victory.defeated[0] = 1
 	var cursor3 := g.events.head
 	g.submit(0, SimCmd.stop(w0.slice(0, 1)))
 	g.step()
-	SimHarness.check(_reject_reason(g, cursor3) == Err.NOT_ALLOWED, "выбывший игрок — отказ")
+	SimHarness.check(_reject_reason(g, cursor3, 0) == Err.NOT_ALLOWED, "выбывший игрок — отказ")
 
 
 func _test_spawn() -> void:
 	print("[SPAWN у ИИ]")
 	var g := _game()
-	var cursor := g.events.head
 	var u := g.defs.unit(&"chabuulchu")
-	var cmd := SimCmd.spawn(u, 10, Vector2(-300, 40), PI * 0.5, g.defs.unit(&"juz_bashy"))
-	g.submit(1, cmd)
+	var off := g.defs.unit(&"juz_bashy")
+	var edge: Vector2 = MapValley.MAP["raid_edges"][0]
+	var cursor := g.events.head
+	g.submit(1, SimCmd.spawn(u, 10, edge + Vector2(30, 0), PI * 0.5, off))
 	g.step()
-	var spawned := 0
+	SimHarness.check(_spawned(g, cursor, 1) == 11, "у края набегов: 10 чабуулов + жүз башы, UNIT_SPAWNED на каждого (%d)" %
+		_spawned(g, cursor, 1))
+	var hq := AiController.hq_pos(g.query, 1)
+	var c1 := g.events.head
+	g.submit(1, SimCmd.spawn(u, 5, hq + Vector2(0, 14), 0.0))
+	g.step()
+	SimHarness.check(_spawned(g, c1, 1) == 5 and _reject_reasons(g, c1, 1).is_empty(), "у двери своей ставки — можно (без офицера)")
+	var cases := [
+		["SPAWN больше MAX_IDS", SimCmd.spawn(u, 2000, edge, 0.0), Err.INVALID],
+		["SPAWN в чужой базе (у урды Коканда)", SimCmd.spawn(u, 10, AiController.hq_pos(g.query, 0), 0.0), Err.NOT_ALLOWED],
+		["SPAWN посреди долины (ни края, ни своей ставки)", SimCmd.spawn(u, 10, Vector2(0, 40), 0.0), Err.NOT_ALLOWED],
+		["SPAWN с чужим офицером (юзбоши Коканда)", SimCmd.spawn(u, 10, edge, 0.0, g.defs.unit(&"yuzboshi")), Err.NOT_ALLOWED],
+		["SPAWN с офицером-не офицером", SimCmd.spawn(u, 10, edge, 0.0, u), Err.NOT_ALLOWED],
+	]
+	for c: Array in cases:
+		var cur := g.events.head
+		g.submit(1, c[1])
+		g.step()
+		SimHarness.check(_reject_reason(g, cur, 1) == c[2] and _spawned(g, cur, 1) == 0,
+			"%s → причина %d (ждали %d)" % [c[0], _reject_reason(g, cur, 1), c[2]])
+
+
+## Сколько юнитов игрока p пришло по SPAWN (UNIT_SPAWNED без постройки) с cursor
+func _spawned(g: GameSim, cursor: int, p: int) -> int:
+	var k := 0
 	var r := g.events.range_since(cursor)
 	for seq in range(r.x, r.y):
 		var i := g.events.at(seq)
-		if g.events.e_kind[i] == SimEvents.Ev.UNIT_SPAWNED and g.events.e_player[i] == 1 and g.events.e_b[i] == Ids.NULL:
-			spawned += 1
-	SimHarness.check(spawned == 11, "10 чабуулов + жүз башы, UNIT_SPAWNED на каждого (%d)" % spawned)
-	var big := SimCmd.spawn(u, 2000, Vector2(-300, 40), 0.0)
-	var c2 := g.events.head
-	g.submit(1, big)
-	g.step()
-	SimHarness.check(_reject_reason(g, c2) == Err.INVALID, "SPAWN больше MAX_IDS — отказ")
+		if g.events.e_kind[i] == SimEvents.Ev.UNIT_SPAWNED and g.events.e_player[i] == p and g.events.e_b[i] == Ids.NULL:
+			k += 1
+	return k
+
+
+## Сколько построек bt игрок p может оплатить из запаса (стоимость — из defs)
+func _affordable(g: GameSim, p: int, bt: int) -> int:
+	var cost := g.defs.building_cost(bt)
+	var P := g.econ.players
+	var n := 1 << 20
+	for r in cost.size():
+		if cost[r] > 0:
+			n = mini(n, int(P.res[p * P.R + r] / cost[r]))
+	return n
+
+
+## n годных мест постройки bt у ставки игрока p (на сетке, по кольцам, не ближе размера друг к другу)
+func _free_spots(g: GameSim, p: int, bt: int, n: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var hq := AiController.hq_pos(g.query, p)
+	var gap := maxf(g.defs.b_size[bt].x, g.defs.b_size[bt].y) + 6.0
+	for ring in range(2, 10):
+		for i in ring * 8:
+			var side := i / (ring * 2)
+			var t := i % (ring * 2)
+			var d := [Vector2(-ring + t, -ring), Vector2(ring, -ring + t), Vector2(ring - t, ring), Vector2(-ring, ring - t)][side] as Vector2
+			var c := g.nav.snap(bt, hq + d * 8.0, 0)
+			var far := true
+			for o in out:
+				far = far and o.distance_to(c) >= gap
+			if far and g.nav.check_place(p, bt, c, 0) == NavApi.Why.OK:
+				out.append(c)
+				if out.size() >= n:
+					return out
+	return out
 
 
 # ---------------------------------------------------------------- помощники
@@ -222,16 +289,17 @@ func _events_of(g: GameSim, kind: int) -> int:
 	return k
 
 
-func _reject_reason(g: GameSim, cursor: int) -> int:
-	var rs := _reject_reasons(g, cursor)
+func _reject_reason(g: GameSim, cursor: int, p := -1) -> int:
+	var rs := _reject_reasons(g, cursor, p)
 	return rs[0] if not rs.is_empty() else -1
 
 
-func _reject_reasons(g: GameSim, cursor: int) -> PackedInt32Array:
+## Причины отказов с cursor (p ≥ 0 — только игрока p)
+func _reject_reasons(g: GameSim, cursor: int, p := -1) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	var r := g.events.range_since(cursor)
 	for seq in range(r.x, r.y):
 		var i := g.events.at(seq)
-		if g.events.e_kind[i] == SimEvents.Ev.CMD_REJECTED:
+		if g.events.e_kind[i] == SimEvents.Ev.CMD_REJECTED and (p < 0 or g.events.e_player[i] == p):
 			out.append(g.events.e_b[i])
 	return out

@@ -4,8 +4,9 @@ extends SceneTree
 ##   • 15 мин «ИИ против сценарного игрока» × 2 — суммы совпадают;
 ##   • 15 мин «ИИ против ИИ» × 2 — совпадают; другое зерно — расходятся;
 ##   • ИИ ≤ 0.3 мс на такт в среднем.
-## Берёт настоящие NavGrid / CombatPortBattle / EconomySim, если они уже в проекте (после I3), иначе заглушки.
-##   godot --headless --path ordo --script res://tests/test_game_determinism.gd
+## Берёт настоящие NavGrid / CombatPortBattle / EconomySim, если они уже в проекте (после I3), иначе заглушки
+## (GameSim.impl_for: --impl=stub или ORDO_IMPL=stub — всегда заглушки).
+##   godot --headless --path ordo --script res://tests/test_game_determinism.gd [-- --impl=stub]
 
 
 class Prof:
@@ -27,21 +28,23 @@ class Prof:
 const MIN15 := 30 * 60 * 15
 
 
+var _impl := {}
+
+
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
 	var g := GameSim.new()
+	g.impl = _impl.duplicate()
 	g.setup(MapValley.MAP, SimHarness.default_players(), 1)
-	print("реализации: порт %s, навигация %s, экономика %s" % [_cls(g.port), _cls(g.nav), _cls(g.econ)])
+	print("реализации: ", g.impl_names())
 	_test_vs_scripted()
 	_test_ai_vs_ai()
 	SimHarness.finish(self)
 
 
-func _cls(o: Object) -> String:
-	return (o.get_script() as Script).get_global_name()
-
-
 func _run(p_seed: int, players: Array, scripted: bool, prof: Prof = null) -> GameSim:
 	var g := GameSim.new()
+	g.impl = _impl.duplicate()
 	g.setup(MapValley.MAP, players, p_seed)
 	g.prof = prof
 	var sp := ScriptedPlayer.new(0)

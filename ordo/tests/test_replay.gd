@@ -5,10 +5,14 @@ extends SceneTree
 ##   • изменённый журнал расходится; другие данные (Defs.hash) — повтор не запускается;
 ##   • файл повтора: запись и чтение;
 ##   • GameDriver: игра узлом (issue → такт + 1), запись повтора, просмотр повтора до конца.
-##   godot --headless --path ordo --script res://tests/test_replay.gd
+## Реализации — GameSim.impl_for: по умолчанию настоящие (если они в проекте), --impl=stub или ORDO_IMPL=stub — заглушки.
+##   godot --headless --path ordo --script res://tests/test_replay.gd [-- --impl=stub]
+
+var _impl := {}
 
 
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
 	_test_encode()
 	_test_live_vs_replay()
 	_test_driver()
@@ -46,6 +50,7 @@ func _test_encode() -> void:
 
 func _play(p_seed: int, ticks: int) -> GameSim:
 	var g := GameSim.new()
+	g.impl = _impl.duplicate()
 	g.setup(MapValley.MAP, SimHarness.default_players(), p_seed)
 	var sp := ScriptedPlayer.new(0)
 	while g.tick < ticks:
@@ -68,16 +73,20 @@ func _test_live_vs_replay() -> void:
 	SimHarness.check(n_ext > 30 and started >= 1 and g.orders.rejected > 0,
 		"живая игра 8 мин: внешних приказов %d, отказов %d, набегов %d" % [n_ext, g.orders.rejected, started])
 	SimHarness.check(rec["checksums"].size() == 30 * 8 * 2, "контрольных сумм: %d (раз в 30 тактов)" % rec["checksums"].size())
-	var ok := Replay.verify(rec)
+	var ok := Replay.verify(rec, _impl)
 	SimHarness.check(ok, "повтор из журнала совпал с живой игрой %s" % Replay.last_error)
-	var g2 := Replay.make_game(rec)
+	var g2 := Replay.make_game(rec, _impl)
 	Replay.run(g2, rec)
 	SimHarness.check(g2.checksum() == g.checksum() and g2.tick == g.tick and g2.orders.applied == g.orders.applied,
 		"конец повтора: та же сумма, такт и число исполненных приказов")
-	# изменённый журнал: лишний приказ — повтор расходится
+	# изменённый журнал: лишний приказ — повтор расходится. Юнит — живой на такте приказа (900): первый юнит
+	# игрока к концу игры мог появиться позже, тогда приказ — отказ «устарел», и суммы не расходятся
 	var log := SimCmd.decode(rec["log"])
+	var g3 := Replay.make_game(rec, _impl)
+	while g3.tick < 899:
+		g3.step()
 	var w := PackedInt32Array()
-	for u in g.query.units_of(0):
+	for u in g3.query.units_of(0):
 		w.append(u)
 		break
 	var extra := SimCmd.move(w, Vector2(100, 100), true)
@@ -87,15 +96,15 @@ func _test_live_vs_replay() -> void:
 	log.append(extra)
 	var bad := rec.duplicate(true)
 	bad["log"] = SimCmd.encode(log)
-	SimHarness.check(not Replay.verify(bad), "лишний приказ в журнале — повтор расходится (%s)" % Replay.last_error)
+	SimHarness.check(not Replay.verify(bad, _impl), "лишний приказ в журнале — повтор расходится (%s)" % Replay.last_error)
 	var wrong := rec.duplicate(true)
 	wrong["defs_hash"] = int(rec["defs_hash"]) ^ 1
-	SimHarness.check(Replay.make_game(wrong) == null and Replay.last_error != "", "другие данные — не запускается: %s" % Replay.last_error)
+	SimHarness.check(Replay.make_game(wrong, _impl) == null and Replay.last_error != "", "другие данные — не запускается: %s" % Replay.last_error)
 	# файл
 	var path := "user://test_replay.ordorep"
 	SimHarness.check(Replay.save(path, rec), "повтор записан в %s" % path)
 	var loaded := Replay.load_file(path)
-	SimHarness.check(not loaded.is_empty() and loaded["log"] == rec["log"] and Replay.verify(loaded), "файл прочитан и проигран")
+	SimHarness.check(not loaded.is_empty() and loaded["log"] == rec["log"] and Replay.verify(loaded, _impl), "файл прочитан и проигран")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
@@ -103,6 +112,7 @@ func _test_driver() -> void:
 	print("[GameDriver]")
 	var d := GameDriver.new()
 	d.autostart = false
+	d.game_impl = _impl.duplicate()
 	var seen := [0]
 	d.ticked.connect(func(t: int) -> void: seen[0] = t)
 	d.start_game(17, &"kipchak", 1)
@@ -122,6 +132,7 @@ func _test_driver() -> void:
 	SimHarness.check(d.save_replay(path), "save_replay")
 	var v := GameDriver.new()
 	v.autostart = false
+	v.game_impl = _impl.duplicate()
 	SimHarness.check(v.start_replay(path), "start_replay")
 	v.issue(SimCmd.stop(ws))                       # в просмотре повтора свои приказы не идут
 	for i in 800:

@@ -1,13 +1,15 @@
 extends SceneTree
-## Набеги ИИ (ТЗ 7; ARCHITECTURE §12, §15 GAME; ECONOMY §10), на заглушках CombatPortStub/NavStub/EconStub
-## (боя в заглушке нет — гибель юнитов и «урон» делает здесь простая подмена боя, см. _proxy_combat):
+## Набеги ИИ (ТЗ 7; ARCHITECTURE §12, §15 GAME; ECONOMY §10):
 ##   • первая волна — в конец мирного периода ±2 с на каждой сложности; RAID_WARNING за 30 с;
 ##   • волны растут (×1,25), между началами волн 150–240 с, если набег кончился раньше;
 ##   • отход при потерях ≥ retreat.losses, выжившие уходят с края карты, RAID_ENDED;
-##   • ≥ 60% «убийств» налётчиков — работники и стада, пока они есть;
+##   • ≥ 60% убийств налётчиков — работники и стада, пока они есть: на настоящем ядре — по событиям
+##     (UNIT_DIED с убийцей из волны по виду жертвы, HERD_STOLEN, BUILDING_DESTROYED налётчиком); на заглушке
+##     боя нет — гибель и «урон» делает простая подмена боя (_proxy_combat);
 ##   • выбор цели: ценность минус риск, охраняемая клетка пропускается;
 ##   • ИИ ≤ 0.3 мс на такт в среднем.
-##   godot --headless --path ordo --script res://tests/test_raid.gd
+## Реализации — GameSim.impl_for: по умолчанию настоящие (если они в проекте), --impl=stub или ORDO_IMPL=stub — заглушки.
+##   godot --headless --path ordo --script res://tests/test_raid.gd [-- --impl=stub]
 
 
 class Prof:
@@ -32,7 +34,12 @@ class Prof:
 		_last = now
 
 
+var _impl := {}
+
+
 func _init() -> void:
+	_impl = GameSim.impl_for(OS.get_cmdline_user_args(), OS.get_environment("ORDO_IMPL"))
+	print("реализации: ", _game(_pl(&"kokand", PlayerTable.Ctrl.HUMAN, &"kipchak", PlayerTable.Ctrl.AI)).impl_names())
 	_test_first_raid()
 	_test_waves_and_retreat()
 	_test_targets_and_kills()
@@ -42,7 +49,7 @@ func _init() -> void:
 
 func _game(players: Array, p_seed := 5) -> GameSim:
 	var g := GameSim.new()
-	g.impl = {"port": "stub", "nav": "stub", "econ": "stub"}
+	g.impl = _impl.duplicate()
 	g.setup(MapValley.MAP, players, p_seed)
 	return g
 
@@ -107,7 +114,7 @@ func _test_waves_and_retreat() -> void:
 	var killed_wave := -1
 	var retreat_after := -1
 	var cursor := 0
-	var port := g.port as CombatPortStub
+	var port := g.port
 	while g.tick < 30 * 60 * 20 and starts.size() < 4:
 		g.step()
 		var r := g.events.range_since(cursor)
@@ -203,28 +210,79 @@ func _proxy_combat(g: GameSim, rd: RaidDirector, tally: Dictionary, herds_seen: 
 					tally["building"] += 1
 
 
+## Убийства налётчиков на настоящем ядре — по событиям такта: UNIT_DIED с убийцей из волны (работник или
+## прочий юнит — по виду жертвы), HERD_STOLEN налётчиком, BUILDING_DESTROYED игроком-налётчиком. Считаются,
+## пока у жертвы есть работники или стада в загонах (assets — до шага). raiders — все юниты волн (из
+## UNIT_SPAWNED без постройки).
+func _real_kills(g: GameSim, rd: RaidDirector, cursor: int, assets: bool, tally: Dictionary, raiders: Dictionary) -> int:
+	var victim := rd.enemy
+	var E := g.events
+	var r := E.range_since(cursor)
+	for seq in range(r.x, r.y):
+		var i := E.at(seq)
+		match E.e_kind[i]:
+			SimEvents.Ev.UNIT_SPAWNED:
+				if E.e_player[i] == rd.player and E.e_b[i] == Ids.NULL:
+					raiders[E.e_a[i]] = true
+			SimEvents.Ev.UNIT_DIED:
+				if assets and E.e_player[i] == victim and raiders.has(E.e_b[i]):
+					var ut := E.e_c[i]
+					var fl := g.defs.u_flags[ut] if ut >= 0 and ut < g.defs.u_flags.size() else 0
+					tally["worker" if fl & UnitStats.WORKER else "other"] += 1
+			SimEvents.Ev.HERD_STOLEN:
+				if assets and raiders.has(E.e_b[i]):
+					tally["herd"] += 1
+			SimEvents.Ev.BUILDING_DESTROYED:
+				if assets and E.e_c[i] == rd.player:
+					tally["building"] += 1
+	return r.y
+
+
+## У игрока есть работники или стада в загонах
+func _has_assets(g: GameSim, p: int) -> bool:
+	if p < 0:
+		return false
+	var q := g.query as GameQueryImpl
+	for u in q.units_of(p):
+		if q.unit_flags(u) & UnitStats.WORKER:
+			return true
+	var H := g.econ.herds
+	for h in H.hw:
+		if H.owner[h] == p and H.state[h] == HerdTable.State.PEN and H.heads(h) > 0:
+			return true
+	return false
+
+
 func _test_targets_and_kills() -> void:
-	print("[налётчики бьют работников и стада, пока они есть]")
+	var real := _game(_pl(&"kokand", PlayerTable.Ctrl.HUMAN, &"kipchak", PlayerTable.Ctrl.AI)).real_impl()
+	print("[налётчики бьют работников и стада, пока они есть — %s]" % ("настоящий бой, по событиям" if real else "подмена боя на заглушке"))
 	for pair in [[&"kokand", &"kipchak"], [&"kipchak", &"kokand"]]:
 		var g := _game(_pl(pair[0], PlayerTable.Ctrl.HUMAN, pair[1], PlayerTable.Ctrl.AI), 9)
 		var rd := _director(g, 1)
-		var tally := {"worker": 0, "herd": 0, "building": 0}
+		var tally := {"worker": 0, "herd": 0, "building": 0, "other": 0}
 		var herds_seen := {}
 		var hit_t := {}
+		var raiders := {}
+		var cursor := 0
 		var prof := Prof.new()
 		g.prof = prof
 		var ticks := 0
-		while g.tick < rd.next_wave_t + 30 * 200:
+		# первая волна и 200 с после её начала (next_wave_t сдвигается после каждого набега — не гонимся за ним)
+		var end_t := rd.next_wave_t + 30 * 200
+		while g.tick < end_t:
+			var assets := real and _has_assets(g, rd.enemy)
 			prof.begin()
 			g.step()
 			ticks += 1
-			if g.tick % 10 == 0 and (rd.state == RaidDirector.Phase.MARCH or rd.state == RaidDirector.Phase.STRIKE):
+			if real:
+				cursor = _real_kills(g, rd, cursor, assets, tally, raiders)
+			elif g.tick % 10 == 0 and (rd.state == RaidDirector.Phase.MARCH or rd.state == RaidDirector.Phase.STRIKE):
 				_proxy_combat(g, rd, tally, herds_seen, hit_t)
 		var good: int = tally["worker"] + tally["herd"]
-		var total: int = good + tally["building"]
+		var total: int = good + tally["building"] + tally["other"]
 		SimHarness.check(total > 0 and good * 100 >= total * 60,
-			"%s грабят %s: работники %d, стада %d, постройки %d (пока есть работники и стада)" % [pair[1], pair[0],
-			tally["worker"], tally["herd"], tally["building"]])
+			"%s грабят %s: работники %d, стада %d, постройки %d, прочие %d (пока есть работники и стада)" % [pair[1],
+			pair[0], tally["worker"], tally["herd"], tally["building"], tally["other"]])
 		var ai_ms := prof.acc[GameSim.Ph.AI] / 1000.0 / ticks
 		SimHarness.check(ai_ms <= 0.3, "ИИ в среднем %.4f мс/такт (худший такт %.2f мс)" % [ai_ms, prof.worst[GameSim.Ph.AI] / 1000.0])
 
