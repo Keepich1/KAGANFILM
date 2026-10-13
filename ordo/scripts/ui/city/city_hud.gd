@@ -153,7 +153,7 @@ func refresh_now(heavy := false) -> void:
 		info = query.selection_info(sel)
 	_sel_dirty = false
 	bottom.refresh(info, sel, heavy)
-	top.refresh()
+	top.refresh(heavy)
 	# на вкладке стройки буквы — постройки: WASD и Q/E камеры молчат
 	if camera and camera.get("pan_keys") != null:
 		camera.set("pan_keys", bottom.tabs.current == &"orders")

@@ -119,6 +119,15 @@ func _test_side(p: int) -> void:
 		SimHarness.check(hud.top.shown_res.has(defs.res(&"brick")) and not hud.top.shown_res.has(defs.res(&"horse")), "Коканд: ғишт есть, коней нет")
 	else:
 		SimHarness.check(hud.top.shown_res.has(defs.res(&"horse")) and not hud.top.shown_res.has(defs.res(&"stone")), "кыпчаки: кони есть, камня нет")
+	# содержание войска — из Defs по живым своим юнитам
+	var want_up := 0
+	var bs0 := city.sim
+	for u in bs0.n:
+		if bs0.u_owner[u] == p and bs0.u_life[u] == BattleSim.Life.ALIVE:
+			var ui := defs.unit(StringName(bs0.type_ids[bs0.u_type[u]]))
+			want_up += defs.u_upkeep_milli_min[ui] if ui >= 0 else 0
+	hud.refresh_now(true)
+	SimHarness.check(hud.top.upkeep_milli == want_up and want_up > 0, "содержание войска на балке: %s еды/мин" % String.num(want_up / 1000.0, 1))
 	# ничего не выбрано — сетка пуста, герб и подсказка
 	hud.refresh_now()
 	SimHarness.check(hud.bottom.grid.action_at(0).is_empty(), "без выделения сетка приказов пуста")

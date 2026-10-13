@@ -128,7 +128,7 @@ func _draw() -> void:
 			rr = 7.0
 		star.append(c + Vector2(cos(a), sin(a)) * rr)
 	draw_colored_polygon(star, Color(0.35, 0.22, 0.12, 0.75))
-	draw_string(UiTheme.head_bold(), c + Vector2(-4, -12), "С", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.3, 0.18, 0.1))
+	draw_string(UiTheme.head_bold(), c + Vector2(-4, -12), tr("С"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.3, 0.18, 0.1))
 
 
 ## Метка на миникарте (набег, разорение, угон) на PING_S секунд

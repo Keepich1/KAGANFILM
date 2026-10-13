@@ -3,7 +3,7 @@ extends Control
 ## Верхняя балка (ТЗ §12, ECONOMY §1.3): резной орех с латунной полосой; слева — ячейки ресурсов из
 ## FactionDefs.ui_res (ресурсы с enabled false пропускаются; никакого списка в коде), население;
 ## посередине свисает табличка «Набег через 2:30»; справа — время, скорость, пауза, меню.
-## Подсказка ячейки — приход в минуту.
+## Подсказка ячейки — приход в минуту; у еды ещё содержание войска (ECONOMY §1.3, §1.5: из Defs по живым своим).
 
 const H := 54.0
 const CHIP_W := 128.0
@@ -22,6 +22,9 @@ var _speed: Button
 var _pause: Button
 var _raid_on := false
 var _season: Label
+## Содержание войска, милли еды в минуту (пересчёт по тяжёлому обновлению — раз в секунду)
+var upkeep_milli := 0
+var _upkeep_by_type := PackedInt32Array()
 
 
 func setup(p_hud: CityHud) -> void:
@@ -190,12 +193,16 @@ func _draw() -> void:
 		draw_circle(Vector2(x - 0.3, H * 0.5 - 3.0), 1.4, Color(1.0, 0.88, 0.6))
 
 
-func refresh() -> void:
+## heavy — пересчитать содержание войска (перебор своих юнитов)
+func refresh(heavy := true) -> void:
 	var q := hud.query
 	var pt := q.players()
 	var defs := q.defs()
 	var p := hud.player
 	var R := defs.R
+	if heavy:
+		upkeep_milli = army_upkeep()
+	var food := defs.res(&"food")
 	for c in _chips:
 		var r: int = c["r"]
 		var v: Label = c["value"]
@@ -213,6 +220,8 @@ func refresh() -> void:
 		var tip := "%s: %s" % [tr(defs.r_name[r]), UiTheme.amount(milli)]
 		if per_min != 0:
 			tip += "\n" + tr("Приход: %s в минуту") % (("+" if per_min > 0 else "−") + str(absi(per_min) / 1000))
+		if r == food and upkeep_milli > 0:
+			tip += "\n" + tr("Содержание войска: −%s в минуту") % String.num(upkeep_milli / 1000.0, 1)
 		if famine:
 			tip += "\n" + tr("Голод! Войско слабеет")
 		(c["box"] as Control).tooltip_text = tip
@@ -240,6 +249,25 @@ func refresh() -> void:
 		_speed.text = "×%s" % str(snappedf(hud.driver.time_scale, 0.01)).trim_suffix(".0")
 		_pause.icon = UiTheme.icon("ord", "play" if hud.driver.paused else "pause")
 	queue_redraw()
+
+
+## Сколько еды в минуту съедает войско игрока (милли): Defs.u_upkeep_milli_min по живым своим юнитам
+func army_upkeep() -> int:
+	var bs := hud.query.battle()
+	if bs == null:
+		return 0
+	var defs := hud.query.defs()
+	while _upkeep_by_type.size() < bs.type_ids.size():
+		var u := defs.unit(StringName(bs.type_ids[_upkeep_by_type.size()]))
+		_upkeep_by_type.append(defs.u_upkeep_milli_min[u] if u >= 0 else 0)
+	var owner := bs.u_owner
+	var life := bs.u_life
+	var types := bs.u_type
+	var total := 0
+	for u in bs.n:
+		if owner[u] == hud.player and life[u] == BattleSim.Life.ALIVE:
+			total += _upkeep_by_type[types[u]]
+	return total
 
 
 ## Набег начался / кончился (CityHud — по событиям)
