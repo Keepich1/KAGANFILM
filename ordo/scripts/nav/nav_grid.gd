@@ -532,10 +532,9 @@ func team_of_player(p: int) -> int:
 	return p
 
 
-## Есть ли живой узел (дерево или жила) в клетке c — для расстановки
+## Есть ли живой узел (дерево или жила) в клетке c — для расстановки (индекс — sync_node_index)
 func node_in_cell(c: int) -> bool:
-	_sync_node_index()
-	if _n_head.is_empty():
+	if _n_head.is_empty() or econ == null:
 		return false
 	var N := econ.nodes
 	var ntype := N.ntype
@@ -772,8 +771,9 @@ func _sync_deposits() -> void:
 			_refresh_cell(rec[i])
 
 
-## Индекс узлов по клеткам (списки через _n_next); перестраивается при смене слотов
-func _sync_node_index() -> void:
+## Индекс узлов по клеткам (списки через _n_next); перестраивается при смене слотов.
+## Состояние навигации не меняет — зовут в начале каждого запроса расстановки.
+func sync_node_index() -> void:
 	if econ == null or econ.nodes == null:
 		return
 	var N := econ.nodes

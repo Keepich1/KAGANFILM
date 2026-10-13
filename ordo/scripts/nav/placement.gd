@@ -31,6 +31,7 @@ var _units := PackedInt32Array()
 
 
 func check_place(g: NavGrid, player: int, btype: int, center: Vector2, rot_q: int) -> int:
+	g.sync_node_index()
 	var d := g.defs
 	if d == null or btype < 0 or btype >= d.b_ids.size() or d.b_enabled[btype] == 0:
 		return NavApi.Why.NOT_ALLOWED
@@ -57,6 +58,7 @@ func check_place(g: NavGrid, player: int, btype: int, center: Vector2, rot_q: in
 
 ## Причина по каждой клетке следа (строки по z, в строке — по x)
 func place_cells(g: NavGrid, player: int, btype: int, center: Vector2, rot_q: int) -> PackedByteArray:
+	g.sync_node_index()
 	var out := PackedByteArray()
 	var d := g.defs
 	if d == null or btype < 0 or btype >= d.b_ids.size():
@@ -167,6 +169,7 @@ func enemy_inside(g: NavGrid, team: int, r: Rect2i) -> bool:
 
 ## Места для построек после көч: ставка — в центре, остальные — по кольцам 18…100 м
 func ring_slots(g: NavGrid, player: int, center: Vector2, btypes: PackedInt32Array) -> PackedVector2Array:
+	g.sync_node_index()
 	var out := PackedVector2Array()
 	var d := g.defs
 	var taken: Array[Rect2i] = []

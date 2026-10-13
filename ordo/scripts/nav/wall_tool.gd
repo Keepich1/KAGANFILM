@@ -22,6 +22,7 @@ var _units := PackedInt32Array()
 
 
 func plan_wall(g: NavGrid, player: int, wtype: int, pts: PackedVector2Array) -> Dictionary:
+	g.sync_node_index()
 	var centers := PackedVector2Array()
 	var rots := PackedFloat32Array()
 	var why := PackedByteArray()
@@ -120,6 +121,7 @@ func _joinable(g: NavGrid, c: int, team: int, link_kind: bool) -> bool:
 
 
 func snap_on_wall(g: NavGrid, player: int, btype: int, p: Vector2) -> Dictionary:
+	g.sync_node_index()
 	var out := {"why": NavApi.Why.NOT_ON_WALL, "center": p, "rot": 0.0, "removes": PackedInt32Array(),
 		"a": p, "b": p}
 	var d := g.defs

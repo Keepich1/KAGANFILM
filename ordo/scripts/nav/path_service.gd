@@ -12,8 +12,10 @@ extends RefCounted
 ##   b. одна компонента walk[t]: прямая видимость → путь из одной точки; иначе одна область —
 ##      AStarGrid2D; иначе коридор по графу входов (AStar2D); коридор через ≤ 2 сектора — один A*,
 ##      длиннее — A* между соседними входами, склейка;
-##   c. разные компоненты, у врага есть постройки и breach[t] связен: A* по breach[t] (чужие постройки
-##      с весом 4); первая чужая клетка пути даёт breach_b, breach_wp — точка перед ней;
+##   c. разные компоненты, у врага есть постройки и breach[t] связен: точка подхода — первая своя клетка
+##      на прямой от цели к началу (иначе ближайшая к цели своя клетка); до неё — путь как в b, от неё —
+##      короткий A* по breach[t] (чужие постройки с весом 4): ломается ближайшее на пути звено (ТЗ §6);
+##      первая чужая клетка пути даёт breach_b, breach_wp — точка перед ней;
 ##   d. иначе — путь к ближайшей к цели клетке своей компоненты, no_route = true;
 ##   e. сглаживание: натягивание нити по точкам поворота с проверкой прямой видимости
 ##      (клетки открыты и не тяжелее концов отрезка — вода и поле не срезаются с суши);
@@ -150,17 +152,25 @@ func solve(g: NavGrid, t: int, from: Vector2, to: Vector2, cached := false) -> P
 		if cached and not lead and goal_p == to_c:
 			_cache_put(key, start_p, r)
 		return r
-	# c. пролом
+	# c. пролом: по своей компоненте — к ближайшей к цели клетке (граф секторов), оттуда A* по breach[t]
 	var bl := g.breach_layer(t)
 	if g.enemy_structs(t):
 		var bg := cg if cg >= 0 else g.snap_cell(bl, to_c, SNAP_R)
 		if bg >= 0 and bl.comp_of(bg) == bl.comp_of(cs):
 			var goal_p := to_c if g.cell_of(to_c) == bg else g.cell_center(bg)
-			var bcells := astar_cells(bl, cs, bg)
-			if not bcells.is_empty():
-				_breach_pts(g, t, wl, r, bcells, goal_p)
-				_finish(g, r, start_p, lead)
-				return r
+			var near := approach_cell(g, wl, cs_comp, bg, cs)
+			if near < 0:
+				near = wl.nearest_in_comp(cs_comp, bg)
+			var bcells: PackedInt32Array
+			if near >= 0:
+				bcells = walk_cells(g, wl, cs, near)
+				var post := astar_cells(bl, near, bg)
+				bcells.append_array(post.slice(1))
+			else:
+				bcells = astar_cells(bl, cs, bg)
+			_breach_pts(g, t, wl, r, bcells, goal_p)
+			_finish(g, r, start_p, lead)
+			return r
 	# d. нет прохода: к ближайшей к цели клетке своей компоненты
 	var gc := g.cell_of(to_c)
 	var cn := wl.nearest_in_comp(cs_comp, gc)
@@ -171,6 +181,36 @@ func solve(g: NavGrid, t: int, from: Vector2, to: Vector2, cached := false) -> P
 	r.no_route = true
 	_finish(g, r, start_p, lead)
 	return r
+
+
+## Точка подхода к пролому: первая клетка компоненты cid на прямой от цели bg к началу cs; −1 — нет
+func approach_cell(g: NavGrid, wl: NavRegions, cid: int, bg: int, cs: int) -> int:
+	var w := g.w
+	var x := bg % w
+	var y := bg / w
+	var dx := cs % w - x
+	var dy := cs / w - y
+	var sx := 1 if dx > 0 else -1
+	var sy := 1 if dy > 0 else -1
+	var ax := absi(dx)
+	var ay := absi(dy)
+	var ix := 0
+	var iy := 0
+	var c := bg
+	while true:
+		if wl.comp_of(c) == cid:
+			return c
+		if ix >= ax and iy >= ay:
+			break
+		var cmp := (1 + 2 * ix) * ay - (1 + 2 * iy) * ax
+		if cmp < 0 or (cmp == 0 and ix < ax):
+			x += sx
+			ix += 1
+		else:
+			y += sy
+			iy += 1
+		c = y * w + x
+	return -1
 
 
 ## Клетки пути от cs до cg по слою walk (одна компонента)

@@ -283,23 +283,36 @@ func _nearest_in_sector(s: int, cid: int, gx: int, gy: int, bd: int, best: int) 
 		var cx := clampi(gx, x0, x1 - 1)
 		var cy := clampi(gy, y0, y1 - 1)
 		return cy * w + cx
+	# строки — от ближайшей к цели наружу (стоп по лучшему); в строке ближайшие слева и справа
+	# от столбца цели ищутся find/rfind по срезу строки
 	var out := -1
 	var od := bd
 	var ob := best
-	for y in range(y0, y1):
-		var dy2 := (y - gy) * (y - gy)
-		if dy2 > od:
+	var yc := clampi(gy, y0, y1 - 1)
+	var xi := clampi(gx, x0, x1 - 1) - x0
+	var ady := absi(yc - gy)
+	for l in reg_n[s]:
+		if comp[rb + l] != cid:
 			continue
-		for x in range(x0, x1):
-			var c := y * w + x
-			var l := lab[c]
-			if l == CLOSED or comp[rb + l] != cid:
+		for k in 2 * S:
+			var y := yc - (k + 1) / 2 if k % 2 == 1 else yc + k / 2
+			if y < y0 or y >= y1:
 				continue
-			var d := (x - gx) * (x - gx) + dy2
-			if d < od or (d == od and c < ob):
-				od = d
-				ob = c
-				out = c
+			var dy := absi(y - yc) + ady
+			var dy2 := dy * dy
+			if dy2 > od:
+				continue
+			var row := lab.slice(y * w + x0, y * w + x1)
+			for x_rel in [row.find(l, xi), row.rfind(l, xi)]:
+				if x_rel < 0:
+					continue
+				var x: int = x0 + x_rel
+				var c := y * w + x
+				var d := (x - gx) * (x - gx) + dy2
+				if d < od or (d == od and c < ob):
+					od = d
+					ob = c
+					out = c
 	return out
 
 
