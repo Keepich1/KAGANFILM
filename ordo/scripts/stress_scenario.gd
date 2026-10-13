@@ -42,6 +42,8 @@ func start(p_seed: int) -> void:
 	kok = _kok_sq[0]
 	kip = _kip_sq[0]
 	gen = -1
+	# сигналы ядра — эффектам (дым залпов, вспышки, пыль натиска; срез подключает BattleFx)
+	wire_sim(sim)
 	started.emit(p_seed)
 
 
