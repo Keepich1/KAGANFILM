@@ -12,6 +12,7 @@ func _init() -> void:
 	_pasture()
 	_barymta()
 	_post()
+	_drop()
 	_water()
 	_bounty()
 	SimHarness.finish(self)
@@ -181,6 +182,30 @@ func _post() -> void:
 	SimHarness.check(st >= 0 and k.events.e_c[st] == 3 and k.res(kip, "horse") == 3.0, "6 всадников у ставки — уведено 3 коня с коновязи")
 
 
+## «Бросить» (ECONOMY §4.1): отряд отпускает угнанных коней — они сами бегут домой
+func _drop() -> void:
+	print("[«Бросить»]")
+	var k := EconKit.make()
+	var kip := k.kipchak(KIP, 0)
+	var kok := k.kokand(KOK, 0)
+	var e := k.econ
+	var sq := k.port.spawn_squad(kok, e.players.team[kok], &"navkar", 6, KIP + Vector2(0, 16), 0.0)
+	var c0 := k.events.head
+	k.run_s(8.0)
+	var st := k.last_ev(SimEvents.Ev.HERD_STOLEN, c0)
+	SimHarness.check(st >= 0 and k.res(kip, "horse") == 3.0, "угнали 3 коня с коновязи")
+	if st < 0:
+		return
+	var h := k.events.e_a[st]
+	SimHarness.check(e.drop_loot(kip, PackedInt32Array([sq])) == 0, "чужой игрок за налётчика не бросит")
+	SimHarness.check(e.drop_loot(kok, PackedInt32Array([sq])) == 1 and e.herds.state[e.herds.slot(h)] == HerdTable.State.DRIVEN,
+		"«Бросить» (отряд) — стадо отпущено")
+	k.port.move(PackedInt32Array([sq]), KIP + Vector2(0, 120), true)
+	c0 = k.events.head
+	k.run_s(5.0)
+	SimHarness.check(k.count_ev(SimEvents.Ev.HERD_RETURNED, c0) == 1 and k.res(kip, "horse") == 6.0, "кони прибежали домой")
+
+
 ## T1, T2: вода — 9-е поле на тўғоне с 8 местами — «лалми»; тўғон сломан — через 20 с поля 25%
 func _water() -> void:
 	print("[вода, T1, T2]")
@@ -192,6 +217,9 @@ func _water() -> void:
 	var w_before := k.res(p, "wood")
 	var chain := e.spawn_links(p, k.b(&"aryk"), PackedVector2Array([Vector2(90, -94), Vector2(90, 30)]))
 	SimHarness.check(chain > 0 and k.res(p, "wood") == w_before, "стартовый Бош ариқ карты — сразу готов и даром (spawn_links)")
+	k.step()
+	SimHarness.check(e.ghost_water(p, k.b(&"dala"), Vector2(70, -80)) == 1000 and e.ghost_water(p, k.b(&"dala"), Vector2(160, -80)) == 250,
+		"призрак поля: у арыка — «у воды» (1000), в 70 м — «лалми» (250)")
 	var fields := PackedInt32Array()
 	for i in 9:
 		fields.append(k.build_now(p, &"dala", Vector2(70 if i % 2 == 0 else 110, -80 + (i / 2) * 18)))
@@ -201,6 +229,7 @@ func _water() -> void:
 		wet += 1 if e.b_water[e.buildings.slot(f)] == 1000 else 0
 	var last := e.buildings.slot(fields[8])
 	SimHarness.check(wet == 8 and e.b_water[last] == 0, "8 мест: 8 полей у воды, 9-е — «лалми»")
+	SimHarness.check(e.ghost_water(p, k.b(&"dala"), Vector2(70, 10)) == 250, "T2: призрак 10-го поля у арыка, мест нет — жёлтый «лалми»")
 	var w := e.spawn_worker(p, Vector2(70, -10))
 	e.assign_gather(p, PackedInt32Array([w]), fields[8])
 	k.run_s(5.0)

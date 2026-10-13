@@ -247,7 +247,13 @@ func _driven_second(e: EconomySim, h: int) -> void:
 		if home and B.valid(pen):
 			var into := herd_at(e, B.slot(pen), H.htype[h])
 			var heads := H.heads_milli[h] / 1000
-			if into >= 0 and into != h:
+			var ot: Dictionary = e.defs.b_otlar[B.btype[B.slot(pen)]]
+			if not ot.is_empty():
+				# «отлар» Отхоны — не стадо: вернулись в запас Отхоны (до предела)
+				e.b_otlar[B.slot(pen)] = mini(e.b_otlar[B.slot(pen)] + heads, int(ot.get("cap", 20)))
+				H.release(h)
+				e.events.push(SimEvents.Ev.HERD_RETURNED, B.owner[B.slot(pen)], H.handle(h), pen, heads, goal)
+			elif into >= 0 and into != h:
 				H.heads_milli[into] += H.heads_milli[h]
 				H.release(h)
 				e.events.push(SimEvents.Ev.HERD_RETURNED, H.owner[into], H.handle(into), pen, heads, goal)
@@ -462,6 +468,22 @@ func on_captor_gone(e: EconomySim, u_h: int, dead: bool) -> void:
 			H.capture_t[h] = -1
 		else:
 			_bank(e, h, true, -1)
+
+
+## «Бросить»: угнанные игроком p стада, которые ведут units/sqs, бегут домой (как после гибели налётчика)
+func drop(e: EconomySim, p: int, units: PackedInt32Array, sqs: PackedInt32Array) -> int:
+	var H := e.herds
+	var n := 0
+	for h in H.hw:
+		if H.state[h] != HerdTable.State.CAPTURED or _captor_owner(e, h) != p:
+			continue
+		if not e.led_by(H.captor_u[h], units, sqs):
+			continue
+		H.state[h] = HerdTable.State.DRIVEN
+		H.captor_u[h] = 0
+		H.capture_t[h] = -1
+		n += 1
+	return n
 
 
 ## Угнать heads голов из стада h налётчиком captor (барымта): новое стадо CAPTURED

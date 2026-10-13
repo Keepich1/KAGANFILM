@@ -95,6 +95,7 @@ var b_otlar := PackedInt32Array()    # Отхона: угнанные кони
 var b_auto := PackedInt32Array()     # короо: авто-перегон
 var b_flag := PackedInt32Array()     # BFL_*
 var b_dest := PackedVector2Array()   # көч / перегон: куда встать
+var b_root := PackedInt32Array()     # звено водной сети: тўғон (описатель), от которого законно начата цепочка, 0
 var bq_disc := PackedInt32Array()    # [b * QMAX + i] скидка «отлар» на запись очереди (1 — была)
 var _order_seq := 0
 
@@ -190,6 +191,14 @@ func spawn_building(p: int, btype: int, center: Vector2, rot_q: int, active := t
 		buildings.az[b] = center.y - d.y * half
 		buildings.bx[b] = center.x + d.x * half
 		buildings.bz[b] = center.y + d.y * half
+		if net.is_link(btype):
+			# звено карты (MapSetup): тўғон — у начала или ближайший свой в пределах сети
+			b_root[b] = net.root_at(self, p, Vector2(buildings.ax[b], buildings.az[b]))
+			if b_root[b] == 0:
+				b_root[b] = net.root_at(self, p, Vector2(buildings.bx[b], buildings.bz[b]))
+			if b_root[b] == 0:
+				b_root[b] = net.nearest_root(self, p, center)
+			net.link_added(self, b)
 	_place_world(b)
 	if active:
 		_activate(b, false)
@@ -275,6 +284,10 @@ func is_ours(u_h: int) -> bool:
 func place_site(p: int, btype: int, center: Vector2, rot_q: int, workers: PackedInt32Array) -> int:
 	if p < 0 or p >= players.count or btype < 0 or btype >= defs.b_ids.size():
 		return -Err.INVALID
+	# звенья (арык, стена) ставятся только цепочкой — place_wall (Op.BUILD_WALL); ворота и башни — здания
+	var kind := defs.b_kind[btype]
+	if kind == Defs.BKind.LINK or kind == Defs.BKind.WALL:
+		return -Err.INVALID
 	# тўғон на своих руинах — восстановление за полцены (ECONOMY §2.3)
 	var ruin := _own_ruin_near(p, btype, center, 6.0)
 	if ruin >= 0:
@@ -341,6 +354,43 @@ func econ_place_why(p: int, btype: int, center: Vector2, rot_q: int) -> int:
 	return NavApi.Why.OK
 
 
+## Призрак постройки (для GameQuery.check_place, пока в договоре нет EconApi.place_why): причина как NavApi.Why —
+## правила экономики (сторона, предел, «нужно сначала» → NOT_ALLOWED; своя земля, у жилы, зона воды Хумдона,
+## трава и клетка короо) и NavApi.check_place. Звенья — через wall_start_why и plan_wall.
+func ghost_why(p: int, btype: int, center: Vector2, rot_q: int) -> int:
+	if p < 0 or p >= players.count or btype < 0 or btype >= defs.b_ids.size():
+		return NavApi.Why.NOT_ALLOWED
+	var kind := defs.b_kind[btype]
+	if kind == Defs.BKind.LINK or kind == Defs.BKind.WALL:
+		return NavApi.Why.NOT_ALLOWED
+	var w := place_why(p, btype, center, rot_q)
+	if w == 0:
+		return NavApi.Why.OK
+	return w - 100 if w >= 100 else NavApi.Why.NOT_ALLOWED
+
+
+## Цвет призрака поля (ECONOMY §2.2.4, T2): множитель выхода ×1000, если поставить здесь — 1000 «у воды» (синий),
+## меньше — «лалми» (жёлтый, 250). Не потребитель воды — 1000.
+func ghost_water(p: int, btype: int, center: Vector2) -> int:
+	if btype < 0 or btype >= defs.b_ids.size() or defs.b_water_place[btype] <= 0:
+		return 1000
+	if net.would_water(self, p, btype, center):
+		return 1000
+	for y: Dictionary in defs.b_yield[btype]:
+		if y["field"] == "water":
+			return roundi(float(y["mul"]) * 1000.0)
+	return 1000
+
+
+## Начало арыка или стены в точке at (для инструмента стен): 0 — можно, иначе 100 + NavApi.Why
+func wall_start_why(p: int, wtype: int, at: Vector2) -> int:
+	if p < 0 or p >= players.count or wtype < 0 or wtype >= defs.b_ids.size():
+		return -Err.INVALID
+	if net.is_link(wtype) and net.root_at(self, p, at) == 0:
+		return 100 + NavApi.Why.NOT_NEAR
+	return 0
+
+
 func place_wall(p: int, wtype: int, pts: PackedVector2Array, workers: PackedInt32Array) -> int:
 	if p < 0 or p >= players.count or wtype < 0 or nav == null or pts.size() < 2:
 		return -Err.INVALID
@@ -348,15 +398,28 @@ func place_wall(p: int, wtype: int, pts: PackedVector2Array, workers: PackedInt3
 		return -Err.NOT_ALLOWED
 	if not has_required(p, defs.b_requires[wtype]):
 		return -Err.NOT_ALLOWED
+	# арык (ECONOMY §2.2.1): начало — у своего тўғона или на своём арыке той же сети; звенья дальше
+	# предела сети не ставятся. Своя земля для арыка не нужна — землю даёт сама законная сеть.
+	var root := 0
+	if net.is_link(wtype):
+		root = net.root_at(self, p, pts[0])
+		if root == 0:
+			return -(100 + NavApi.Why.NOT_NEAR)
 	var plan := nav.plan_wall(p, wtype, pts)
 	var centers: PackedVector2Array = plan.get("centers", PackedVector2Array())
 	var why: PackedByteArray = plan.get("why", PackedByteArray())
 	var ok := PackedInt32Array()
+	var first_why := -1
 	for i in centers.size():
-		if i >= why.size() or why[i] == NavApi.Why.OK:
+		var w := int(why[i]) if i < why.size() else NavApi.Why.OK
+		if w == NavApi.Why.OK and root != 0 and not net.in_range(self, root, centers[i]):
+			w = NavApi.Why.NOT_NEAR
+		if w == NavApi.Why.OK:
 			ok.append(i)
+		elif first_why < 0:
+			first_why = w
 	if ok.is_empty():
-		return -(100 + (why[0] if why.size() > 0 else NavApi.Why.NOT_ALLOWED))
+		return -(100 + (first_why if first_why >= 0 else NavApi.Why.NOT_ALLOWED))
 	var cost := defs.building_cost(wtype)
 	for r in R:
 		cost[r] *= ok.size()
@@ -364,7 +427,7 @@ func place_wall(p: int, wtype: int, pts: PackedVector2Array, workers: PackedInt3
 		_not_enough(p, cost, SimCmd.Op.BUILD_WALL)
 		return -Err.NO_RES
 	pay(p, cost)
-	var made := _make_links(p, wtype, pts, plan, ok, false)
+	var made := _make_links(p, wtype, pts, plan, ok, false, root)
 	wk.send_builders(self, p, workers, made[1])
 	return made[0]
 
@@ -378,11 +441,16 @@ func spawn_links(p: int, wtype: int, pts: PackedVector2Array) -> int:
 	var ok := PackedInt32Array()
 	for i in centers.size():
 		ok.append(i)
-	return _make_links(p, wtype, pts, plan, ok, true)[0]
+	var root := 0
+	if net.is_link(wtype):
+		root = net.root_at(self, p, pts[0])
+		if root == 0:
+			root = net.nearest_root(self, p, pts[0])
+	return _make_links(p, wtype, pts, plan, ok, true, root)[0]
 
 
 ## Звенья по плану стены/арыка: [chain, описатель первого]
-func _make_links(p: int, wtype: int, pts: PackedVector2Array, plan: Dictionary, ok: PackedInt32Array, active: bool) -> Array:
+func _make_links(p: int, wtype: int, pts: PackedVector2Array, plan: Dictionary, ok: PackedInt32Array, active: bool, root := 0) -> Array:
 	var centers: PackedVector2Array = plan.get("centers", PackedVector2Array())
 	var rots: PackedFloat32Array = plan.get("rots", PackedFloat32Array())
 	_order_seq += 1
@@ -400,6 +468,9 @@ func _make_links(p: int, wtype: int, pts: PackedVector2Array, plan: Dictionary, 
 		B.az[b] = c.y - dir.y * half
 		B.bx[b] = c.x + dir.x * half
 		B.bz[b] = c.y + dir.y * half
+		if net.is_link(wtype):
+			b_root[b] = root
+			net.link_added(self, b)
 		_place_world(b)
 		if active:
 			_activate(b, false)
@@ -560,6 +631,29 @@ func alarm(p: int, on: bool) -> int:
 	return wk.alarm(self, p, on)
 
 
+## «Бросить» (ECONOMY §4.1): отряды units (юниты или отряды игрока p) отпускают угнанное стадо и тюки
+## талоо. Сб. 1: стадо, как при гибели налётчика, само бежит домой (6 м/с), тюки возвращаются хозяину
+## склада — отряд снова идёт и стреляет свободно. Вернёт, сколько стад и тюков брошено.
+func drop_loot(p: int, units: PackedInt32Array) -> int:
+	if p < 0 or p >= players.count or port == null:
+		return -Err.INVALID
+	var sqs := PackedInt32Array()
+	for h in units:
+		if not port.valid(h) or port.owner(h) != p:
+			continue
+		var sq := h if Ids.kind(h) == Ids.Kind.SQUAD else port.squad_of(h)
+		if sq != 0 and not sqs.has(sq):
+			sqs.append(sq)
+	return hd.drop(self, p, units, sqs) + raid.drop(self, p, units, sqs)
+
+
+## Налётчик u_h — из units или из их отрядов sqs
+func led_by(u_h: int, units: PackedInt32Array, sqs: PackedInt32Array) -> bool:
+	if units.has(u_h):
+		return true
+	return port != null and port.valid(u_h) and sqs.has(port.squad_of(u_h))
+
+
 # ================================================================= такт (только GameSim, §5.1)
 
 func pre_step(p_tick: int) -> void:
@@ -642,6 +736,9 @@ func in_territory(p: int, pos: Vector2) -> bool:
 			continue
 		var tr := defs.b_territory_r[B.btype[b]]
 		if defs.b_kind[B.btype[b]] == Defs.BKind.LINK:
+			# земля от арыка — только от законной сети: цепочка начата у своего живого тўғона
+			if net.is_link(B.btype[b]) and not net.root_ok(self, b):
+				continue
 			if seg_dist2(pos, Vector2(B.ax[b], B.az[b]), Vector2(B.bx[b], B.bz[b])) <= tr * tr:
 				return true
 		elif Vector2(B.x[b], B.z[b]).distance_squared_to(pos) <= tr * tr:
@@ -778,10 +875,11 @@ func load_from(d: Dictionary) -> void:
 	_pop_dirty = true
 	_drops_dirty = true
 	_net_dirty = true
+	net.rebuild_topology(self)
 
 
 const _SAVED := ["tick", "b_work", "b_total", "b_order", "b_water", "b_net", "b_timer", "b_mode", "b_cd", "b_cd2",
-	"b_act", "b_act_n", "b_slots", "b_otlar", "b_auto", "b_flag", "b_dest", "bq_disc", "_order_seq", "un_gen",
+	"b_act", "b_act_n", "b_slots", "b_otlar", "b_auto", "b_flag", "b_dest", "b_root", "bq_disc", "_order_seq", "un_gen",
 	"un_owner", "un_type", "un_w", "un_cargo", "p_upkeep", "p_soldiers", "p_unique", "p_flow", "p_hist", "p_alarm",
 	"_sites", "_queues"]
 
@@ -883,6 +981,7 @@ func _new_building(p: int, btype: int, center: Vector2, rot_q: int, state: int) 
 	b_auto[b] = 1
 	b_flag[b] = 0
 	b_dest[b] = center
+	b_root[b] = 0
 	for i in BuildingTable.QMAX:
 		bq_disc[b * BuildingTable.QMAX + i] = 0
 	return b
@@ -894,6 +993,7 @@ func _grow_b(b: int) -> void:
 				b_slots, b_otlar, b_auto, b_flag]:
 			a.append(0)
 		b_dest.append(Vector2.ZERO)
+		b_root.append(0)
 		for i in BuildingTable.QMAX:
 			bq_disc.append(0)
 
@@ -1038,8 +1138,8 @@ func _activate(b: int, from_site: bool) -> void:
 		b_otlar[b] = 0
 	_pop_dirty = true
 	_drops_dirty = true
-	if defs.b_kind[bt] in [Defs.BKind.DAM, Defs.BKind.LINK, Defs.BKind.FIELD] or defs.b_water_place[bt] > 0:
-		_net_dirty = true
+	if net.is_source(bt) or net.is_link(bt) or defs.b_water_place[bt] > 0:
+		_net_dirty = true                # вода — только когда изменились тўғон, звено или потребитель
 	if from_site:
 		if was == Mode.ERECT:
 			events.push(SimEvents.Ev.UNPACKED, p, B.handle(b), 0, bt, Vector2(B.x[b], B.z[b]))
@@ -1078,11 +1178,16 @@ func destroy_building(b: int, attacker: int, own := false) -> void:
 		B.progress[b] = 0
 		b_mode[b] = Mode.NONE
 		b_timer[b] = 0 if defs.b_rebuild_ticks[bt] > 0 else tick + RUIN_TICKS
-	if defs.b_network[bt].get("source", false):
-		net.on_dam_destroyed(self, b)
+	if net.is_source(bt):
+		if B.state[b] == BuildingTable.State.RUIN:
+			net.on_dam_destroyed(self, b)
+		_net_dirty = true
+	elif net.is_link(bt):
+		net.link_removed(self, b)
+	elif defs.b_water_place[bt] > 0:
+		_net_dirty = true
 	_pop_dirty = true
 	_drops_dirty = true
-	_net_dirty = true
 
 
 func _ruins_step() -> void:

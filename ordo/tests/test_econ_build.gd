@@ -4,7 +4,9 @@ extends SceneTree
 ## 1) стройка: цена, SITE, штамп, зеркало ST_SITE; n^0,75 — 4 работника строят в 2,83 раза быстрее;
 ##    готово — BUILDING_DONE, население, работники к прежней работе / на своё поле;
 ## 2) «нужно сначала» (Бурж — после Хумдона), предел на игрока (один Бозор), своя земля;
-## 3) арык — цепочкой «звено за звеном», поле у арыка поливается;
+## 3) арык — цепочкой «звено за звеном», поле у арыка поливается; начало — только у своего тўғона или на своём
+##    арыке (ECONOMY §2.2.1), землю даёт только законная сеть, предел сети 400 м; звено через place_site — INVALID;
+##    пересчёт воды на сети в 100 звеньев — по готовому соседству (≤ 2 мс на такт, ARCHITECTURE §16);
 ## 4) T8: 20 чабуулов — Уй за 9–13 с, Тўғон за 30–40 с; 20 навкаров — Боз үй за 3–5 с;
 ## 5) руина, снос стройки с возвратом, ремонт за полцены, потеря ставки.
 
@@ -16,6 +18,8 @@ func _init() -> void:
 	_speed()
 	_rules()
 	_aryk()
+	_aryk_rules()
+	_net_perf()
 	_damage()
 	_ruins_repair()
 	SimHarness.finish(self)
@@ -103,8 +107,10 @@ func _rules() -> void:
 		"второй Бозор — нельзя (один на игрока)")
 	SimHarness.check(e.place_site(p, k.b(&"uy"), Vector2(300, 300), 0, PackedInt32Array()) == -(100 + NavApi.Why.NO_TERRITORY),
 		"далеко от своих построек — «не своя земля»")
-	SimHarness.check(e.place_site(p, k.b(&"devor"), Vector2(70, 40), 0, PackedInt32Array()) == -EconApi.Err.NOT_ALLOWED,
-		"стены — этап 2 (enabled false)")
+	SimHarness.check(e.place_wall(p, k.b(&"devor"), PackedVector2Array([Vector2(70, 40), Vector2(90, 40)]), PackedInt32Array())
+		== -EconApi.Err.NOT_ALLOWED, "стены — этап 2 (enabled false)")
+	SimHarness.check(e.place_site(p, k.b(&"devor"), Vector2(70, 40), 0, PackedInt32Array()) == -EconApi.Err.INVALID,
+		"звено стены через place_site — INVALID (только BUILD_WALL)")
 	SimHarness.check(e.place_site(p, k.b(&"boz"), Vector2(70, 40), 0, PackedInt32Array()) == -EconApi.Err.NOT_ALLOWED,
 		"юрту кыпчаков Коканду не построить")
 	var menu := e.build_menu(p, &"economy")
@@ -149,6 +155,132 @@ func _aryk() -> void:
 		"зона воды — 24 м от арыка")
 	var panel := e.building_panel(dam)
 	SimHarness.check(panel["water_places"]["used"] == 1 and panel["water_places"]["cap"] == 8, "панель тўғона: «Сув 1/8»")
+
+
+## ECONOMY §2.2.1: арык начинают у своего тўғона или на своём арыке той же сети; землю даёт только такая сеть
+func _aryk_rules() -> void:
+	print("[арык: начало, своя земля, предел сети]")
+	var k := EconKit.make()
+	var p := k.kokand(HQ, 0)
+	var e := k.econ
+	k.set_res(p, "wood", 5000.0)
+	k.set_res(p, "stone", 5000.0)
+	var aryk := k.b(&"aryk")
+	var far := Vector2(-300, -300)
+	SimHarness.check(e.place_why(p, k.b(&"kazarma"), far, 0) == 100 + NavApi.Why.NO_TERRITORY, "в 400 м от Урды — не своя земля")
+	var w0 := k.res(p, "wood")
+	var n0 := e.buildings.count_state(BuildingTable.State.SITE)
+	SimHarness.check(e.place_wall(p, aryk, PackedVector2Array([far, far + Vector2(8, 0)]), PackedInt32Array()) == -(100 + NavApi.Why.NOT_NEAR)
+		and k.res(p, "wood") == w0 and e.buildings.count_state(BuildingTable.State.SITE) == n0, "арык не от тўғона — нельзя (и даром)")
+	SimHarness.check(not e.in_territory(p, far) and e.place_site(p, k.b(&"kazarma"), far, 0, PackedInt32Array())
+		== -(100 + NavApi.Why.NO_TERRITORY), "земли нет: казарму там не поставить")
+	SimHarness.check(e.place_site(p, aryk, Vector2(100, 30), 0, PackedInt32Array()) == -EconApi.Err.INVALID and k.res(p, "wood") == w0
+		and e.buildings.count_state(BuildingTable.State.SITE) == n0, "звено через place_site — INVALID, звена в (0, 0) нет")
+	# законно: от своего тўғона; ветка — от своего арыка
+	var dam := k.build_now(p, &"togon", Vector2(90, -100))
+	SimHarness.check(e.wall_start_why(p, aryk, far) == 100 + NavApi.Why.NOT_NEAR and e.wall_start_why(p, aryk, Vector2(90, -94)) == 0,
+		"инструмент стен: начало арыка вдали — нельзя, у тўғона — можно")
+	SimHarness.check(e.place_wall(p, aryk, PackedVector2Array([Vector2(90, -94), Vector2(90, -54)]), PackedInt32Array()) > 0,
+		"от своего тўғона — можно")
+	SimHarness.check(e.place_wall(p, aryk, PackedVector2Array([Vector2(91, -70), Vector2(131, -70)]), PackedInt32Array()) > 0,
+		"ветка от своего арыка (ещё стройка) — можно")
+	SimHarness.check(e.in_territory(p, Vector2(150, -70)), "у ветки — своя земля (24 м)")
+	# чужой тўғон и чужой арык — не начало
+	var q := k.kokand(Vector2(-200, 200), 0, 1)
+	k.set_res(q, "wood", 500.0)
+	SimHarness.check(e.place_wall(q, aryk, PackedVector2Array([Vector2(84, -100), Vector2(44, -100)]), PackedInt32Array())
+		== -(100 + NavApi.Why.NOT_NEAR), "от чужого тўғона — нельзя")
+	SimHarness.check(e.place_wall(q, aryk, PackedVector2Array([Vector2(131, -70), Vector2(171, -70)]), PackedInt32Array())
+		== -(100 + NavApi.Why.NOT_NEAR), "от чужого арыка — нельзя")
+	# предел сети: 500 м от тўғона — ставятся звенья только до 400 м от него
+	var w1 := k.res(p, "wood")
+	var long := e.place_wall(p, aryk, PackedVector2Array([Vector2(84, -100), Vector2(-416, -100)]), PackedInt32Array())
+	var n := 0
+	var reach := 0.0
+	for b in e.buildings.hw:
+		if e.buildings.chain[b] == long and e.buildings.state[b] == BuildingTable.State.SITE:
+			n += 1
+			reach = maxf(reach, absf(e.buildings.x[b] - 90.0))
+	SimHarness.check(long > 0 and n >= 95 and n <= 100 and reach <= 400.0 and k.res(p, "wood") == w1 - 2.0 * n,
+		"500 м арыка — только %d звеньев до 400 м от тўғона, плата за них" % n)
+	SimHarness.check(e.in_territory(p, Vector2(-250, -100)) and not e.in_territory(p, Vector2(-345, -100)),
+		"земля — вдоль законной сети, не дальше")
+	# тўғон снесён своими — цепочки без головы земли не дают
+	SimHarness.check(e.demolish(p, dam) == EconApi.Err.OK and not e.in_territory(p, Vector2(-250, -100)),
+		"тўғон снесён — земли у арыка нет")
+
+
+## Сеть в 100 звеньев (400 м): работники строят ветку в 25 звеньев — пересчёт воды на каждое готовое звено
+## по готовому соседству ≤ 2 мс (ARCHITECTURE §16, экономика p99); снос дома сеть не трогает
+func _net_perf() -> void:
+	print("[вода: 100 звеньев, скорость пересчёта]")
+	var k := EconKit.make()
+	var p := k.kokand(HQ, 0)
+	var e := k.econ
+	k.set_res(p, "wood", 5000.0)
+	k.build_now(p, &"togon", Vector2(90, -100))
+	e.spawn_links(p, k.b(&"aryk"), PackedVector2Array([Vector2(84, -100), Vector2(-150, -100), Vector2(-150, -264)]))
+	var links := 0
+	for b in e.buildings.hw:
+		if e.buildings.state[b] == BuildingTable.State.ACTIVE and e.net.is_link(e.buildings.btype[b]):
+			links += 1
+	var fields := 0
+	for i in 12:
+		var f := k.build_now(p, &"dala", Vector2(60 - i * 18, -78))
+		fields += 1 if f > 0 else 0
+	k.step()
+	var full := 1 << 30
+	for i in 5:                          # стенные часы, лучший из 5: машина делится с другими процессами
+		var t0 := Time.get_ticks_usec()
+		e.net._repaint = true
+		e.net.recompute(e)
+		full = mini(full, Time.get_ticks_usec() - t0)
+	var wet := 0
+	for b in e.buildings.hw:
+		if e.net.link_net.size() > b and e.net.link_net[b] >= 0:
+			wet += 1
+	print("  звеньев %d (с водой %d), полей %d; полный пересчёт %.2f мс" % [links, wet, fields, full / 1000.0])
+	SimHarness.check(links >= 98 and wet == links, "все %d звеньев — одна сеть" % links)
+	# ветка в 25 звеньев: каждое готовое звено — пересчёт
+	var chain := e.place_wall(p, k.b(&"aryk"), PackedVector2Array([Vector2(-150, -180), Vector2(-50, -180)]), PackedInt32Array())
+	var sites := PackedInt32Array()
+	for b in e.buildings.hw:
+		if e.buildings.chain[b] == chain and e.buildings.state[b] == BuildingTable.State.SITE:
+			sites.append(b)
+	var times: Array[int] = []
+	var cpu0 := _now_us()
+	for b in sites:
+		e._sites.erase(b)
+		e._activate(b, true)
+		var t1 := Time.get_ticks_usec()
+		e.net.recompute(e)
+		times.append(Time.get_ticks_usec() - t1)
+	var cpu := _now_us() - cpu0
+	times.sort()
+	var p90 := times[mini(times.size() - 1, times.size() * 9 / 10)] if not times.is_empty() else 0
+	print("  ветка %d звеньев: пересчёт на звено — медиана %.3f мс, 90%% %.3f мс, худший %.3f мс (стенные); процессор на всё %.2f мс"
+		% [sites.size(), times[times.size() / 2] / 1000.0, p90 / 1000.0, times[-1] / 1000.0, cpu / 1000.0])
+	SimHarness.check(sites.size() == 25 and p90 <= 2000, "готовое звено на сети в 100 — пересчёт ≤ 2 мс (90%%: %.3f)" % (p90 / 1000.0))
+	SimHarness.check(e.net.water_at(e, Vector2(-60, -200)) == 1000, "ветка с водой")
+	# докрашенная сетка = перекрашенной целиком
+	var inc := e.net.bytes.duplicate()
+	e.net._repaint = true
+	e.net.recompute(e)
+	SimHarness.check(inc == e.net.bytes, "сетка полива: докраска = полная перекраска")
+	SimHarness.check(full <= 8000, "полный пересчёт (засуха, снос) ≤ 8 мс (%.2f)" % (full / 1000.0))
+	# снос не водного здания не трогает сеть
+	var uy := k.build_now(p, &"uy", Vector2(120, 30))
+	k.step()
+	e.destroy_building(e.buildings.slot(uy), -1, true)
+	SimHarness.check(not e._net_dirty, "снос дома — без пересчёта воды")
+
+
+## Процессорное время этого потока, мкс (как test_econ_gather)
+func _now_us() -> int:
+	var f := FileAccess.open("/proc/thread-self/schedstat", FileAccess.READ)
+	if f:
+		return int(f.get_line().split(" ")[0]) / 1000
+	return Time.get_ticks_usec()
 
 
 ## T8: урон по зданиям рукопашной (удар раз в 1,4 с)

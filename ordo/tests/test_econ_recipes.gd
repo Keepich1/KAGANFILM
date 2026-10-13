@@ -11,6 +11,7 @@ func _init() -> void:
 	var e := k.econ
 	var stub := k.port as CombatPortStub
 	SimHarness.check(e.place_why(p, k.b(&"xumdon"), Vector2(60, 40), 0) == 100 + NavApi.Why.NOT_NEAR, "Хумдон вне зоны воды — нельзя")
+	SimHarness.check(e.ghost_why(p, k.b(&"xumdon"), Vector2(60, 40), 0) == NavApi.Why.NOT_NEAR, "призрак Хумдона вне воды — NOT_NEAR")
 	var dam := k.build_now(p, &"togon", Vector2(90, -100))
 	e.place_wall(p, k.b(&"aryk"), PackedVector2Array([Vector2(90, -94), Vector2(90, 30)]), PackedInt32Array())
 	for b in e.buildings.hw:

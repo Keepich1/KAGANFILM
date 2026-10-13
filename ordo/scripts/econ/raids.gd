@@ -14,11 +14,8 @@ extends RefCounted
 enum Act { NONE, HERD, TALOO, TRAMPLE }
 
 var _buf := PackedInt32Array()
-var _all := PackedInt32Array()
-var _rx := PackedFloat32Array()
-var _rz := PackedFloat32Array()
-var _rt := PackedInt32Array()
 var _guard := PackedInt32Array()
+var _target_t := PackedByteArray()       # [вид здания] бывает целью набега (поле, загон, Отхона, склад еды/золота, базар)
 # тюки талоо на налётчиках
 var l_unit := PackedInt32Array()
 var l_owner := PackedInt32Array()
@@ -28,7 +25,14 @@ var l_amt := PackedInt32Array()
 
 
 func setup(e: EconomySim) -> void:
-	pass
+	var D := e.defs
+	_target_t.resize(D.b_ids.size())
+	for bt in D.b_ids.size():
+		var fl := D.b_flags[bt]
+		var store := D.b_accepts[bt]
+		var t := D.b_kind[bt] == Defs.BKind.FIELD or D.b_herd[bt] >= 0 or not D.b_otlar[bt].is_empty() \
+			or fl & Defs.BF_MARKET != 0 or (fl & Defs.BF_DROP != 0 and store & ((1 << e.r_gold) | (1 << e.r_food)) != 0)
+		_target_t[bt] = 1 if t else 0
 
 
 ## Какое действие возможно по зданию b и сколько всадников нужно / тактов круга
@@ -84,22 +88,9 @@ func slow_step(e: EconomySim) -> void:
 	var B := e.buildings
 	var guard_r := float(e.rule("herd_theft", "guard_r", 30.0))
 	var abort := roundi(float(e.rule("herd_theft", "abort_loss", 0.2)) * 1000.0)
-	# все всадники карты — одним запросом в секунду (дальше — только квадраты расстояний)
-	e.port.units_near(-1, e.origin + e.extent * 0.5, e.extent.length(), true, UnitStats.MOUNTED, _all)
-	if _all.is_empty():
-		for b in B.hw:
-			e.b_act[b] = 0
-		return
-	_rx.resize(_all.size())
-	_rz.resize(_all.size())
-	_rt.resize(_all.size())
-	for i in _all.size():
-		var q := e.port.pos(_all[i])
-		_rx[i] = q.x
-		_rz[i] = q.y
-		_rt[i] = e.port.team(_all[i])
+	# только запросы договора с командой здания (CombatPort §7.1): сперва дешёвый enemy_near, потом всадники
 	for b in B.hw:
-		if not e.active(b):
+		if _target_t[B.btype[b]] == 0 or not e.active(b):
 			continue
 		var act := act_of(e, b)
 		var need := _circle(e, act)
@@ -113,7 +104,7 @@ func slow_step(e: EconomySim) -> void:
 		var c := Vector2(B.x[b], B.z[b])
 		var r := e.half_of(b).length() + 12.0
 		var team := B.team[b]
-		if not _rider_near(team, c, r):
+		if not e.port.enemy_near(team, c, r):
 			e.b_act[b] = 0
 			continue
 		e.port.units_near(team, c, r, true, UnitStats.MOUNTED, _buf)
@@ -147,17 +138,6 @@ func slow_step(e: EconomySim) -> void:
 		if e.b_act[b] >= need:
 			e.b_act[b] = 0
 			_execute(e, b, act, raider, rp, n)
-
-
-func _rider_near(team: int, c: Vector2, r: float) -> bool:
-	var r2 := r * r
-	for i in _rx.size():
-		if _rt[i] != team:
-			var dx := _rx[i] - c.x
-			var dz := _rz[i] - c.y
-			if dx * dx + dz * dz <= r2:
-				return true
-	return false
 
 
 ## Налётчики игрока rp ещё ведут стадо, угнанное из b
@@ -239,6 +219,20 @@ func _loot_second(e: EconomySim) -> void:
 			_drop(i)
 		else:
 			i += 1
+
+
+## «Бросить»: тюки игрока p на units/sqs возвращаются хозяину склада
+func drop(e: EconomySim, p: int, units: PackedInt32Array, sqs: PackedInt32Array) -> int:
+	var n := 0
+	var i := 0
+	while i < l_unit.size():
+		if l_owner[i] == p and e.led_by(l_unit[i], units, sqs):
+			e.add_res(l_victim[i], l_res[i], l_amt[i], false)
+			_drop(i)
+			n += 1
+		else:
+			i += 1
+	return n
 
 
 ## Налётчик убит (dead) — тюки возвращаются хозяину склада
