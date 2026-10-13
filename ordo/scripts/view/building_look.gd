@@ -1,20 +1,29 @@
 class_name BuildingLook
 extends RefCounted
-## Как выглядит постройка (ARCHITECTURE §13, CONTRACT §10.8). Копия логики KipchakCamp._setup_model
-## (живописные материалы, LOD1, пятна земли из glb спрятаны, дым тюндюка) — лагерь среза не трогаем.
+## Как выглядит постройка (ARCHITECTURE §13, CONTRACT §10.8).
 ##
-## Поиск модели постройки id стороны faction (поле model в BuildingDefs, по умолчанию — id):
-##   1. scenes/<faction>/<id>.tscn;  2. assets/models/<faction>/<id>.glb (+ <id>_lod1.glb);
-##   3. стройка — <id>_site.glb, руина — <id>_ruin.glb;  4. нет файла — заместитель.
-## Заместитель — живописный «набор» (city_kit.gdshader): кокандские глинобитные дома с плоской
-## кровлей, айваном и поясом бирюзовых изразцов, урда с порталом и куполом, стены с зубцами, бурж;
-## кыпчакские войлочные шатры, срубы, частокол из брёвен, вышка. Один меш и один материал на тип.
-## Стройка без своей модели: та же модель, срезанная по высоте прогресса (растёт снизу), леса и
-## разметка; руина — нижняя треть, обгоревшая.
+## Модели — арт сторон: assets/models/<faction>/<имя>.glb (+ <имя>_lod1.glb), стройка <имя>_site.glb,
+## руина <имя>_ruin.glb, поле — стадии урожая <имя>_s0/_s1/_s2.glb. Имя — поле model в BuildingDefs,
+## иначе id, иначе псевдоним ALIAS (имя в данных ↔ имя файла арта). Материалы — KokandModels /
+## KipchakModels (как у обёрток KokandBuilding / KipchakBuilding): живописные, ткань колышется,
+## пятна земли кыпчаков спрятаны (землю рисует мир), у Коканда — двор и вода видны (без тени).
+## Обёртки арта scenes/kokand/<имя>.tscn и scenes/kipchak2/<имя>.tscn вид не ставит (готовые постройки
+## рисует MultiMesh) — из них читаются только метки Markers: Smoke_N — дым (у дома — по варианту двора).
+## Дом (uy): двор Var_1..3 выбирается по месту (как KokandBuilding._variant). Колесо мельницы
+## (часть «Wheel») крутит BuildingView.
 ##
-##   BuildingLook.make(defs, btype, State.ACTIVE, rot)  -> Node3D (основание в 0, фасад в +Z)
+## Нет файла — заместитель: живописный «набор» (city_kit.gdshader): кокандские глинобитные дома с
+## плоской кровлей, айваном и поясом изразцов, урда с порталом и куполом, стены с зубцами, бурж;
+## кыпчакские войлочные шатры, срубы, частокол, вышка. Один меш и один материал на тип.
+## Стройка: модель _site (нет её — готовая модель с лесами и крышкой среза) срезана по высоте
+## прогресса — растёт снизу (site_rise.gdshader). Руина: _ruin; нет её — нижняя треть готовой,
+## обгоревшая, с обломками.
+##
+##   BuildingLook.make(defs, btype, State.ACTIVE)         -> Node3D (основание в 0, фасад в +Z)
 ##   BuildingLook.set_progress(node, 0.4)                 стройка: срез на 40 % высоты
-##   BuildingLook.mesh_for(defs, btype)                   меш для MultiMesh (стены, арыки, дома, юрты)
+##   BuildingLook.parts_for(defs, btype, lod, stage)      части для MultiMesh: [{mesh, xform, material,
+##                                                        var, spin, shadow}]
+##   BuildingLook.smoke_points(defs, btype, variant)      дым готовой постройки (метки, тюндюк)
 
 const KIT_SHADER := preload("res://shaders/view/city_kit.gdshader")
 const RISE_SHADER := preload("res://shaders/view/site_rise.gdshader")
@@ -24,8 +33,16 @@ const ATLAS_PATH := "res://assets/textures/kipchak/atlas.png"
 const SMOKE := preload("res://scenes/camp/smoke.tscn")
 ## Высота дымового отверстия над основанием модели, м (как у лагеря среза)
 const TUNDUK_HEIGHT := {"boz": 4.55, "ordo": 8.1}
+## Контровой свет: кыпчаки — как лагерь, Коканд — как KokandBuilding
 const RIM_STRENGTH := 1.1
+const RIM_KOKAND := 1.0
 const LOD_DISTANCE := 140.0
+## Имя в данных → имя файла арта (тўғон — tugon, ариқ — aryk)
+const ALIAS := {"togon": "tugon", "ariq": "aryk"}
+## Папка обёрток арта по стороне (метки Markers)
+const WRAPPER_DIR := {"kokand": "res://scenes/kokand/", "kipchak": "res://scenes/kipchak2/"}
+## Колесо мельницы, рад/с (как KokandBuilding.wheel_speed)
+const WHEEL_SPEED := 0.9
 const A := 2048.0
 
 ## Области атласа лагеря (tools/gen_camp_atlas.py LAYOUT): x, y, w, h в пикселях
@@ -58,19 +75,23 @@ static var _mesh_cache := {}
 static var _kit_mat: ShaderMaterial
 static var _rise_cache := {}
 static var _model_cache := {}
+static var _name_cache := {}
+static var _marker_cache := {}
 
 
 # ================================================================= узел постройки
 
-## Узел постройки: модель (если есть) или заместитель; state — BuildingTable.State
-static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE) -> Node3D:
-	var path := model_path(defs, btype, state)
+## Узел постройки: модель (если есть) или заместитель; state — BuildingTable.State,
+## variant — двор дома (variant_of), stage — стадия поля 0..2
+static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE, variant := 0, stage := 2) -> Node3D:
+	var path := model_path(defs, btype, state, stage)
 	var root := Node3D.new()
 	root.name = defs.b_ids[btype]
 	var body: Node3D
 	var exact := path != "" and (state == BuildingTable.State.ACTIVE or _suffix_found(path, state))
 	if path != "":
-		body = instance_model(path, lod if state == BuildingTable.State.ACTIVE else 0.0, state == BuildingTable.State.ACTIVE)
+		body = instance_model(path, lod, false)
+		pick_variant(body, variant)
 	else:
 		body = MeshInstance3D.new()
 		(body as MeshInstance3D).mesh = mesh_for(defs, btype)
@@ -79,18 +100,28 @@ static func make(defs: Defs, btype: int, state: int, lod := LOD_DISTANCE) -> Nod
 	root.add_child(body)
 	root.set_meta("height", _height_of(body, defs, btype))
 	root.set_meta("exact", exact)
-	if state == BuildingTable.State.SITE and not exact:
+	root.set_meta("rise", false)
+	if state == BuildingTable.State.ACTIVE and path != "":
+		# дым из труб, тандыров, тюндюков (метки обёртки арта)
+		for sp: Dictionary in smoke_points(defs, btype, variant):
+			var s := smoke_node([sp.pos as Vector3], int(sp.amount), bool(sp.dark))
+			s.name = "Smoke"
+			root.add_child(s)
+	if state == BuildingTable.State.SITE:
 		_to_rise(body)
-		var sc := MeshInstance3D.new()
-		sc.name = "Scaffold"
-		sc.mesh = scaffold_mesh(defs, btype, float(root.get_meta("height")))
-		sc.material_override = kit_material()
-		sc.set_instance_shader_parameter("site", 1.0)
-		root.add_child(sc)
-		_add_cap(root, defs, btype, 0.0)
+		root.set_meta("rise", true)
+		if not exact:
+			var sc := MeshInstance3D.new()
+			sc.name = "Scaffold"
+			sc.mesh = scaffold_mesh(defs, btype, float(root.get_meta("height")))
+			sc.material_override = kit_material()
+			sc.set_instance_shader_parameter("site", 1.0)
+			root.add_child(sc)
+			_add_cap(root, defs, btype, 0.0)
 		set_progress(root, 0.0)
 	elif state == BuildingTable.State.RUIN and not exact:
 		_to_rise(body)
+		root.set_meta("rise", true)
 		_set_inst(body, "clip_h", float(root.get_meta("height")) * 0.34)
 		_set_inst(body, "scorch", 0.85)
 		var rb := MeshInstance3D.new()
@@ -137,10 +168,11 @@ static func _add_cap(root: Node3D, defs: Defs, btype: int, scorch: float) -> voi
 	root.add_child(cap)
 
 
-## Стройка: срез на доле высоты k (0..1); леса видны, пока k < 1
+## Стройка: срез на доле высоты k (0..1). Модель _site растёт от цоколя до своей высоты; готовая
+## модель вместо _site — до полной, с лесами и крышкой среза (пока k < 1)
 static func set_progress(root: Node3D, k: float) -> void:
 	var body := root.get_node_or_null("Body") as Node3D
-	if body == null or bool(root.get_meta("exact", false)):
+	if body == null or not bool(root.get_meta("rise", false)):
 		return
 	var h := float(root.get_meta("height", 4.0))
 	# фундамент виден сразу (0,35 м), дальше стены растут
@@ -158,7 +190,7 @@ static func set_progress(root: Node3D, k: float) -> void:
 ## Стройка зовёт сама из set_progress; руине — BuildingView после постановки (иначе срез от y = 0 мира).
 static func set_base(root: Node3D) -> void:
 	var body := root.get_node_or_null("Body") as Node3D
-	if body == null or bool(root.get_meta("exact", false)):
+	if body == null or not bool(root.get_meta("rise", false)):
 		return
 	_set_inst(body, "base_y", root.global_position.y if root.is_inside_tree() else root.position.y)
 
@@ -176,29 +208,55 @@ static func no_shadow(root: Node) -> void:
 		(root as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-## Копоть 0..1 (руина, сильно повреждённое здание)
+## Копоть 0..1 (руина, сильно повреждённое здание). Готовой модели — материал среза без среза
+## (у живописного материала копоти нет)
 static func set_scorch(root: Node3D, k: float) -> void:
 	var body := root.get_node_or_null("Body") as Node3D
-	if body:
-		_set_inst(body, "scorch", k)
+	if body == null:
+		return
+	if k > 0.0 and not bool(root.get_meta("rise", false)):
+		_to_rise(body)
+		root.set_meta("rise", true)
+	_set_inst(body, "scorch", k)
 
 
-## Путь модели по CONTRACT §10.8 ("" — нет файла)
-static func model_path(defs: Defs, btype: int, state: int) -> String:
-	var id := defs.b_model[btype] if defs.b_model[btype] != "" else defs.b_ids[btype]
-	var f := defs.b_faction[btype]
+# ================================================================= модели арта
+
+## Имя модели типа в assets/models/<faction>/ ("" — файла нет): поле model, id, псевдонимы ALIAS
+static func model_name(defs: Defs, btype: int) -> String:
+	var key := "%s/%s/%s" % [defs.b_faction[btype], defs.b_ids[btype], defs.b_model[btype]]
+	if _name_cache.has(key):
+		return _name_cache[key]
+	var dir := _dir(defs, btype)
+	var out := ""
+	for c: String in [defs.b_model[btype], defs.b_ids[btype]]:
+		for n: String in [c, String(ALIAS.get(c, ""))]:
+			if out == "" and n != "" and (_exists(dir + n + ".glb") or _exists(dir + n + "_s2.glb")):
+				out = n
+	_name_cache[key] = out
+	return out
+
+
+static func _dir(defs: Defs, btype: int) -> String:
+	return "res://assets/models/%s/" % defs.b_faction[btype]
+
+
+## Путь модели ("" — нет файла): state — BuildingTable.State; stage — стадия поля 0..2
+static func model_path(defs: Defs, btype: int, state: int, stage := 2) -> String:
+	var n := model_name(defs, btype)
+	if n == "":
+		return ""
+	var dir := _dir(defs, btype)
 	if state == BuildingTable.State.SITE or state == BuildingTable.State.RUIN:
-		var suf := "_site" if state == BuildingTable.State.SITE else "_ruin"
-		var p := "res://assets/models/%s/%s%s.glb" % [f, id, suf]
+		var p := dir + n + ("_site" if state == BuildingTable.State.SITE else "_ruin") + ".glb"
 		if _exists(p):
 			return p
-	var scene := "res://scenes/%s/%s.tscn" % [f, id]
-	if _exists(scene):
-		return scene
-	var glb := "res://assets/models/%s/%s.glb" % [f, id]
-	if _exists(glb):
-		return glb
-	return ""
+	if defs.b_kind[btype] == Defs.BKind.FIELD:
+		var f := dir + n + "_s%d.glb" % clampi(stage, 0, 2)
+		if _exists(f):
+			return f
+	var g := dir + n + ".glb"
+	return g if _exists(g) else ""
 
 
 static func _suffix_found(path: String, state: int) -> bool:
@@ -211,25 +269,118 @@ static func _exists(p: String) -> bool:
 	return _model_cache[p]
 
 
-## Модель из glb/tscn: живописные материалы (KipchakModels: ткань, угли), LOD1, пятна земли
-## спрятаны (землю рисует мир), дым тюндюка у юрт
+## Метки обёртки арта (scenes/kokand|kipchak2/<имя>.tscn, узел Markers): [{name, xform, meta}].
+## Читаются из SceneState, сцена не создаётся.
+static func markers(defs: Defs, btype: int) -> Array:
+	var key := "%s/%s" % [defs.b_faction[btype], defs.b_ids[btype]]
+	if _marker_cache.has(key):
+		return _marker_cache[key]
+	var out: Array = []
+	var n := model_name(defs, btype)
+	var path := String(WRAPPER_DIR.get(defs.b_faction[btype], "")) + n + ".tscn"
+	if n != "" and _exists(path):
+		var st := (load(path) as PackedScene).get_state()
+		for i in st.get_node_count():
+			if String(st.get_node_path(i, true)) != "./Markers":
+				continue
+			var m := {"name": String(st.get_node_name(i)), "xform": Transform3D(), "meta": {}}
+			for k in st.get_node_property_count(i):
+				var pn := String(st.get_node_property_name(i, k))
+				if pn == "transform":
+					m.xform = st.get_node_property_value(i, k)
+				elif pn.begins_with("metadata/"):
+					(m.meta as Dictionary)[pn.trim_prefix("metadata/")] = st.get_node_property_value(i, k)
+			out.append(m)
+	_marker_cache[key] = out
+	return out
+
+
+## Дым готовой постройки: [{pos, amount, dark}] в осях постройки — метки Smoke_N обёртки (у дома —
+## только своего варианта двора) и тюндюк юрты
+static func smoke_points(defs: Defs, btype: int, variant := 0) -> Array:
+	var out: Array = []
+	for m: Dictionary in markers(defs, btype):
+		if not String(m.name).begins_with("Smoke_"):
+			continue
+		var meta: Dictionary = m.meta
+		if meta.has("variant") and int(meta.variant) != variant:
+			continue
+		out.append({"pos": (m.xform as Transform3D).origin, "amount": int(meta.get("amount", 16)),
+			"dark": bool(meta.get("dark", false))})
+	var n := model_name(defs, btype)
+	if TUNDUK_HEIGHT.has(n):
+		out.append({"pos": Vector3(0, TUNDUK_HEIGHT[n], 0), "amount": 14 if n == "boz" else 22, "dark": false})
+	return out
+
+
+## Вариант двора дома 1..3 по месту центра (как KokandBuilding._variant); 0 — у модели вариантов нет
+static func variant_of(defs: Defs, btype: int, p: Vector2) -> int:
+	if model_name(defs, btype) != "uy":
+		return 0
+	return int(absf(p.x * 7.0 + p.y * 13.0)) % 3 + 1
+
+
+## Оставить видимым двор Var_<variant> (у LOD1 тоже); 0 — первый
+static func pick_variant(body: Node, variant: int) -> void:
+	for n in body.find_children("Var_*", "Node3D", true, false):
+		var k := int(String(n.name).trim_prefix("Var_"))
+		(n as Node3D).visible = k == maxi(variant, 1)
+
+
+## Дым (GPUParticles3D дыма лагеря) из точек pts (в осях родителя); узел — в середине точек.
+## dark — дым печи и горна (темнее). Видимость — весь столб над каждой точкой.
+static func smoke_node(pts: PackedVector3Array, amount_each: int, dark := false, amount_max := 1400) -> GPUParticles3D:
+	var s := SMOKE.instantiate() as GPUParticles3D
+	var lo := pts[0]
+	var hi := pts[0]
+	for p in pts:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	var mid := (lo + hi) * 0.5
+	var pm := (s.process_material as ParticleProcessMaterial).duplicate() as ParticleProcessMaterial
+	if pts.size() > 1:
+		var img := Image.create(pts.size(), 1, false, Image.FORMAT_RGBF)
+		for i in pts.size():
+			var p := pts[i] - mid
+			img.set_pixel(i, 0, Color(p.x, p.y, p.z))
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
+		pm.emission_point_texture = ImageTexture.create_from_image(img)
+		pm.emission_point_count = pts.size()
+	if dark:
+		# дым печи и горна: темнее и гуще белёсого дыма тюндюка (как KokandBuilding._darken)
+		var g := Gradient.new()
+		g.offsets = PackedFloat32Array([0.0, 0.1, 0.5, 1.0])
+		g.colors = PackedColorArray([Color(0.35, 0.28, 0.24, 0.0), Color(0.3, 0.27, 0.26, 0.32),
+			Color(0.36, 0.36, 0.4, 0.2), Color(0.4, 0.42, 0.48, 0.0)])
+		var gt := GradientTexture1D.new()
+		gt.gradient = g
+		pm.color_ramp = gt
+	s.process_material = pm
+	s.position = mid
+	s.amount = clampi(amount_each * pts.size(), 4, amount_max)
+	s.lifetime = 9.0
+	s.preprocess = 9.0
+	# весь столб над каждой точкой (как у одиночного дыма: −6..8 в стороны, −1..15 вверх)
+	s.visibility_aabb = AABB(lo - mid + Vector3(-6, -1, -6), hi - lo + Vector3(14, 16, 14))
+	return s
+
+
+## Модель из glb/tscn: живописные материалы стороны (Коканд — KokandModels, иначе KipchakModels),
+## LOD1 дальше lod, пятна земли кыпчаков спрятаны, дым тюндюка у юрт (smoke)
 static func instance_model(path: String, lod := LOD_DISTANCE, smoke := true) -> Node3D:
 	var ps := load(path) as PackedScene
 	if ps == null:
 		return null
 	var n := ps.instantiate() as Node3D
-	var opts := {"rim_strength": RIM_STRENGTH}
 	if path.ends_with(".glb"):
-		KipchakModels.apply(n, opts)
-		_hide_ground(n)
+		_apply(n, path)
 	var lod1_path := path.get_basename() + "_lod1.glb"
 	if lod > 0.0 and path.ends_with(".glb") and _exists(lod1_path):
 		_set_range(n, 0.0, lod)
 		var l1 := (load(lod1_path) as PackedScene).instantiate() as Node3D
 		l1.name = "LOD1"
 		n.add_child(l1)
-		KipchakModels.apply(l1, opts)
-		_hide_ground(l1)
+		_apply(l1, lod1_path)
 		_set_range(l1, lod, 0.0)
 	var kind := path.get_file().get_basename()
 	if smoke and TUNDUK_HEIGHT.has(kind):
@@ -241,6 +392,15 @@ static func instance_model(path: String, lod := LOD_DISTANCE, smoke := true) -> 
 		s.preprocess = 9.0
 		n.add_child(s)
 	return n
+
+
+## Материалы модели арта по стороне (папка файла)
+static func _apply(n: Node, path: String) -> void:
+	if path.contains("/models/kokand/"):
+		KokandModels.apply(n, {"rim_strength": RIM_KOKAND})
+	else:
+		KipchakModels.apply(n, {"rim_strength": RIM_STRENGTH})
+		_hide_ground(n)
 
 
 static func _hide_ground(root: Node) -> void:
@@ -265,9 +425,9 @@ static func _set_range(root: Node, begin: float, end: float) -> void:
 static func _height_of(body: Node3D, defs: Defs, btype: int) -> float:
 	var hi := 0.0
 	for mi in _mesh_instances(body):
-		if mi.mesh and String(mi.name) != "LOD1":
+		if mi.mesh and mi.visible and String(mi.name) != "LOD1" and String(mi.get_parent().name) != "LOD1":
 			var box := mi.mesh.get_aabb()
-			hi = maxf(hi, (mi.transform * box).end.y)
+			hi = maxf(hi, (_rel_xform(body, mi) * box).end.y)
 	return hi if hi > 0.5 else 4.0
 
 
@@ -322,9 +482,11 @@ static func _mesh_instances(root: Node) -> Array[MeshInstance3D]:
 
 # ================================================================= MultiMesh
 
-## Части модели для MultiMesh: [{mesh, xform, material}] (LOD0); заместитель — один меш
-static func parts_for(defs: Defs, btype: int, lod := 0) -> Array:
-	var path := model_path(defs, btype, BuildingTable.State.ACTIVE)
+## Части модели для MultiMesh: [{mesh, xform, material, var, spin, shadow}]; lod 0 или 1 ([] — нет LOD1);
+## stage — стадия поля. var — двор Var_<k> (0 — общая часть), spin — колесо (крутит BuildingView),
+## shadow — отбрасывает ли тень (вода, двор, колосья — нет). Заместитель — один меш.
+static func parts_for(defs: Defs, btype: int, lod := 0, stage := 2) -> Array:
+	var path := model_path(defs, btype, BuildingTable.State.ACTIVE, stage)
 	if path.ends_with(".glb"):
 		var p := path if lod == 0 else path.get_basename() + "_lod1.glb"
 		if lod > 0 and not _exists(p):
@@ -343,13 +505,26 @@ static func parts_for(defs: Defs, btype: int, lod := 0) -> Array:
 				var mat := mi.get_active_material(s)
 				if m is ArrayMesh:
 					(m as ArrayMesh).surface_set_material(s, mat)
-			out.append({"mesh": m, "xform": _rel_xform(n, mi), "material": null})
+			out.append({"mesh": m, "xform": _rel_xform(n, mi), "material": null, "var": _var_of(n, mi),
+				"spin": String(mi.name).begins_with("Wheel"),
+				"shadow": mi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF})
 		n.free()
 		_mesh_cache[key] = out
 		return out
 	if lod > 0:
 		return []
-	return [{"mesh": mesh_for(defs, btype), "xform": Transform3D(), "material": kit_material()}]
+	return [{"mesh": mesh_for(defs, btype), "xform": Transform3D(), "material": kit_material(), "var": 0,
+		"spin": false, "shadow": not is_flat(defs, btype)}]
+
+
+## Двор Var_<k>, к которому относится меш (0 — общая часть)
+static func _var_of(root: Node, n: Node) -> int:
+	var c := n
+	while c != null and c != root:
+		if String(c.name).begins_with("Var_"):
+			return int(String(c.name).trim_prefix("Var_"))
+		c = c.get_parent()
+	return 0
 
 
 static func _rel_xform(root: Node3D, n: Node3D) -> Transform3D:

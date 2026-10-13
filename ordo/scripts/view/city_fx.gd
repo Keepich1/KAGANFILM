@@ -7,7 +7,8 @@ extends Node
 ##   BUILDING_DONE      — облачко пыли и надпись «Построено»
 ##   TREE_FELLED        — пыль и щепа у комля
 ##   LOOT, RES_DELIVERED, TRAINED — надписи на бумаге (OverlayView.float_text): «+4 золото» и т. п.
-## Надписи доставки — только своему игроку (local_player). PerfMeter «view_cityfx».
+## Надписи добычи, доставки, найма и стройки — только своему игроку (local_player; у драйвера есть
+## local_player — берётся у него). Количество — из милли: целое, меньше 10 — с одним знаком. PerfMeter «view_cityfx».
 
 const GOLD_INK := Color(0.55, 0.36, 0.05)
 const GREEN_INK := Color(0.12, 0.38, 0.16)
@@ -26,6 +27,7 @@ var handled := 0
 
 var _fx: BattleFx
 var _overlay: OverlayView
+var _driver: Node
 var _cursor := 0
 var _rng := BattleRng.new(91)
 
@@ -34,6 +36,7 @@ func _ready() -> void:
 	_fx = get_node_or_null(fx_path) as BattleFx
 	_overlay = get_node_or_null(overlay_path) as OverlayView
 	var d := get_node_or_null(driver_path)
+	_driver = d
 	if d and d.has_signal("started"):
 		d.connect("started", func(_s: int) -> void: set_query(CityView.query_of(d)))
 	if CityView.query_of(d):
@@ -50,6 +53,10 @@ func _process(_delta: float) -> void:
 	if query == null:
 		return
 	var t0 := CityView.now_usec()
+	if _driver:
+		var lp: Variant = _driver.get("local_player")
+		if lp is int:
+			local_player = lp
 	var ev := query.events()
 	var r := ev.range_since(_cursor)
 	for seq in range(r.x, r.y):
@@ -81,14 +88,21 @@ func _handle(ev: SimEvents, i: int) -> void:
 					var v := Vector3(_rng.range_f(-2, 2), _rng.range_f(1.5, 3.5), _rng.range_f(-2, 2))
 					_fx.puff(_fx.dust, p + Vector3(0, 0.8, 0), v, _rng.range_f(0.15, 0.3), 0.5, Color(0.75, 0.55, 0.35, 1))
 		SimEvents.Ev.LOOT:
-			var res := ev.e_a[i]
-			_text(p, "+%d %s" % [ev.e_b[i] / 1000, _res_name(res)], GOLD_INK)
+			if ev.e_player[i] == local_player:
+				_text(p, "+%s %s" % [amount_text(ev.e_b[i]), _res_name(ev.e_a[i])], GOLD_INK)
 		SimEvents.Ev.RES_DELIVERED:
 			if ev.e_player[i] == local_player:
-				_text(p, "+%d %s" % [ev.e_b[i] / 1000, _res_name(ev.e_a[i])], INK)
+				_text(p, "+%s %s" % [amount_text(ev.e_b[i]), _res_name(ev.e_a[i])], INK)
 		SimEvents.Ev.TRAINED:
 			if ev.e_player[i] == local_player and defs and ev.e_c[i] >= 0 and ev.e_c[i] < defs.u_name.size():
 				_text(p, tr(defs.u_name[ev.e_c[i]]), GREEN_INK)
+
+
+## Количество из милли: целое; меньше 10 и не целое — с одним знаком после запятой («0,4»)
+static func amount_text(milli: int) -> String:
+	if milli % 1000 == 0 or absi(milli) >= 10000:
+		return str(milli / 1000)
+	return ("%.1f" % (milli / 1000.0)).replace(".", ",")
 
 
 func _dust(p: Vector3, n: int, spread: float) -> void:

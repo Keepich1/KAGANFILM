@@ -4,11 +4,13 @@ extends Node3D
 ##
 ## Деревья рисует мир (WorldScatter); срубленное (TREE_FELLED или запас 0) прячется
 ## WorldScatter.hide_tree (согласованная правка Мира), на его месте — пень.
-## Жилы камня и золота — модель assets/models/world/<model>.glb (стадии выработки — <model>_s2.glb,
-## <model>_s1.glb), а пока моделей нет — заместитель из валунов мира: полная жила, наполовину
-## выбранная, остатки; выработанная — пятно щебня. Стадия: > 2/3 запаса, > 1/3, > 0, 0.
+## Жилы камня и золота — месторождения арта scenes/kipchak2/deposit_<id>.tscn (ResourceDeposit:
+## три стадии выработки, свой трипланарный материал, LOD1; выработанная — не видна). Нет сцены —
+## модель assets/models/world/<model>.glb (стадии — <model>_s2.glb, <model>_s1.glb), нет и её —
+## заместитель из валунов мира (выработанная — пятно щебня). Стадия: > 2/3 запаса, > 1/3, > 0, 0.
 
 const ROCK_TEX := "res://assets/textures/world/ground_rock.png"
+const DEPOSIT_SCENE := "res://scenes/kipchak2/deposit_%s.tscn"
 const SURFACE := preload("res://shaders/painterly_surface.gdshader")
 
 @export var driver_path: NodePath = ^"../../Driver"
@@ -164,6 +166,14 @@ static func stage_of(amount_milli: int, full_milli: int) -> int:
 
 
 func _deposit(ty: int, st: int, seed: int) -> Node3D:
+	var scene := DEPOSIT_SCENE % defs.n_ids[ty]
+	if ResourceLoader.exists(scene):
+		# стадии арта: 0 — полное, 1 — половина, 2 — почти выработано; выработанное не видно
+		var rd := (load(scene) as PackedScene).instantiate() as Node3D
+		rd.set("stage", clampi(3 - st, 0, 2))
+		rd.visible = st > 0
+		rd.name = "Deposit"
+		return rd
 	var model := defs.n_model[ty]
 	var suf := "" if st == 3 else "_s%d" % st
 	var path := "res://assets/models/world/%s%s.glb" % [model, suf]

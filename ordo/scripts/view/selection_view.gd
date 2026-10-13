@@ -26,10 +26,12 @@ var _mm: MultiMesh
 var _frames: Array[MeshInstance3D] = []
 var _flag: Node3D
 var _radius := {}
+var _driver: Node
 
 
 func _ready() -> void:
 	var d := get_node_or_null(driver_path)
+	_driver = d
 	if d and d.has_signal("started"):
 		d.connect("started", func(_s: int) -> void: set_query(CityView.query_of(d)))
 	if CityView.query_of(d):
@@ -107,6 +109,9 @@ func _update() -> void:
 	var fi := 0
 	var flag := false
 	var cap := _mm.instance_count
+	# кольца — там же, где юнит на экране: между прошлым и текущим шагом (как UnitView)
+	var av: Variant = _driver.get("alpha") if _driver else null
+	var a := float(av) if av != null else 1.0
 	for h in selection.selected:
 		match Ids.kind(h):
 			Ids.Kind.UNIT:
@@ -118,8 +123,8 @@ func _update() -> void:
 				if n >= cap:
 					cap *= 2
 					_grow(cap)
-				var x := sim.u_x[u]
-				var z := sim.u_z[u]
+				var x := lerpf(sim.u_px[u], sim.u_x[u], a)
+				var z := lerpf(sim.u_pz[u], sim.u_z[u], a)
 				var r := _unit_radius(sim, u) * 2.0 + 0.5
 				var hp := sim.u_hp[u] / maxf(sim.t_hp[sim.u_type[u]], 1.0)
 				var col: Color = SIDE_LIGHT[clampi(sim.u_side[u], 0, 3)]

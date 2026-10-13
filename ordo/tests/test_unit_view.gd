@@ -74,8 +74,8 @@ func _test_slots() -> void:
 	var err := v.check_slots()
 	_check(err == "", "после 1200 рождений: " + err)
 	_check(v.used_slots() == _expected(sim, v), "мест %d, ожидалось %d" % [v.used_slots(), _expected(sim, v)])
-	var li := v.l_key.find("kip_malchy|kokand")
-	_check(li >= 0, "деҳқон рисуется заместителем kip_malchy|kokand")
+	var li := v.l_key.find("kok_dehqon|")
+	_check(li >= 0, "деҳқон рисуется своим видом kok_dehqon")
 	if li >= 0:
 		_check(int(v.l_node[li].get("capacity")) >= 1024, "слой вырос вдвое: ёмкость %d" % int(v.l_node[li].get("capacity")))
 	var bad_once := ""
@@ -164,20 +164,28 @@ func _test_work() -> void:
 	_check(absf(cc.g - want) < 0.001, "несёт: фаза шага по пути (%.3f ≈ %.3f)" % [cc.g, want])
 	var still := v.custom_for(u, t + 1.0, 0.0, 0.0)
 	_check(is_equal_approx(still.g, cc.g), "несёт, стоит: фаза не бежит")
-	# мешок за спиной у несущего — один экземпляр на несущего; без груза мешка нет
+	# мешок: у деҳқона (item «sack») ношу рисует шейдер толпы — своего мешка вида нет;
+	# у вида без ноши (сарбоз) — мешок за спиной, один экземпляр на несущего
 	v.update_view()
-	_check(v.sacks_drawn == 1, "несёт: мешок за спиной (%d)" % v.sacks_drawn)
-	sim.u_work[u] = AnimSpec.WORK_CHOP
+	_check(v.sacks_drawn == 0, "деҳқон несёт: мешок рисует шейдер толпы (%d)" % v.sacks_drawn)
+	var s2 := sim.add_squad(0, "sarboz", 1, Vector2(6, 0), 0.0, BattleSim.Formation.LINE, 1, "", false)
+	var u2: int = sim.sq_members[s2][0]
+	sim.u_act[u2] = BattleSim.Act.WORK
+	sim.u_work[u2] = AnimSpec.WORK_CARRY
+	v.sync_slots()
+	v.update_view()
+	_check(v.sacks_drawn == 1, "сарбоз несёт: мешок за спиной (%d)" % v.sacks_drawn)
+	sim.u_work[u2] = AnimSpec.WORK_CHOP
 	v.update_view()
 	_check(v.sacks_drawn == 0, "рубит: мешка нет (%d)" % v.sacks_drawn)
-	sim.u_work[u] = AnimSpec.WORK_CARRY
+	sim.u_life[u2] = BattleSim.Life.DEAD
 	sim.u_act[u] = BattleSim.Act.NONE
 	_check(int(v.custom_for(u, t, 0.0, 0.0).r) == H.IDLE, "без работы: IDLE")
 	sim.u_act[u] = BattleSim.Act.WORK
 	sim.u_life[u] = BattleSim.Life.DEAD
 	_check(int(v.custom_for(u, t, 0.0, 0.0).r) == H.DEAD, "павший работник: DEAD, не WORK")
 	# заместители и юниты без вида
-	_check(v.layer_key("dehqon", false) == "kip_malchy|kokand", "деҳқон → kip_malchy в атласе Коканда")
+	_check(v.layer_key("dehqon", false) == "kok_dehqon|", "деҳқон → kok_dehqon")
 	_check(v.layer_key("sarboz", true) == "kok_sarboz_banner|", "знаменосец сарбозов → свой вид")
 	_check(v.layer_key("arba", false) == "", "арба — не слой толпы (своя модель)")
 	v.free()

@@ -227,6 +227,7 @@ func _make_model(btype: int) -> Node3D:
 	var n: Node3D
 	if path != "":
 		n = BuildingLook.instance_model(path, 0.0, false)
+		BuildingLook.pick_variant(n, 1)
 	else:
 		var mi := MeshInstance3D.new()
 		mi.mesh = BuildingLook.mesh_for(defs, btype)

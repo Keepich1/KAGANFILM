@@ -120,10 +120,12 @@ func _update_fields() -> void:
 			(mi as GeometryInstance3D).set_instance_shader_parameter("wet", k)
 
 
+## Вода (GameQuery.water, 0..1) в точке p: сетка ww × wh на всю карту (Terrain.origin, размер)
 static func water_at(w: PackedByteArray, dims: Vector4i, p: Vector2) -> float:
 	if dims.z <= 0 or w.size() < dims.z * dims.w:
 		return 1.0
-	var cs := 1024.0 / dims.z
-	var i := clampi(int((p.x + 512.0) / cs), 0, dims.z - 1)
-	var j := clampi(int((p.y + 512.0) / cs), 0, dims.w - 1)
+	var o := Terrain.origin()
+	var span := (Terrain.size() - 1) * Terrain.spacing()
+	var i := clampi(int((p.x - o.x) / span * dims.z), 0, dims.z - 1)
+	var j := clampi(int((p.y - o.y) / span * dims.w), 0, dims.w - 1)
 	return w[j * dims.z + i] / 255.0

@@ -2,31 +2,35 @@ class_name BuildingView
 extends Node3D
 ## Постройки «Города» (ARCHITECTURE §13): по BuildingTable через GameQuery.
 ##
-## render "scene" — узел на постройку (BuildingLook.make: модель или заместитель, LOD, дым тюндюка).
-## render "multimesh" (звенья стен, арыки, дома, юрты) — готовые постройки одним MultiMesh на
-## (тип, клетка 128 м), как у WorldScatter; стройки и руины этих типов — отдельными узлами (их мало).
-## Заместители «scene»-типов без модели (один меш, один материал) готовыми — тоже MultiMesh на
-## (тип, клетка): мало вызовов отрисовки; поля (дала) — узлы (полив — параметр экземпляра).
-## Дым тюндюков юрт MultiMesh — один GPUParticles3D на группу (точки выпуска — тюндюки), дальше
-## SMOKE_RANGE не рисуется. Плоское (поля, арыки, крышки срезов, обломки) теней не отбрасывает.
-## Стройка растёт по progress (срез модели + леса), руина — обгоревший низ и обломки,
-## свёрнутая (PACKED) не видна. Урон больше половины — огонь и дым (костёр лагеря без кострища) и
-## копоть; готовая постройка из MultiMesh на это время уходит в свой узел (дома, юрты, звенья стен —
-## главные цели набега), починили — возвращается в MultiMesh.
+## Готовые постройки — MultiMesh на (тип, стадия поля, клетка CELL), как у WorldScatter: и
+## render "multimesh" (звенья стен, арыки, дома, юрты), и "scene" с моделью арта или заместителем —
+## мало вызовов отрисовки (у модели арта 1–5 частей, у заместителя одна). Двор дома (Var_1..3) —
+## по месту: часть двора рисуется только у своих домов. Колесо мельницы крутится (экземпляры части
+## «Wheel» каждый кадр, их мало). Узлами (BuildingLook.make) — стройки, руины, горящие и поля-
+## заместители (полив — параметр экземпляра «wet»).
+## Поле (дала) с моделью — стадия урожая (BuildingLook: <имя>_s0/_s1/_s2): «лалми» (воды меньше
+## половины) — всходы, полив без работников — зелёное, полив с работниками — спелое.
+## Дым (трубы, тандыры, печь — метки обёртки арта; тюндюки юрт) — один GPUParticles3D на группу
+## (точки выпуска — по постройкам), дальше SMOKE_RANGE не рисуется. Плоское (поля, арыки, вода,
+## двор, крышки срезов, обломки) теней не отбрасывает.
+## Стройка растёт по progress (срез модели _site или готовой с лесами), руина — модель _ruin или
+## обгоревший низ и обломки, свёрнутая (PACKED) не видна. Урон больше половины — огонь и дым
+## (костёр лагеря без кострища) и копоть: постройка на это время уходит из MultiMesh в свой узел
+## (дома, юрты, звенья — главные цели набега), починили — возвращается.
 ##
 ## Таблица сверяется каждый кадр дёшево (поколение, состояние, тип, прогресс по слотам); меняется
 ## только то, что изменилось. Время — PerfMeter «view_buildings».
 ##
 ##   view.node_of(b) -> Node3D        узел постройки слота b (null — MultiMesh или нет)
 ##   view.ground_y(b) -> float         высота основания
-##   view.mm_instances(btype) -> int   экземпляров MultiMesh типа (тесты)
+##   view.mm_instances(btype) -> int   готовых в MultiMesh у типа (тесты)
 
 const CELL := 128.0
-## Дым тюндюков группы MultiMesh не рисуется дальше, м (от середины группы)
+## Дым группы MultiMesh не рисуется дальше, м (от середины группы)
 const SMOKE_RANGE := 320.0
-## Частиц дыма на тюндюк (как у узла юрты) и предел на группу
-const SMOKE_PER := 14
 const SMOKE_MAX := 1400
+## Стадия урожая полей сверяется раз в столько кадров
+const FIELD_EVERY := 30
 const FIRE := preload("res://scenes/camp/campfire.tscn")
 const FREE := BuildingTable.State.FREE
 const SITE := BuildingTable.State.SITE
@@ -46,13 +50,16 @@ var _state := PackedInt32Array()
 var _btype := PackedInt32Array()
 var _prog := PackedInt32Array()
 var _burn := PackedByteArray()
+var _var := PackedInt32Array()           # двор дома (BuildingLook.variant_of) или стадия поля
 var _node: Array[Node3D] = []
 var _group: Array[String] = []           # ключ группы MultiMesh слота ("" — нет)
-var _groups := {}                        # ключ → {btype, slots: PackedInt32Array, mmis: Array, dirty}
+var _groups := {}                        # ключ → {btype, stage, slots: PackedInt32Array, mmis: Array, spin: Array}
 var _dirty: Array[String] = []
+var _spinning: Array[String] = []        # группы с колёсами
 var _driver: Node
 var _frame := 0
-var _mm_kind := PackedInt32Array()      # по типу: −1 не знаем, 0 — узел, 1 — MultiMesh
+var _mm_kind := PackedInt32Array()       # по типу: −1 не знаем, 0 — узел, 1 — MultiMesh
+var _t := 0.0
 
 
 func _ready() -> void:
@@ -73,9 +80,10 @@ func set_query(q: GameQuery) -> void:
 			mi.queue_free()
 	_groups.clear()
 	_dirty.clear()
+	_spinning.clear()
 	_node.clear()
 	_group.clear()
-	for a: Variant in [_gen, _state, _btype, _prog]:
+	for a: Variant in [_gen, _state, _btype, _prog, _var]:
 		a.resize(0)
 	_burn.resize(0)
 	_mm_kind.resize(0)
@@ -85,11 +93,13 @@ func set_query(q: GameQuery) -> void:
 		sync()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if query == null:
 		return
 	var t0 := CityView.now_usec()
+	_t += delta
 	sync()
+	_spin()
 	CityView.mark(&"view_buildings", t0)
 
 
@@ -100,7 +110,7 @@ func sync() -> void:
 	var hw := bt.hw
 	if _gen.size() < hw:
 		var old := _gen.size()
-		for a: Variant in [_gen, _state, _btype, _prog]:
+		for a: Variant in [_gen, _state, _btype, _prog, _var]:
 			a.resize(hw)
 		_burn.resize(hw)
 		_node.resize(hw)
@@ -110,6 +120,7 @@ func sync() -> void:
 			_state[b] = FREE
 			_btype[b] = -1
 			_prog[b] = -1
+			_var[b] = 0
 			_group[b] = ""
 	var gen := bt.gen
 	var state := bt.state
@@ -127,9 +138,11 @@ func sync() -> void:
 		if state[b] == SITE and prog[b] != _prog[b] and _node[b]:
 			_prog[b] = prog[b]
 			BuildingLook.set_progress(_node[b], prog[b] / 1000.0)
-	# урон: раз в 10 кадров
+	# урон: раз в 10 кадров; стадии полей — раз в FIELD_EVERY
 	if _frame % 10 == 0:
 		_check_damage(bt)
+	if _frame % FIELD_EVERY == 0:
+		_check_fields(bt)
 	for k in _dirty:
 		_rebuild_group(k, bt)
 	_dirty.clear()
@@ -144,7 +157,7 @@ func ground_y(b: int) -> float:
 	return _ground(bt.x[b], bt.z[b], defs.b_size[bt.btype[b]] if bt.btype[b] >= 0 else Vector2.ONE, bt.rot[b])
 
 
-## Экземпляров MultiMesh у типа (LOD0) — для тестов
+## Готовых в MultiMesh у типа — для тестов
 func mm_instances(btype: int) -> int:
 	var s := 0
 	for k in _groups:
@@ -154,13 +167,42 @@ func mm_instances(btype: int) -> int:
 	return s
 
 
-## Узлов-построек (стройки, руины, «scene») — для тестов
+## Узлов-построек (стройки, руины, горящие, поля-заместители) — для тестов
 func scene_nodes() -> int:
 	var s := 0
 	for n in _node:
 		if n:
 			s += 1
 	return s
+
+
+## Групп MultiMesh (тип, стадия, клетка) — для тестов и замера
+func group_count() -> int:
+	return _groups.size()
+
+
+## Готовая постройка типа ty рисуется MultiMesh: всё, кроме полей-заместителей (у них свой полив
+## на экземпляр)
+func uses_multimesh(ty: int) -> bool:
+	if _mm_kind.size() < defs.b_ids.size():
+		var old := _mm_kind.size()
+		_mm_kind.resize(defs.b_ids.size())
+		for t in range(old, _mm_kind.size()):
+			_mm_kind[t] = -1
+	if _mm_kind[ty] < 0:
+		var mm := defs.b_render[ty] == Defs.Render.MULTIMESH or defs.b_kind[ty] != Defs.BKind.FIELD or \
+			BuildingLook.model_name(defs, ty) != ""
+		_mm_kind[ty] = 1 if mm else 0
+	return _mm_kind[ty] == 1
+
+
+## Стадия урожая поля b: «лалми» (воды под полем меньше половины) — 0 всходы, полив без работников —
+## 1 зелёное, полив и работники — 2 спелое
+func field_stage(b: int, bt: BuildingTable) -> int:
+	var w := FieldView.water_at(query.water(), query.field_dims(), Vector2(bt.x[b], bt.z[b]))
+	if w < 0.5:
+		return 0
+	return 2 if bt.workers_n[b] > 0 else 1
 
 
 # ---------------------------------------------------------------- внутреннее
@@ -182,30 +224,18 @@ func _drop(b: int) -> void:
 		_group[b] = ""
 
 
-## Готовая постройка типа ty рисуется MultiMesh: render "multimesh" или заместитель без модели
-## (кроме полей: у них свой полив на экземпляр)
-func uses_multimesh(ty: int) -> bool:
-	if _mm_kind.size() < defs.b_ids.size():
-		var old := _mm_kind.size()
-		_mm_kind.resize(defs.b_ids.size())
-		for t in range(old, _mm_kind.size()):
-			_mm_kind[t] = -1
-	if _mm_kind[ty] < 0:
-		var mm := defs.b_render[ty] == Defs.Render.MULTIMESH or \
-			(defs.b_kind[ty] != Defs.BKind.FIELD and BuildingLook.model_path(defs, ty, ACTIVE) == "")
-		_mm_kind[ty] = 1 if mm else 0
-	return _mm_kind[ty] == 1
-
-
 func _make(b: int, bt: BuildingTable) -> void:
 	var st := bt.state[b]
 	var ty := bt.btype[b]
 	if st == FREE or st == PACKED or ty < 0:
 		return
+	var field := defs.b_kind[ty] == Defs.BKind.FIELD
+	_var[b] = field_stage(b, bt) if field else BuildingLook.variant_of(defs, ty, Vector2(bt.x[b], bt.z[b]))
+	var stage := _var[b] if field else 2
 	if st == ACTIVE and _burn[b] == 0 and uses_multimesh(ty):
-		var key := "%d:%d:%d" % [ty, floori(bt.x[b] / CELL), floori(bt.z[b] / CELL)]
+		var key := "%d:%d:%d:%d" % [ty, stage if field else 0, floori(bt.x[b] / CELL), floori(bt.z[b] / CELL)]
 		if not _groups.has(key):
-			_groups[key] = {"btype": ty, "slots": PackedInt32Array(), "mmis": []}
+			_groups[key] = {"btype": ty, "stage": stage, "slots": PackedInt32Array(), "mmis": [], "spin": []}
 		var g: Dictionary = _groups[key]
 		var slots: PackedInt32Array = g.slots
 		slots.append(b)
@@ -214,14 +244,14 @@ func _make(b: int, bt: BuildingTable) -> void:
 		if not _dirty.has(key):
 			_dirty.append(key)
 		return
-	var n := BuildingLook.make(defs, ty, st, lod_distance)
+	var n := BuildingLook.make(defs, ty, st, lod_distance, 0 if field else _var[b], stage)
 	n.name = "B%d_%s" % [b, defs.b_ids[ty]]
 	n.transform = _xform(b, bt)
 	if BuildingLook.is_flat(defs, ty):
 		BuildingLook.no_shadow(n)
 	add_child(n)
 	_node[b] = n
-	# срез руины (и стройки) — от основания на своём месте, а не от y = 0 мира
+	# срез стройки и руины — от основания на своём месте, а не от y = 0 мира
 	BuildingLook.set_base(n)
 	if st == SITE:
 		_prog[b] = bt.progress[b]
@@ -266,76 +296,99 @@ func _rebuild_group(key: String, bt: BuildingTable) -> void:
 	for mi: Node in g.mmis:
 		_free(mi)
 	var mmis: Array = []
+	var spin: Array = []
 	var slots: PackedInt32Array = g.slots
 	if slots.is_empty():
 		_groups.erase(key)
+		_spinning.erase(key)
 		return
 	var ty: int = g.btype
+	var stage: int = g.stage
 	var flat := BuildingLook.is_flat(defs, ty)
+	var base: Array[Transform3D] = []
+	for i in slots.size():
+		base.append(_xform(slots[i], bt))
+	var has_lod1 := BuildingLook.parts_for(defs, ty, 1, stage).size() > 0
 	for lod in 2:
-		var parts := BuildingLook.parts_for(defs, ty, lod)
+		var parts := BuildingLook.parts_for(defs, ty, lod, stage)
 		for pi in parts.size():
 			var p: Dictionary = parts[pi]
+			# часть двора Var_k — только у домов своего варианта
+			var idx := PackedInt32Array()
+			for i in slots.size():
+				if int(p["var"]) == 0 or _var[slots[i]] == int(p["var"]):
+					idx.append(i)
+			if idx.is_empty():
+				continue
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
 			mm.mesh = p.mesh
-			mm.instance_count = slots.size()
+			mm.instance_count = idx.size()
 			var px: Transform3D = p.xform
-			for i in slots.size():
-				mm.set_instance_transform(i, _xform(slots[i], bt) * px)
+			var xs: Array[Transform3D] = []
+			for j in idx.size():
+				var xf: Transform3D = base[idx[j]] * px
+				mm.set_instance_transform(j, xf)
+				xs.append(xf)
 			var mi := MultiMeshInstance3D.new()
 			mi.name = "MM_%s_P%d_L%d" % [key.replace(":", "_"), pi, lod]
 			mi.multimesh = mm
-			if flat:
+			if flat or not bool(p.get("shadow", true)):
 				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			if p.material:
 				mi.material_override = p.material
-			if BuildingLook.parts_for(defs, ty, 1).size() > 0:
-				mi.visibility_range_begin = 0.0 if lod == 0 else lod_distance
+			if has_lod1:
+				mi.visibility_range_begin = lod_distance if lod == 1 else 0.0
 				mi.visibility_range_end = lod_distance if lod == 0 else 0.0
 				mi.visibility_range_begin_margin = 4.0 if lod == 1 else 0.0
 				mi.visibility_range_end_margin = 4.0 if lod == 0 else 0.0
 				mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			add_child(mi)
 			mmis.append(mi)
-	# дым из тюндюков у юрт MultiMesh (как у лагеря среза): один выпуск на группу
-	var model := defs.b_model[ty] if defs.b_model[ty] != "" else defs.b_ids[ty]
-	if BuildingLook.TUNDUK_HEIGHT.has(model) and BuildingLook.model_path(defs, ty, ACTIVE) != "":
+			if bool(p.get("spin", false)):
+				spin.append({"mm": mm, "xs": xs})
+	# дым (трубы, тандыры, печь, тюндюки): один выпуск на группу — светлый и тёмный отдельно
+	for dark: bool in [false, true]:
 		var pts := PackedVector3Array()
+		var amount := 0
 		for i in slots.size():
-			pts.append(_xform(slots[i], bt) * Vector3(0, BuildingLook.TUNDUK_HEIGHT[model], 0))
-		var sm := group_smoke(pts)
-		sm.name = "TundukSmoke_%s" % key.replace(":", "_")
+			for sp: Dictionary in BuildingLook.smoke_points(defs, ty, _var[slots[i]]):
+				if bool(sp.dark) == dark:
+					pts.append(base[i] * (sp.pos as Vector3))
+					amount = maxi(amount, int(sp.amount))
+		if pts.is_empty():
+			continue
+		var sm := group_smoke(pts, amount, dark)
+		sm.name = "Smoke_%s%s" % [key.replace(":", "_"), "_dark" if dark else ""]
 		add_child(sm)
 		mmis.append(sm)
 	g.mmis = mmis
+	g.spin = spin
+	if spin.is_empty():
+		_spinning.erase(key)
+	elif not _spinning.has(key):
+		_spinning.append(key)
 
 
-## Один дым на много тюндюков: GPUParticles3D дыма лагеря с выпуском из точек pts (в осях вида);
-## узел — в середине точек (по нему меряется SMOKE_RANGE)
-static func group_smoke(pts: PackedVector3Array) -> GPUParticles3D:
-	var s := BuildingLook.SMOKE.instantiate() as GPUParticles3D
-	var lo := pts[0]
-	var hi := pts[0]
-	for p in pts:
-		lo = lo.min(p)
-		hi = hi.max(p)
-	var mid := (lo + hi) * 0.5
-	var img := Image.create(pts.size(), 1, false, Image.FORMAT_RGBF)
-	for i in pts.size():
-		var p := pts[i] - mid
-		img.set_pixel(i, 0, Color(p.x, p.y, p.z))
-	var pm := (s.process_material as ParticleProcessMaterial).duplicate() as ParticleProcessMaterial
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
-	pm.emission_point_texture = ImageTexture.create_from_image(img)
-	pm.emission_point_count = pts.size()
-	s.process_material = pm
-	s.position = mid
-	s.amount = mini(SMOKE_PER * pts.size(), SMOKE_MAX)
-	s.lifetime = 9.0
-	s.preprocess = 9.0
-	# весь столб над каждой точкой (как у одиночного дыма: −6..8 в стороны, −1..15 вверх)
-	s.visibility_aabb = AABB(lo - mid + Vector3(-6, -1, -6), hi - lo + Vector3(14, 16, 14))
+## Колёса мельниц: поворот вокруг своей оси X (как KokandBuilding)
+func _spin() -> void:
+	if _spinning.is_empty():
+		return
+	var turn := Basis(Vector3.RIGHT, -BuildingLook.WHEEL_SPEED * _t)
+	for key in _spinning:
+		var g: Dictionary = _groups.get(key, {})
+		for s: Dictionary in g.get("spin", []):
+			var mm: MultiMesh = s.mm
+			var xs: Array[Transform3D] = s.xs
+			for i in xs.size():
+				var xf := xs[i]
+				mm.set_instance_transform(i, Transform3D(xf.basis * turn, xf.origin))
+
+
+## Один дым на много точек pts (в осях вида): дым лагеря с выпуском из точек; дальше SMOKE_RANGE
+## не рисуется
+static func group_smoke(pts: PackedVector3Array, amount_each := 14, dark := false) -> GPUParticles3D:
+	var s := BuildingLook.smoke_node(pts, amount_each, dark, SMOKE_MAX)
 	s.visibility_range_end = SMOKE_RANGE
 	s.visibility_range_end_margin = 20.0
 	s.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -348,7 +401,7 @@ func _check_damage(bt: BuildingTable) -> void:
 	var hp := bt.hp_c
 	var hpm := bt.hp_max_c
 	var st := bt.state
-	for b in mini(bt.hw, _node.size()):
+	for b in bt.hw:
 		var burning := st[b] == ACTIVE and hpm[b] > 0 and hp[b] * 2 < hpm[b]
 		if burning == (_burn[b] == 1):
 			continue
@@ -361,6 +414,19 @@ func _check_damage(bt: BuildingTable) -> void:
 			_make(b, bt)
 		elif _node[b]:
 			_set_fire(_node[b], burning)
+
+
+## Поля с моделью: сменилась стадия урожая — в группу своей стадии
+func _check_fields(bt: BuildingTable) -> void:
+	for b in bt.hw:
+		if _group[b] == "" or bt.state[b] != ACTIVE:
+			continue
+		var ty := bt.btype[b]
+		if defs.b_kind[ty] != Defs.BKind.FIELD:
+			continue
+		if field_stage(b, bt) != _var[b]:
+			_drop(b)
+			_make(b, bt)
 
 
 func _set_fire(n: Node3D, on: bool) -> void:

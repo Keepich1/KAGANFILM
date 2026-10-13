@@ -45,8 +45,38 @@ func _test_lookup(city: FakeCity) -> void:
 	_check(BuildingLook.model_path(d, boz, BuildingTable.State.ACTIVE) == "res://assets/models/kipchak/boz.glb", "боз үй — своя модель")
 	var urda := d.building(&"urda")
 	var p := BuildingLook.model_path(d, urda, BuildingTable.State.ACTIVE)
-	_check(p == "" or p.begins_with("res://assets/models/kokand/urda") or p.begins_with("res://scenes/kokand/urda"),
-		"урда: модель Коканда или заместитель (%s)" % p)
+	_check(p == "" or p == "res://assets/models/kokand/urda.glb", "урда: модель Коканда или заместитель (%s)" % p)
+	# псевдонимы имён арта и стадии поля
+	if ResourceLoader.exists("res://assets/models/kokand/tugon.glb"):
+		_check(BuildingLook.model_name(d, d.building(&"togon")) == "tugon", "тўғон → tugon.glb")
+		_check(BuildingLook.model_name(d, d.building(&"aryk")) == "aryk", "ариқ (model «ariq») → aryk.glb")
+		var dala := d.building(&"dala")
+		_check(BuildingLook.model_path(d, dala, BuildingTable.State.ACTIVE, 0).ends_with("dala_s0.glb") and
+			BuildingLook.model_path(d, dala, BuildingTable.State.ACTIVE, 2).ends_with("dala_s2.glb"), "поле: стадии урожая")
+		_check(BuildingLook.model_path(d, urda, BuildingTable.State.SITE).ends_with("urda_site.glb"), "стройка урды — urda_site.glb")
+		# метки обёртки: дым печи (тёмный), тандыр — только у двора 1
+		var xum := BuildingLook.smoke_points(d, d.building(&"xumdon"))
+		_check(xum.size() == 1 and bool(xum[0].dark), "печь: дым из метки обёртки, тёмный")
+		var uy := d.building(&"uy")
+		_check(BuildingLook.smoke_points(d, uy, 1).size() == 1 and BuildingLook.smoke_points(d, uy, 2).is_empty(),
+			"дом: тандыр дымит только у двора 1")
+		var parts := BuildingLook.parts_for(d, uy, 0)
+		var vars := {}
+		for pt: Dictionary in parts:
+			vars[int(pt["var"])] = true
+		_check(vars.has(0) and vars.has(1) and vars.has(2) and vars.has(3), "дом: части двора Var_1..3 и общие (%s)" % [vars.keys()])
+		var spin := false
+		for pt: Dictionary in BuildingLook.parts_for(d, d.building(&"tegirmon"), 0):
+			spin = spin or bool(pt.spin)
+		_check(spin, "мельница: колесо — крутящаяся часть")
+		var hn := BuildingLook.make(d, uy, BuildingTable.State.ACTIVE, 140.0, 2)
+		var shown := 0
+		for vn in hn.find_children("Var_*", "Node3D", true, false):
+			if (vn as Node3D).visible:
+				shown += 1
+				_check(String(vn.name) == "Var_2", "дом-узел: виден только двор 2 (%s)" % vn.name)
+		_check(shown >= 1, "дом-узел: двор виден")
+		hn.free()
 	for id in d.b_ids:
 		var m := BuildingLook.mesh_for(d, d.building(StringName(id)))
 		_check(m != null and m.get_surface_count() == 1, "заместитель %s: один меш, одна поверхность" % id)
@@ -68,14 +98,19 @@ func _active(bt: BuildingTable, ty: int) -> int:
 
 
 func _mm_total(v: BuildingView, ty: int) -> int:
-	# экземпляров LOD0 у MultiMeshInstance3D этого типа (каждой части модели — свой MultiMesh)
-	var parts := BuildingLook.parts_for(v.defs, ty, 0).size()
+	# экземпляров LOD0 у первой общей части модели (не двора Var_k) — по всем группам типа
+	var parts := BuildingLook.parts_for(v.defs, ty, 0)
+	var pi := 0
+	for i in parts.size():
+		if int(parts[i]["var"]) == 0:
+			pi = i
+			break
 	var s := 0
 	for c in v.get_children():
-		if c is MultiMeshInstance3D and String(c.name).begins_with("MM_%d_" % ty) and String(c.name).ends_with("_L0") \
+		if c is MultiMeshInstance3D and String(c.name).begins_with("MM_%d_" % ty) and String(c.name).ends_with("_P%d_L0" % pi) \
 				and not c.is_queued_for_deletion():
 			s += (c as MultiMeshInstance3D).multimesh.instance_count
-	return s / maxi(parts, 1)
+	return s
 
 
 func _test_counts(city: FakeCity) -> void:
@@ -99,17 +134,34 @@ func _test_counts(city: FakeCity) -> void:
 				(st == BuildingTable.State.ACTIVE and not v.uses_multimesh(bt.btype[b])):
 			want_nodes += 1
 	_check(v.scene_nodes() == want_nodes, "узлов построек %d = %d" % [v.scene_nodes(), want_nodes])
-	# заместители «scene»-типов без модели — тоже MultiMesh (кроме полей), модели — узлы
+	# готовые «scene»-типы (модель арта или заместитель) — тоже MultiMesh; поле — MultiMesh по стадии,
+	# если есть модель, иначе узел (полив на экземпляр)
 	var urda := d.building(&"urda")
 	var dala := d.building(&"dala")
 	var ordo := d.building(&"ordo")
-	_check(v.uses_multimesh(urda) == (BuildingLook.model_path(d, urda, BuildingTable.State.ACTIVE) == ""),
-		"урда: MultiMesh, пока заместитель")
-	_check(not v.uses_multimesh(dala), "поле — узел (полив на экземпляр)")
-	_check(not v.uses_multimesh(ordo), "орда (есть модель) — узел")
-	for ty in [urda, d.building(&"ombor"), d.building(&"kazarma")]:
-		if v.uses_multimesh(ty):
-			_check(v.mm_instances(ty) == _active(bt, ty), "%s (заместитель): MultiMesh %d = готовых %d" % [d.b_ids[ty], v.mm_instances(ty), _active(bt, ty)])
+	_check(v.uses_multimesh(urda) and v.uses_multimesh(ordo), "урда и орда — MultiMesh")
+	_check(v.uses_multimesh(dala) == (BuildingLook.model_name(d, dala) != ""), "поле: MultiMesh, если есть модель")
+	for ty in [urda, ordo, dala, d.building(&"ombor"), d.building(&"kazarma"), d.building(&"tegirmon")]:
+		_check(v.mm_instances(ty) == _active(bt, ty), "%s: MultiMesh %d = готовых %d" % [d.b_ids[ty], v.mm_instances(ty), _active(bt, ty)])
+	# стадия поля: полив и работники — спелое, без работников — зелёное
+	for b0 in bt.hw:
+		if bt.state[b0] == BuildingTable.State.ACTIVE and bt.btype[b0] == dala and v.uses_multimesh(dala):
+			var w0 := bt.workers_n[b0]
+			var st0 := v.field_stage(b0, bt)
+			bt.workers_n[b0] = 0 if w0 > 0 else 2
+			for i in BuildingView.FIELD_EVERY:
+				v.sync()
+			var st1 := v.field_stage(b0, bt)
+			_check(st0 == 0 or st1 != st0, "поле: стадия по работникам (%d → %d)" % [st0, st1])
+			_check(v.mm_instances(dala) == _active(bt, dala), "поле сменило стадию: MultiMesh %d" % v.mm_instances(dala))
+			var key := "%d:%d:" % [dala, st1]
+			var found := false
+			for c in v.get_children():
+				if c is MultiMeshInstance3D and String(c.name).begins_with("MM_" + key.replace(":", "_")):
+					found = true
+			_check(found, "поле: группа стадии %d" % st1)
+			bt.workers_n[b0] = w0
+			break
 	# построили дом (ECON поставил бы стройку и довёл; здесь — сразу готовый)
 	var uy := d.building(&"uy")
 	var before := v.mm_instances(uy)
@@ -121,7 +173,8 @@ func _test_counts(city: FakeCity) -> void:
 	bt.state[b] = BuildingTable.State.RUIN
 	v.sync()
 	_check(v.mm_instances(uy) == before, "дом разрушен: MultiMesh снова %d" % v.mm_instances(uy))
-	_check(v.node_of(b) != null and v.node_of(b).get_node_or_null("Rubble") != null, "руина — узел с обломками")
+	_check(v.node_of(b) != null and (v.node_of(b).get_node_or_null("Rubble") != null or bool(v.node_of(b).get_meta("exact"))),
+		"руина — узел (модель _ruin или обломки)")
 	# слот освобождён — ничего не рисуется; на нём новая стройка юрты
 	bt.release(b)
 	v.sync()
@@ -179,11 +232,11 @@ func _test_counts(city: FakeCity) -> void:
 	# дым юрт MultiMesh: один выпуск на группу, точек — по юртам группы
 	var smokes := 0
 	var points := 0
-	for c in v.get_children():
-		if c is GPUParticles3D and String(c.name).begins_with("TundukSmoke_") and not c.is_queued_for_deletion():
-			smokes += 1
-			points += ((c as GPUParticles3D).process_material as ParticleProcessMaterial).emission_point_count
 	var boz := d.building(&"boz")
+	for c in v.get_children():
+		if c is GPUParticles3D and String(c.name).begins_with("Smoke_%d_" % boz) and not c.is_queued_for_deletion():
+			smokes += 1
+			points += maxi(1, ((c as GPUParticles3D).process_material as ParticleProcessMaterial).emission_point_count)
 	_check(points == v.mm_instances(boz) and smokes <= points and smokes > 0,
 		"дым тюндюков: %d выпусков на %d юрт (точек %d)" % [smokes, v.mm_instances(boz), points])
 	v.free()
@@ -195,6 +248,20 @@ func _test_misc(city: FakeCity) -> void:
 	_check(NodeView.stage_of(2000000, 4000000) == 2, "половина — стадия 2")
 	_check(NodeView.stage_of(500000, 4000000) == 1, "остатки — стадия 1")
 	_check(NodeView.stage_of(0, 4000000) == 0, "выработана — 0")
+	_check(CityFx.amount_text(400) == "0,4" and CityFx.amount_text(3000) == "3" and CityFx.amount_text(12500) == "12",
+		"надписи доставки: 0,4 / 3 / 12 (не «+0»)")
+	if ResourceLoader.exists(NodeView.DEPOSIT_SCENE % "gold"):
+		var nv := NodeView.new()
+		nv.set_query(city)
+		var dd := city.defs()
+		var gold := -1
+		for t in dd.n_ids.size():
+			if dd.n_ids[t] == "gold":
+				gold = t
+		var dep := nv.call("_deposit", gold, 2, 1) as Node3D
+		_check(dep is ResourceDeposit and int(dep.get("stage")) == 1, "жила золота: месторождение арта, стадия «половина»")
+		dep.free()
+		nv.free()
 	var g := GhostView.new()
 	root.add_child(g)
 	g.set_query(city)

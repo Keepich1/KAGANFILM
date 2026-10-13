@@ -20,8 +20,9 @@ extends BattleView
 ## скелета «wagon»). Юниты без своей модели рисуются заместителем (STANDIN) — модель ближайшего вида,
 ## атлас своей стороны (цвет стороны узнаётся сразу).
 ##
-## Несущий груз (WORK_CARRY) — с мешком за спиной (свой MultiMesh «Sacks», один вызов отрисовки), пока у
-## вида нет своего инструмента в руках (поле «tools» в реестре толпы — тогда мешок не нужен).
+## Несущий груз (WORK_CARRY): у работников с ношей в реестре толпы (item «sack»: kok_dehqon, kip_malchy)
+## мешок и бревно рисует шейдер толпы; у прочих людских видов — мешок за спиной (свой MultiMesh «Sacks»,
+## один вызов отрисовки).
 ##
 ## Каждый кадр обновляются только юниты в прямоугольнике камеры + 40 м, остальные — раз в 4 кадра.
 ## Время кадра — PerfMeter «view_units».
@@ -43,9 +44,9 @@ const ACT_WORK := BattleSim.Act.WORK
 const BANNER := BattleSim.Role.BANNER
 
 ## Заместители: тип ядра → [вид толпы, атлас стороны ("" — атлас самого вида)].
-## Работник Коканда — малчы в кокандских цветах (свой kok_dehqon делает область «Юниты»).
+## Работник Коканда — свой вид kok_dehqon (инструменты по WORK), в UnitStats (срез) его поля visual нет.
 const STANDIN := {
-	"dehqon": ["kip_malchy", "kokand"],
+	"dehqon": ["kok_dehqon", ""],
 	"kilichboz": ["kip_jooker", "kokand"],
 	"nayzachi": ["kok_sarboz", ""],
 	"kamonchi": ["kok_sarboz", ""],
@@ -182,7 +183,33 @@ func update_view() -> void:
 		_bind_sim(_sim)
 		_update_units()
 		_update_arbas()
+		_unbind()
 	CityView.mark(&"view_units", t0)
+
+
+## Отпустить массивы ядра до следующего кадра (ARCHITECTURE §5.2, правило 9: массивы ядра — только в
+## локальных на время кадра, в полях между кадрами не держать)
+func _unbind() -> void:
+	_b_owner = null
+	_b_x = PackedFloat32Array()
+	_b_z = PackedFloat32Array()
+	_b_h = PackedFloat32Array()
+	_b_px = PackedFloat32Array()
+	_b_pz = PackedFloat32Array()
+	_b_ph = PackedFloat32Array()
+	_b_vx = PackedFloat32Array()
+	_b_vz = PackedFloat32Array()
+	_b_life = PackedInt32Array()
+	_b_death_t = PackedFloat32Array()
+	_b_act = PackedInt32Array()
+	_b_act_t = PackedFloat32Array()
+	_b_reload_t = PackedFloat32Array()
+	_b_couched = PackedInt32Array()
+	_b_fall = PackedInt32Array()
+	_b_sq_status = PackedInt32Array()
+	_b_var = PackedFloat32Array()
+	_b_role = PackedInt32Array()
+	_b_squad = PackedInt32Array()
 
 
 # ---------------------------------------------------------------- места
@@ -289,9 +316,12 @@ func _layer_for(key: String) -> int:
 	l_units.append(PackedInt32Array())
 	l_count.append(0)
 	_l_fast.append(false)
-	var info := unit_info(key.get_slice("|", 0))
+	# ноша вида — по реестру толпы (и у отладочного слоя: тесты рисуют без толпы)
+	var vid := key.get_slice("|", 0)
+	var info := UnitRegistry.info(vid) if UnitRegistry.has(vid) else unit_info(vid)
 	var human := String(info.get("skeleton", "human")) == "human"
-	_l_sack.append(float(info.get("height", 2.0)) * SACK_UP if human and not info.has("tools") else 0.0)
+	var own_sack := String(info.get("item", "")) == "sack" or String(info.get("weapon", "")) == "tool"
+	_l_sack.append(float(info.get("height", 2.0)) * SACK_UP if human and not own_sack else 0.0)
 	_setup_layer(li, START_CAP)
 	return li
 
