@@ -47,8 +47,10 @@ const MAP := {
 				["koroo", Vector2(-100, 190), 0], ["koroo", Vector2(-95, 75), 0],
 				["munara", Vector2(-122, 96), 1], ["munara", Vector2(-122, 128), 1]]},
 		{"faction": "kokand", "hq": Vector2(184, 56), "hq_rot_q": 3,
-			"buildings": [["togon", Vector2(160, -170.5), 0]],
-			"links": [["aryk", [Vector2(162, -152), Vector2(166, -80), Vector2(170, -10)]]],
+			# тўғон — у северного берега реки (след весь в воде), Бош ариқ — от берега в 4 м от него: конец звена
+			# ближе SNAP (6 м) к тўғону, иначе сеть без воды (EconNetwork: звено «у тўғона»)
+			"buildings": [["togon", Vector2(160, -163), 0]],
+			"links": [["aryk", [Vector2(162, -156), Vector2(166, -80), Vector2(170, -10)]]],
 			"workers": Vector2(166, 48),
 			"layout": [
 				["uy", Vector2(206, 30), 3], ["uy", Vector2(206, 82), 3], ["uy", Vector2(160, 96), 0],
@@ -73,7 +75,7 @@ const MAP := {
 		["gold", Vector2(8, 106), 5000],
 		["stone", Vector2(-32, -126), -1],
 	],
-	"dam_sites": [Vector2(160, -170.5), Vector2(320, -187.8)],
+	"dam_sites": [Vector2(160, -163), Vector2(320, -187.8)],
 	# края набегов — на проходимой земле (уклон клетки 4 м < 0,75; ARCHITECTURE §9)
 	"raid_edges": [Vector2(-340, 40), Vector2(-200, 300), Vector2(120, 300), Vector2(280, 140), Vector2(120, -290),
 		Vector2(0, 300)],

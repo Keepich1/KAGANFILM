@@ -8,6 +8,8 @@ extends SceneTree
 ## • стены и ворота: кольцо пахса девора, ворота приказом BUILD встают по стене и снимают звенья под собой;
 ##   свой отряд выходит в ворота, враг ломает звено (пролом) и входит;
 ## • башня на стене снимает звенья под следом;
+## • Бош ариқ карты — с водой от стартового тўғона; Хумдон, построенный работниками, печёт по рецепту
+##   (не всю стройку разом);
 ## • два прогона с одним зерном — одна контрольная сумма.
 
 const C := Vector2(140, 60)        # середина кольца стены у урды Коканда (184, 56)
@@ -19,6 +21,7 @@ func _init() -> void:
 	_test_deposit_cores()
 	_test_walls_and_gate()
 	_test_tower_on_wall()
+	_test_water_and_kiln()
 	SimHarness.finish(self)
 
 
@@ -289,3 +292,43 @@ func _test_tower_on_wall() -> void:
 	SimHarness.check(links0 - _count(g, &"devor") == (s["removes"] as PackedInt32Array).size(),
 		"звенья под буржем сняты: %d" % (links0 - _count(g, &"devor")))
 	SimHarness.check(tower != Ids.NULL and _built(g, tower, 120.0), "бурж построен")
+
+
+# ================================================================= вода и печь
+
+func _test_water_and_kiln() -> void:
+	print("[вода с начала карты; Хумдон после стройки печёт по рецепту]")
+	var g := _game()
+	var e := g.econ as EconomySim
+	var d := g.defs
+	for t in 30:
+		g.step()
+	var links := 0
+	var wet := 0
+	for b in e.buildings.hw:
+		if e.buildings.owner[b] == 0 and e.buildings.state[b] == BuildingTable.State.ACTIVE and e.net.is_link(e.buildings.btype[b]):
+			links += 1
+			if e.net.link_net[b] >= 0:
+				wet += 1
+	SimHarness.check(links > 30 and wet == links, "Бош ариқ: звеньев %d, с водой %d" % [links, wet])
+	var dala := d.building(&"dala")
+	SimHarness.check(e.ghost_water(0, dala, Vector2(146, -30)) == 1000, "поле у арыка — «у воды»")
+	var rw := d.res(&"wood")
+	var rb := d.res(&"brick")
+	e.players.res[rw] += 2_000_000
+	var xd := d.building(&"xumdon")
+	var at := g.nav.snap(xd, Vector2(152, -20), 0)
+	g.submit(0, SimCmd.build(_workers(g, 0).slice(0, 3), xd, at, 0))
+	g.step()
+	g.step()
+	var kiln := _last(g, 0, &"xumdon")
+	SimHarness.check(kiln != Ids.NULL and _built(g, kiln, 90.0), "Хумдон построен тремя работниками")
+	var w0 := e.res(0, rw)
+	var b0 := e.res(0, rb)
+	for t in 30 * 60:
+		g.step()
+	var bricks := (e.res(0, rb) - b0) / 1000.0
+	var wood := (w0 - e.res(0, rw)) / 1000.0
+	SimHarness.check_range(bricks, 30.0, 40.0, "кирпич за минуту (трое у печи, ≈36)")
+	SimHarness.check(wood < 30.0, "дерева сожжено %.0f (не весь запас)" % wood)
+

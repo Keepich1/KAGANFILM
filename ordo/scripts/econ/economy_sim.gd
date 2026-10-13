@@ -1185,6 +1185,9 @@ func _activate(b: int, from_site: bool) -> void:
 	var p := B.owner[b]
 	B.state[b] = BuildingTable.State.ACTIVE
 	B.progress[b] = 1000
+	# b_work стройки («работник·такт») у готового здания — накопитель партии мастерской: с нуля, иначе
+	# достроенный Хумдон сразу пёк всю стройку партиями (всё дерево — в кирпич за секунду)
+	b_work[b] = 0
 	if not from_site or b_mode[b] == Mode.ERECT or b_mode[b] == Mode.REBUILD:
 		B.hp_c[b] = B.hp_max_c[b]
 	var was := b_mode[b]
