@@ -6,6 +6,7 @@
 """
 import glob
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -13,6 +14,7 @@ from glb import read_glb_stats  # noqa: E402
 
 # (телефон мин, телефон макс, ПК мин, ПК макс) — ТЗ 11.5
 BUDGET = {
+    "deposit": (400, 800, 600, 1500),
     "wall": (50, 150, 100, 300),
     "gate_tower": (800, 1500, 1500, 3000),
     "small": (800, 1500, 1500, 3000),
@@ -38,14 +40,21 @@ CATEGORY = {
     "saddle_rack": "prop", "tug": "prop_large", "arba": "prop_large",
     "sheep": "animal", "horse": "animal",
     "poplar": "tree", "willow": "tree", "juniper": "tree", "elm": "tree",
+    # экономика, Сб. 1 (ECONOMY.md §11)
+    "tosh_end": "wall", "devor_end": "wall", "dala": "small", "xumdon": "small", "bozor": "medium",
+    "aryk": "prop", "aryk_turn": "prop", "tugon": "prop", "munara_arba": "prop_large",
 }
 UNIT_RIDER = ("sayisker", "atchan", "chabuul", "jüz", "juz", "navkar", "yuzboshi", "kolbashchy", "rider")
 
 
 def category(name):
     base = name.replace("_lod1", "")
+    # стройка, руины, стадии поля и торцы стен считаются по своей постройке
+    base = re.sub(r"_(site|ruin|s[0-9]|d[0-9])$", "", base)
     if base in CATEGORY:
         return CATEGORY[base]
+    if base.startswith("deposit_"):
+        return "deposit"
     if base.startswith("rock_"):
         return "rock"
     if base.startswith(("kip_", "kok_")):
