@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Интерфейс «Города» (ТЗ §12, ARCHITECTURE §14, §19.6): верхняя балка, нижняя панель (пояс-орнамент,
 ## миникарта, карточки или панель здания, вкладки и сетка приказов), записки с печатями, курсор-
 ## наконечник. Читает только GameQuery (FakeCity до I4) и SimEvents; приказы — через RtsInput (SimCmd).
-## Обновление панелей 6–7 Гц, миникарты 4 Гц, записки — каждый кадр по курсору событий.
+## Обновление панелей 6–7 Гц, миникарты 4 Гц, записки — 10 Гц по курсору событий (ни одно не теряется).
 ##
 ## Сборка в сцене «Города» (gorod.tscn, VIEW; образец — scripts/ui/city/city_look.gd):
 ##   var selection := SelectionModel.new()                      # его же читает SelectionView
@@ -16,6 +16,7 @@ extends CanvasLayer
 ##   camera.edge_blocked = hud.blocks_edge_pan
 ##   input.overlay_toggled.connect(overlay_view.set_enabled)    # Tab — наложения (VIEW)
 ##   hud.restart_requested.connect(...); hud.quit_requested.connect(...)   # меню (иначе перезагрузка / выход)
+##   # GameDriver: «Начать заново» → driver.restart() — интерфейс сам перейдёт на новую партию (rebind)
 ## Меню (≡, F10, Esc при пустом выделении) ставит SimDriver на паузу и выключает ввод, пока открыто.
 ## Драйвер начал игру заново (сигнал started, новое окно чтения driver.query) — интерфейс и ввод
 ## перестраиваются сами (rebind). Перед чтением GameQuery зовётся driver.sync(), если он есть (GameDriver:
@@ -113,7 +114,9 @@ func rebind(q: GameQuery, p: int) -> void:
 	if input:
 		input.rebind(q, p)
 	if root:
-		remove_child(root)
+		# старое — спрятать и освободить в конце кадра: rebind может прийти из нажатия кнопки этого же
+		# интерфейса («Начать заново» в меню), и вынимать её из дерева посреди события нельзя
+		root.visible = false
 		root.queue_free()
 	_t_ui = 0.0
 	_t_map = 0.0

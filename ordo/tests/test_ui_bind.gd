@@ -134,6 +134,13 @@ func _test_restart() -> void:
 	sel.set_selection(drv.query.units_of(0).slice(0, 3))
 	hud.refresh_now(true)
 	SimHarness.check(hud.info.get("kind") == "units" and hud.bottom.cards.visible, "после новой партии выделение и карточки работают")
+	# «Начать заново» из меню: сцена игры слушает restart_requested и перезапускает драйвер
+	hud.restart_requested.connect(func() -> void: drv.start(5))
+	var before := drv.query
+	hud.open_menu()
+	hud.menu._restart()
+	SimHarness.check(hud.query == drv.query and hud.query != before and not drv.paused and inp.enabled and not hud.menu.visible,
+		"«Начать заново» в меню — новая партия, пауза снята, ввод включён")
 	hud.queue_free()
 	inp.queue_free()
 	drv.queue_free()
