@@ -142,7 +142,7 @@ func camera_ground_quad() -> PackedVector2Array:
 	var out := PackedVector2Array()
 	if camera == null or not camera.is_inside_tree():
 		return out
-	var vs := root.get_viewport_rect().size
+	var vs := view_size()
 	var top_y := CityTopBar.H
 	var bot_y := vs.y - CityBottomPanel.H
 	for s in [Vector2(0, top_y), Vector2(vs.x, top_y), Vector2(vs.x, bot_y), Vector2(0, bot_y)]:
@@ -195,12 +195,15 @@ func current_tab() -> StringName:
 	return bottom.tabs.current
 
 
-## Событие для балки (набег начался/кончился)
-func on_event(kind: int, _a: int, _b: int, _c: int) -> void:
-	if kind == SimEvents.Ev.RAID_STARTED:
+## Событие для балки (набег начался/кончился) и метки на миникарте
+func on_event(kind: int, _a: int, _b: int, _c: int, pos := Vector2.INF) -> void:
+	var E := SimEvents.Ev
+	if kind == E.RAID_STARTED:
 		top.set_raid_active(true)
-	elif kind == SimEvents.Ev.RAID_ENDED:
+	elif kind == E.RAID_ENDED:
 		top.set_raid_active(false)
+	if pos != Vector2.INF and kind in [E.RAID_WARNING, E.RAID_STARTED, E.BUILDING_DESTROYED, E.HERD_STOLEN, E.BUILDING_HIT]:
+		bottom.minimap.ping(pos, UiTheme.RED_LIGHT if kind != E.RAID_WARNING else UiTheme.GOLD_LIGHT)
 
 
 # ================================================================= для ввода и камеры
@@ -212,16 +215,21 @@ func blocks(pos: Vector2) -> bool:
 	var c := root.get_viewport().gui_get_hovered_control() if root.is_inside_tree() else null
 	if c != null and c != root and c != _box and c != notes and c != top and c != bottom:
 		return true
-	var vs := root.get_viewport_rect().size
+	var vs := view_size()
 	return pos.y >= vs.y - CityBottomPanel.H + CityBottomPanel.BELT * 0.5 or pos.y <= CityTopBar.H
 
 
 ## Край экрана над интерфейсом: сдвиг камеры только у самой кромки (RtsCamera.edge_blocked)
 func blocks_edge_pan(pos: Vector2) -> bool:
-	var vs := root.get_viewport_rect().size
+	var vs := view_size()
 	if pos.y <= 1.0 or pos.y >= vs.y - 2.0:
 		return false
 	return blocks(pos)
+
+
+## Размер холста интерфейса (1920×1080 по проекту; вне дерева — он же)
+func view_size() -> Vector2:
+	return root.get_viewport_rect().size if root and root.is_inside_tree() else Vector2(1920, 1080)
 
 
 func show_box(r: Rect2) -> void:

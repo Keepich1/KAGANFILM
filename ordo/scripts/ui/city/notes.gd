@@ -38,12 +38,12 @@ func poll() -> int:
 		var p := ev.e_player[i]
 		if p != hud.player and p != -1:
 			continue
+		hud.on_event(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i], Vector2(ev.e_x[i], ev.e_z[i]))
 		var n := describe(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i])
 		if n.is_empty():
 			continue
 		push(n["text"], n["seal"], Vector2(ev.e_x[i], ev.e_z[i]))
 		added += 1
-		hud.on_event(ev.e_kind[i], ev.e_a[i], ev.e_b[i], ev.e_c[i])
 	_cursor = r.y
 	return added
 
