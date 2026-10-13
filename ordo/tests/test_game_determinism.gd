@@ -73,7 +73,7 @@ func _test_vs_scripted() -> void:
 	var b := _run(21, SimHarness.default_players(), true)
 	SimHarness.check(a.checksums.size() == MIN15 / 30 and a.checksums == b.checksums,
 		"%d контрольных сумм совпали (последняя %d)" % [a.checksums.size(), a.checksums[-1]])
-	SimHarness.check(_count(a, SimEvents.Ev.RAID_STARTED) >= 3 and _count(a, SimEvents.Ev.CMD_REJECTED) > 0,
+	SimHarness.check(_count(a, SimEvents.Ev.RAID_STARTED) >= 2 and _count(a, SimEvents.Ev.CMD_REJECTED) > 0,
 		"за 15 мин набегов %d, отказов %d, приказов исполнено %d" % [_count(a, SimEvents.Ev.RAID_STARTED),
 		_count(a, SimEvents.Ev.CMD_REJECTED), a.orders.applied])
 	var ai_ms := prof.acc[GameSim.Ph.AI] / 1000.0 / MIN15

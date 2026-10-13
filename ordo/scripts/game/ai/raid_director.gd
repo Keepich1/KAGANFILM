@@ -11,13 +11,16 @@ extends AiController
 ##              если охраны больше skip_guard × волну. Ничья — меньший номер клетки.
 ##   STRIKE   — каждый отряд бьёт ближайшего работника (по одному на отряд), иначе идёт к отаре/табуну
 ##              (угон — ECON, по близости налётчиков; охраняемое 20 с — бросает), иначе ломает постройки:
-##              поля, склады и тўғон, прочие, укрепления, ставка — последней;
+##              поля, склады и тўғон, прочие, укрепления, ставка — последней и только у волн от HQ_MIN_WAVE;
 ##              целей рядом нет — новая цель по карте ценности.
-##   RETREAT  — потери ≥ retreat.losses, охраны в 1,5 раза больше, предел времени набега или угнанное стадо:
+##   RETREAT  — потери ≥ retreat.losses, охраны в 1,5 раза больше, предел времени набега, выносливость в бою
+##              ниже retreat.stamina, угнанное стадо или целей нет (retreat_why):
 ##              назад к краю; дошедшие уходят из мира (NOTE_REMOVE; ECON зачитывает угнанное), RAID_ENDED.
 ## Только чтение GameQuery и приказы; события — через notes (пишет GameSim).
 
 enum Phase { PEACE, MUSTER, MARCH, STRIKE, RETREAT, COOLDOWN }
+## Почему волна ушла (последний отход; для тестов и записок)
+enum Why { NONE, LOSSES, TIME, OUTNUMBERED, STAMINA, LOOT, NO_TARGET }
 
 const CELL := 32.0
 const STRIKE_R := 70.0           # цели удара — в этом радиусе от середины волны
@@ -29,6 +32,7 @@ const RETREAT_MAX_T := 3600      # отход дольше 2 мин — оста
 const MIN_GAP_T := 900           # между концом набега и следующей волной не меньше 30 с
 const DEFENDER_PTS := 50         # охранник в risk_r, деци-очки
 const HQ_PTS := 10               # ставка — последняя цель
+const HQ_MIN_WAVE := 60          # ставку бьют только поздние большие волны (раньше набег — по хозяйству)
 const HERD_GIVE_UP_T := 600      # стадо стоит у загона 20 с после первого приказа — охраняют, бросаем
 
 var state := Phase.PEACE
@@ -45,6 +49,7 @@ var expect := 0
 var start_t := 0
 var phase_t := 0
 var survivors := 0
+var retreat_why := Why.NONE
 ## Счётчики для тестов: приказы удара по видам целей
 var strikes_worker := 0
 var strikes_herd := 0
@@ -131,8 +136,9 @@ func think(tick: int, q: GameQuery, out: Array[PackedInt32Array]) -> void:
 				_march(tick, gq, out)
 		Phase.MARCH:
 			_prune(gq)
-			if _should_retreat(tick, gq):
-				_retreat(tick, gq, out)
+			var why := _should_retreat(tick, gq, false)
+			if why != Why.NONE:
+				_retreat(tick, gq, out, why)
 			elif _centroid(gq).distance_squared_to(target) <= ARRIVE_R * ARRIVE_R:
 				state = Phase.STRIKE
 				phase_t = tick
@@ -141,8 +147,9 @@ func think(tick: int, q: GameQuery, out: Array[PackedInt32Array]) -> void:
 				emit(out, SimCmd.attack_move(wave_units, target))
 		Phase.STRIKE:
 			_prune(gq)
-			if _should_retreat(tick, gq):
-				_retreat(tick, gq, out)
+			var why := _should_retreat(tick, gq, true)
+			if why != Why.NONE:
+				_retreat(tick, gq, out, why)
 			else:
 				_strike(tick, gq, out)
 		Phase.RETREAT:
@@ -214,7 +221,8 @@ func _collect(gq: GameQueryImpl) -> void:
 	for seq in range(r.x, r.y):
 		var i := E.at(seq)
 		if kind[i] == SimEvents.Ev.UNIT_SPAWNED and pl[i] == player and eb[i] == Ids.NULL:
-			if not wave_units.has(ea[i]):
+			# работники (ECON.spawn_worker тоже пишет b = 0) и арбы — не волна
+			if gq.unit_flags(ea[i]) & (UnitStats.WORKER | UnitStats.WAGON) == 0 and not wave_units.has(ea[i]):
 				wave_units.append(ea[i])
 	_cursor = r.y
 
@@ -227,7 +235,7 @@ func _march(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void:
 		_end_raid(tick)
 		return
 	if not _pick_target(gq, size0):
-		_retreat(tick, gq, out)
+		_retreat(tick, gq, out, Why.NO_TARGET)
 		return
 	emit(out, SimCmd.attack_move(wave_units, target))
 	state = Phase.MARCH
@@ -250,7 +258,7 @@ func _strike(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 	var blds := _buildings_near(gq, c)
 	# угнанное стадо уже идёт за нашими — уводим добычу
 	if _has_loot(gq):
-		_retreat(tick, gq, out)
+		_retreat(tick, gq, out, Why.LOOT)
 		return
 	if workers.is_empty() and herds.is_empty() and blds.is_empty():
 		if _pick_target(gq, wave_units.size()):
@@ -258,7 +266,7 @@ func _strike(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 			state = Phase.MARCH
 			phase_t = tick
 		else:
-			_retreat(tick, gq, out)
+			_retreat(tick, gq, out, Why.NO_TARGET)
 		return
 	var taken := {}
 	for s in _wave_squads(gq):
@@ -292,7 +300,8 @@ func _strike(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void
 			_orders[s] = pick
 
 
-func _retreat(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array]) -> void:
+func _retreat(tick: int, gq: GameQueryImpl, out: Array[PackedInt32Array], why: int) -> void:
+	retreat_why = why
 	state = Phase.RETREAT
 	phase_t = tick
 	_orders.clear()
@@ -328,15 +337,15 @@ func _end_raid(tick: int) -> void:
 	next_wave_t = maxi(start_t + _next_interval(), tick + MIN_GAP_T)
 
 
-func _should_retreat(tick: int, gq: GameQueryImpl) -> bool:
+## Причина уйти (Why.NONE — остаёмся). Выносливость — только в бою (striking): на марше бегом она
+## падает у всех, это не повод разворачиваться.
+func _should_retreat(tick: int, gq: GameQueryImpl, striking: bool) -> int:
 	var alive := wave_units.size()
-	if alive == 0:
-		return true
-	if alive * 1000 <= size0 * (1000 - _losses_milli):
-		return true
+	if alive == 0 or alive * 1000 <= size0 * (1000 - _losses_milli):
+		return Why.LOSSES
 	var rt: Dictionary = _raid.get("retreat", {})
 	if tick - start_t >= int(rt.get("time_ticks", 7200)):
-		return true
+		return Why.TIME
 	var c := _centroid(gq)
 	var my_team := gq.players().team[player]
 	gq.units_near(my_team, c, _risk_r, true, 0, _buf)
@@ -345,10 +354,10 @@ func _should_retreat(tick: int, gq: GameQueryImpl) -> bool:
 		if gq.unit_flags(u) & (UnitStats.WORKER | UnitStats.WAGON) == 0:
 			guards += 1
 	if guards * 1000 >= alive * _outnumbered_milli:
-		return true
+		return Why.OUTNUMBERED
 	# выносливость отрядов (ядро; на заглушке её нет)
 	var sim := gq.battle()
-	if sim != null:
+	if striking and sim != null:
 		var stam_lim := float(rt.get("stamina", 30.0))
 		var sum := 0.0
 		var k := 0
@@ -359,8 +368,8 @@ func _should_retreat(tick: int, gq: GameQueryImpl) -> bool:
 				sum += stam[i]
 				k += 1
 		if k > 0 and sum / k < stam_lim:
-			return true
-	return false
+			return Why.STAMINA
+	return Why.NONE
 
 
 # ================================================================= выбор цели (карта ценности, ECONOMY §10)
@@ -415,7 +424,7 @@ func _pick_target(gq: GameQueryImpl, wave_size: int) -> bool:
 			if bstate[b] == BuildingTable.State.ACTIVE:
 				tower[c] += 1
 			continue
-		_add(val, best_v, best_p, c, _building_value(gq, b, bt, fields), p)
+		_add(val, best_v, best_p, c, _building_value(gq, b, bt, fields, wave_size), p)
 	# стада
 	var H := gq.herds()
 	for h in H.hw:
@@ -468,13 +477,13 @@ func _pick_target(gq: GameQueryImpl, wave_size: int) -> bool:
 	return true
 
 
-func _building_value(gq: GameQueryImpl, b: int, bt: int, fields: int) -> int:
+func _building_value(gq: GameQueryImpl, b: int, bt: int, fields: int, wave_size: int) -> int:
 	var defs := gq.defs()
 	var flags := defs.b_flags[bt]
 	if flags & Defs.BF_HQ:
-		return HQ_PTS
+		return HQ_PTS if wave_size >= HQ_MIN_WAVE else 0
 	if defs.b_kind[bt] == Defs.BKind.DAM:
-		return _v_togon * mini(fields, 8)
+		return maxi(_v_togon * mini(fields, 8), defs.b_raid_value[bt] * 2)
 	if flags & Defs.BF_HOUSE:
 		return _v_house
 	if flags & Defs.BF_DROP:
@@ -663,6 +672,8 @@ func _buildings_near(gq: GameQueryImpl, c: Vector2) -> PackedInt32Array:
 		if k == Defs.BKind.LINK:
 			continue
 		var fl := defs.b_flags[bt]
+		if fl & Defs.BF_HQ and wave_units.size() < HQ_MIN_WAVE:
+			continue
 		var rank := 1.0e6
 		if k == Defs.BKind.FIELD:
 			rank = 0.0

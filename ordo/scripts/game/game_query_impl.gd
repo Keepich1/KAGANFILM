@@ -78,6 +78,8 @@ func water() -> PackedByteArray:
 
 ## Размеры полей (квадратная карта): трава 16 м, полив 8 м; пустые поля — 0
 func field_dims() -> Vector4i:
+	if _econ.has_method("field_dims"):
+		return _econ.call("field_dims")
 	var g := _side(_econ.grass_grid().size())
 	var w := _side(_econ.water_grid().size())
 	return Vector4i(g, g, w, w)

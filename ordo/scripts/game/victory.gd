@@ -5,7 +5,8 @@ extends RefCounted
 ##   • ставка (PlayerTable.hq_b) разрушена — описатель недействителен или здание в руинах;
 ##   • ставка свёрнута в арбу (hq_b = 0, здание PACKED), а этой арбы больше нет.
 ## Когда в игре остались игроки одной команды — VICTORY(a команда), over = true (GameSim.over).
-## Таблицы пишет только ECON, поэтому «выбыл» хранится здесь (defeated); Orders и ИИ смотрят сюда.
+## Таблицы пишет только ECON, поэтому «выбыл» хранится здесь (defeated; Orders и ИИ смотрят сюда), а
+## PlayerTable.alive = 0 ставит EconomySim.defeat(p), если он есть (просьба внести в договор EconApi).
 
 const REASON_HQ := 0
 const REASON_ARBA := 1
@@ -48,6 +49,8 @@ func check(tick: int) -> void:
 		var r := _lost(p, tick)
 		if r >= 0:
 			defeated[p] = 1
+			if _econ.has_method("defeat"):
+				_econ.call("defeat", p)               # EconomySim: players.alive = 0, очереди стоят
 			_events.push(SimEvents.Ev.PLAYER_DEFEATED, p, r, P.team[p])
 	# остались игроки одной команды?
 	var teams := PackedInt32Array()

@@ -178,7 +178,9 @@ static func _spawn_base(game: GameSim, p: int, site: Dictionary) -> void:
 				game.events.push(SimEvents.Ev.UNIT_SPAWNED, p, h, hq, u, pos)
 
 
-## Стадо загона при постройке (короо — отара 40, ставка кыпчаков — 6 коней на коновязи), если ECON сам не завёл
+## Стадо загона: heads < 0 — стартовое (короо — отара 40, ставка кыпчаков — 6 коней на коновязи), если
+## ECON сам не завёл его в spawn_building; heads ≥ 0 — задать число голов (EconomySim.spawn_herd у загона
+## со стадом задаёт число, заглушка — заводит стадо)
 static func _herd_for(game: GameSim, p: int, b_h: int, heads := -1) -> void:
 	var defs := game.defs
 	var B := game.econ.buildings
@@ -189,18 +191,19 @@ static func _herd_for(game: GameSim, p: int, b_h: int, heads := -1) -> void:
 	var n := heads if heads >= 0 else defs.b_herd_start[bt]
 	if ht < 0 or n <= 0:
 		return
-	var H := game.econ.herds
-	for h in H.hw:
-		if H.state[h] != HerdTable.State.FREE and H.pen_b[h] == b_h:
-			return
+	if heads < 0:
+		var H := game.econ.herds
+		for h in H.hw:
+			if H.state[h] != HerdTable.State.FREE and H.pen_b[h] == b_h:
+				return
 	game.econ.spawn_herd(p, ht, b_h, n)
 
 
-## Линия с начала (Бош ариқ): EconomySim.spawn_link, если есть (просьба к договору), иначе звенья
-## постройками по шагу plan_wall с четвертью оборота по направлению отрезка
+## Линия с начала (Бош ариқ): EconomySim.spawn_links (готовые звенья даром; просьба внести в договор),
+## иначе звенья постройками по шагу plan_wall с четвертью оборота по направлению отрезка
 static func _spawn_link(game: GameSim, p: int, bt: int, pts: PackedVector2Array) -> void:
-	if game.econ.has_method("spawn_link"):
-		game.econ.call("spawn_link", p, bt, pts)
+	if game.econ.has_method("spawn_links"):
+		game.econ.call("spawn_links", p, bt, pts)
 		return
 	var plan := game.nav.plan_wall(p, bt, pts)
 	var centers: PackedVector2Array = plan.get("centers", PackedVector2Array())
