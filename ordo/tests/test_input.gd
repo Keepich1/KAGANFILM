@@ -581,6 +581,11 @@ func _test_kipchak() -> void:
 	_same(_take(), [SimCmd.pack(boz)], "K по боз үй → PACK")
 	inp1.handle(_key(KEY_K, false, true))
 	_same(_take(), [SimCmd.pack_all(city.players().hq_b[1])], "Shift+K → PACK_ALL ставки")
+	# своё стадо: ПКМ по земле — перегон (HERD_MOVE)
+	sel1.set_selection(PackedInt32Array([sheep]))
+	var pasture := Vector2(-150, 90)
+	_click(MOUSE_BUTTON_RIGHT, _scr(pasture))
+	_same(_take(), [SimCmd.herd_move(sheep, _w(_scr(pasture)))], "своё стадо + ПКМ → HERD_MOVE")
 	inp = keep
 	inp1.queue_free()
 

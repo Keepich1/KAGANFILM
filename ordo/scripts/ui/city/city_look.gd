@@ -12,6 +12,7 @@ extends Node3D
 ##   --skip=секунды             сразу промотать поддельный город (таймер набега, записки, стройки)
 ##   --menu=main|help           открыть меню / памятку клавиш
 ##   --armed=<приказ>           взвести кнопку сетки (move, attack_move, gather, assist, rally)
+##   --view=x,z,расстояние,азимут   свой вид камеры вместо VIEWS
 
 const STILLS := {"kokand": "res://docs/shots/03_rts.jpg", "kipchak": "res://docs/shots/02_camp_life.jpg"}
 ## Виды камеры по сторонам: (x, z, расстояние, азимут)
@@ -58,6 +59,9 @@ func _ready() -> void:
 	camera.far = 6000.0
 	camera.presets_enabled = false
 	var v: Vector4 = VIEWS[faction]
+	var vs := String(arg.call("view", "")).split(",")
+	if vs.size() == 4:
+		v = Vector4(vs[0].to_float(), vs[1].to_float(), vs[2].to_float(), vs[3].to_float())
 	camera.focus = Vector3(v.x, 0.0, v.y)
 	camera.distance = v.z
 	camera.yaw_deg = v.w

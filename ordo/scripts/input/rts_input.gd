@@ -5,7 +5,7 @@ extends Node
 ##   ПКМ — по смыслу (GameQuery.pick): враг → ATTACK; узел, своё поле, своё стадо + работники → GATHER;
 ##     своя стройка или повреждённое здание + работники → ASSIST; своя башня/ворота + пехота → GARRISON;
 ##     всадники по чужому табуну, загону, полю, складу → набег (ECONOMY §4.1; Ctrl+ПКМ — простая атака);
-##     земля → MOVE (Shift — в очередь); выбрано своё здание с наймом → RALLY;
+##     земля → MOVE (Shift — в очередь); выбрано своё здание с наймом → RALLY; своё стадо → HERD_MOVE;
 ##   протянуть ПКМ — MOVE_LINE; двойной ПКМ — бегом/галопом;
 ##   H стоп, F строй по кругу, G качып, R стрельба/рукопашная, V клич (у Урды — Ҳашар), U собрать/распустить
 ##   отряд, K свернуть / Shift+K свернуть лагерь / K с арбами — развернуть у курсора, «.» свободный работник,
@@ -414,6 +414,10 @@ func order_at(world: Vector2, shift := false, run := false, plain := false) -> v
 			var t := target if target != 0 and Ids.kind(target) != Ids.Kind.UNIT else 0
 			issue_cmd(SimCmd.rally(own[0], world, t))
 		return
+	if Ids.kind(own[0]) == Ids.Kind.HERD:
+		# своё стадо — перегнать на траву (HERD_MOVE)
+		issue_cmd(SimCmd.herd_move(own[0], world))
+		return
 	var units := _units_of(own)
 	if units.is_empty():
 		return
@@ -480,6 +484,8 @@ func fire_armed(world: Vector2, shift := false) -> bool:
 		SimCmd.Op.MOVE:
 			if not units.is_empty():
 				cmd = SimCmd.move(compact(units), world, false, NAN, shift)
+			elif own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.HERD:
+				cmd = SimCmd.herd_move(own[0], world)
 		SimCmd.Op.ATTACK_MOVE:
 			if not units.is_empty():
 				cmd = SimCmd.attack(compact(units), target, true) if is_enemy(target) else SimCmd.attack_move(compact(units), world)
@@ -648,6 +654,9 @@ func order_button(op: int) -> void:
 		SimCmd.Op.UNGARRISON:
 			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
 				issue_cmd(SimCmd.ungarrison(own[0]))
+		SimCmd.Op.HERD_MOVE:
+			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.HERD:
+				arm(SimCmd.Op.MOVE)          # перегон — ЛКМ по карте
 		SimCmd.Op.SET_RECIPE:
 			if own.size() == 1 and Ids.kind(own[0]) == Ids.Kind.BUILDING:
 				var rc := _next_recipe(own[0])
