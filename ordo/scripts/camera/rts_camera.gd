@@ -23,6 +23,12 @@ signal moved_by_player
 @export var rotate_speed := 90.0      # градусов в секунду
 ## Управление с клавиатуры и мыши (выключается при съёмке кадра)
 @export var interactive := true
+## Виды 1–4 с клавиш (срез — да; в «Городе» цифры — группы, виды — F5–F8 через RtsInput)
+@export var presets_enabled := true
+## Сдвиг WASD и поворот Q/E с клавиш (интерфейс «Города» гасит их, пока открыта вкладка стройки с буквами)
+var pan_keys := true
+## Экран над интерфейсом: Callable(pos: Vector2) -> bool; true — край экрана здесь не двигает камеру
+var edge_blocked: Callable
 ## Готовые виды 1–4: (x, z, расстояние, азимут)
 @export var presets: Array[Vector4] = [
 	Vector4(78.0, 4.0, 110.0, 12.0),     # 1 — всё поле боя
@@ -88,7 +94,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		moved_by_player.emit()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var k := (event as InputEventKey).physical_keycode
-		if k >= KEY_1 and k <= KEY_4 and k - KEY_1 < presets.size():
+		if presets_enabled and k >= KEY_1 and k <= KEY_4 and k - KEY_1 < presets.size():
 			go_to(presets[k - KEY_1])
 			moved_by_player.emit()
 
@@ -106,16 +112,18 @@ func _process(delta: float) -> void:
 
 func _read_controls(delta: float) -> void:
 	var move := Vector2.ZERO
-	if Input.is_physical_key_pressed(KEY_W): move.y -= 1.0
-	if Input.is_physical_key_pressed(KEY_S): move.y += 1.0
-	if Input.is_physical_key_pressed(KEY_A): move.x -= 1.0
-	if Input.is_physical_key_pressed(KEY_D): move.x += 1.0
+	if pan_keys:
+		if Input.is_physical_key_pressed(KEY_W): move.y -= 1.0
+		if Input.is_physical_key_pressed(KEY_S): move.y += 1.0
+		if Input.is_physical_key_pressed(KEY_A): move.x -= 1.0
+		if Input.is_physical_key_pressed(KEY_D): move.x += 1.0
 	var vp := get_viewport()
 	# края экрана — только когда эта камера уже текущая (иначе мышь у края сбивала бы кино)
 	if current and vp and DisplayServer.window_is_focused():
 		var m := vp.get_mouse_position()
 		var size := vp.get_visible_rect().size
-		if m.x >= 0 and m.y >= 0 and m.x <= size.x and m.y <= size.y:
+		var over_hud := edge_blocked.is_valid() and bool(edge_blocked.call(m))
+		if m.x >= 0 and m.y >= 0 and m.x <= size.x and m.y <= size.y and not over_hud:
 			if m.x < edge_margin: move.x -= 1.0
 			if m.x > size.x - edge_margin: move.x += 1.0
 			if m.y < edge_margin: move.y -= 1.0
@@ -125,8 +133,9 @@ func _read_controls(delta: float) -> void:
 		_t_focus += Vector3(r.x, 0.0, r.y) * pan_speed * maxf(distance, 30.0) * delta
 		moved_by_player.emit()
 	var rot := 0.0
-	if Input.is_physical_key_pressed(KEY_Q): rot += 1.0
-	if Input.is_physical_key_pressed(KEY_E): rot -= 1.0
+	if pan_keys:
+		if Input.is_physical_key_pressed(KEY_Q): rot += 1.0
+		if Input.is_physical_key_pressed(KEY_E): rot -= 1.0
 	if rot != 0.0:
 		_t_yaw += rot * rotate_speed * delta
 		moved_by_player.emit()
