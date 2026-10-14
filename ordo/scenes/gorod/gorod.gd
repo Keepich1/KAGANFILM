@@ -34,9 +34,12 @@ signal series_done
 @onready var overlay: OverlayView = $HUD/Overlay
 @onready var camera: RtsCamera = $Cameras/CamRTS
 
-## Высота солнца в «Городе», градусы (у среза — 10°: закат). Ниже ~14° горы на западе накрывают тенью
-## лагерь кыпчаков (−170, 110), а длинные тени построек — город; ключ --sun_el=N — для подбора
-@export var sun_elevation := 10.0
+## Свет «Города» (читаемость ТЗ 11.2 при взгляде сверху): солнце выше заката среза (10°) — короче тени
+## построек и светлее лагерь кыпчаков у западных гор; тени облаков слабее (у среза 0,6 — пятна по 60–90 м
+## темнят половину вида стратегии). Мир ставит общие значения заново при каждом входе (срез, меню — свои).
+## Ключи для подбора: --sun_el=N, --clouds=K
+@export var sun_elevation := 16.0
+@export var cloud_shadow := 0.3
 
 ## Выделение (до RtsInput из UI)
 var selection := SelectionModel.new()
@@ -63,6 +66,9 @@ func _ready() -> void:
 	if not is_equal_approx(el, world.sun_elevation):
 		world.sun_elevation = el
 		world.place_sun()
+	var clouds: Vector4 = World.PAINT_GLOBALS["ordo_clouds"]
+	clouds.x = float(_ordo.arg("clouds", str(cloud_shadow))) if _ordo else cloud_shadow
+	RenderingServer.global_shader_parameter_set("ordo_clouds", clouds)
 	# своя модель — только если RtsInput (UI, его _ready раньше) не поставил свою
 	if selection_view.selection == null:
 		selection_view.selection = selection
