@@ -39,8 +39,10 @@ const STRIDE := 16  # 12 чисел трансформа + 4 числа INSTANCE
 const BLOCK := 32
 ## Границы всех блоков пересчитываются точно за столько отправок (каждый кадр — своя доля)
 const SCAN_FRAMES := 8
-## Запас границ блока на движение юнитов с его пересчёта, м/с (галоп с натиском — до 12)
+## Запас границ блока на движение юнитов с его пересчёта, м/с боя (галоп с натиском — до 12)
 const DRIFT_SPEED := 15.0
+## Больше стольких секунд боя за кадр юниты не проходят (SimStepper: не больше 12 шагов по 1/30 с)
+const DRIFT_MAX_DT := 0.4
 const FAR := 1.0e9
 ## Группа солнца мира (World кладёт в неё свой DirectionalLight3D): по нему — каскады теней
 const SUN_GROUP := &"ordo_sun"
@@ -51,6 +53,9 @@ const NEAR_SHADOW_PAD := 10.0
 ## облегчённая без тени, тень облегчённой моделью (только проходы теней)
 enum Part { LOD0_NEAR, LOD0, LOD1, SHADOW }
 const PARTS := 4
+
+## Проверки (tests/bench_crowd_lod.gd зовёт _flush сам): время боя за кадр, с; −1 — кадр игры × скорость боя
+var debug_frame_dt := -1.0
 
 ## Дальность смены LOD0 → LOD1, м
 var lod_distance: float = 90.0:
@@ -78,6 +83,7 @@ var _bhi := PackedVector3Array()
 var _bdrift := PackedFloat32Array()
 var _drift := 0.0
 var _drift_t := -1.0
+var _clock := 0.0           # часы боя для запаса границ: кадры игры × скорость боя, пауза — стоят
 var _scan := 0
 var _full_scan := true
 var _cam := Vector3(INF, INF, INF)  # камера последнего деления
@@ -253,15 +259,20 @@ func _flush() -> void:
 		_near_d = sc.y
 		_set_bands()
 		_cam = Vector3(INF, INF, INF)  # полосы частей сдвинулись — поделить заново
+	# время боя, а не часы: на 4× бой идёт вчетверо быстрее (иначе запас мал и юнит у края полосы
+	# пропадал бы на кадр-другой), в паузе стоит, а медленный кадр (замер на программном Vulkan)
+	# не раздувает запас — кадр игры и есть время, которое прошли юниты
+	var dt := debug_frame_dt if debug_frame_dt >= 0.0 else get_process_delta_time() * _battle_speed()
+	_clock += minf(dt, DRIFT_MAX_DT)
 	var cam := _camera_pos()
 	if not _dirty and cam.distance_squared_to(_cam) < 0.25:
 		return
 	if _dirty:
-		# сколько юниты могли пройти с прошлой отправки (для запаса границ блоков)
-		var now := Time.get_ticks_usec() * 1.0e-6
+		# сколько юниты могли пройти с прошлой отправки (для запаса границ блоков): время боя с неё
+		# (за кадр — не больше DRIFT_MAX_DT, см. выше)
 		if _drift_t >= 0.0:
-			_drift += minf(now - _drift_t, 0.25) * DRIFT_SPEED
-		_drift_t = now
+			_drift += (_clock - _drift_t) * DRIFT_SPEED
+		_drift_t = _clock
 		_scan_blocks()
 	_dirty = false
 	_cam = cam
@@ -385,6 +396,19 @@ func _partition(cam: Vector3) -> void:
 		_counts[part] = n
 		var a := lo3 - AABB_PAD_LO
 		mm.custom_aabb = AABB(a, (hi3 + AABB_PAD_HI) - a)
+
+
+## Скорость боя, который рисует слой: BattleView (родитель) → его сценарий (time_scale, пауза — 0).
+## Слой вне боя (вид «Города», тестовые сцены) — 1.
+func _battle_speed() -> float:
+	var v := get_parent()
+	var sc: Object = v.get("scenario") as Object if v != null else null
+	if sc == null or not is_instance_valid(sc):
+		return 1.0
+	if bool(sc.get("paused")):
+		return 0.0
+	var k: Variant = sc.get("time_scale")
+	return float(k) if k != null else 1.0
 
 
 ## Камера, что рисует кадр слоя (или null)

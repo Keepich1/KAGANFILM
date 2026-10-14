@@ -93,6 +93,9 @@ func _run() -> int:
 			buf[o + 11] = pos[i].z
 			buf[o + 15] = float(i)      # номер юнита в INSTANCE_CUSTOM.w — узнать его в частях
 		layer.expand_bounds(Vector3.ZERO, Vector3.ZERO)
+		# время боя за кадр (запас границ блоков): после трети пути бой идёт втрое быстрее, как по «+»
+		# в срезе, — бегущие отряды проходят за кадр втрое больше
+		layer.debug_frame_dt = dt * (3.0 if f > _frames / 3 else 1.0)
 		# камера летит (как прокрутка стратегической камеры) и иногда прыгает (смена кадра)
 		cam.position += Vector3(-1.2, 0.0, 0.7)
 		if f == _frames / 2:
