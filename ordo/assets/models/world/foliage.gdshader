@@ -68,7 +68,8 @@ void vertex() {
 	}
 	// ветер задан в мире — переводим в пространство модели (поворот + равномерный масштаб)
 	mat3 m3 = mat3(MODEL_MATRIX);
-	float s2 = dot(m3[0], m3[0]);
+	// срубленное дерево (WorldScatter.hide_tree) сжато в точку: масштаб 0 — без деления на ноль
+	float s2 = max(dot(m3[0], m3[0]), 1e-10);
 	float s = sqrt(s2);
 	vec3 off = vec3(wdir.x, 0.0, wdir.y) * gust * sway * ordo_wind.z * w;
 	float cph = dot(c, vec3(1.7, 2.3, 1.9)) + ph;
@@ -77,7 +78,8 @@ void vertex() {
 	c += transpose(m3) * off / s2;
 
 	vec3 cv = (MODELVIEW_MATRIX * vec4(c, 1.0)).xyz;
-	vec3 nv = normalize(mat3(MODELVIEW_MATRIX) * n);
+	vec3 nv = mat3(MODELVIEW_MATRIX) * n;
+	nv = dot(nv, nv) > 1e-12 ? normalize(nv) : vec3(0.0, 0.0, 1.0);
 	if (kind < 0.5) {
 		VERTEX = cv;
 		v_card = vec3(0.0);
@@ -145,7 +147,11 @@ void fragment() {
 		}
 		q *= 0.85;
 		vec3 dn = vec3(q, sqrt(max(1.0 - dot(q, q), 0.0)));
-		NORMAL = normalize(normalize(NORMAL) * (1.0 - dm) + dn * dm);
+		// карточка всегда развёрнута к камере, но у зеркальной (каскад на левой стороне кроны)
+		// обход углов обратный: движок считает её изнанкой и переворачивает нормаль (cull_disabled) —
+		// свет лёг бы не с той стороны. Нормаль карточки задана явно — возвращаем её
+		vec3 n0 = FRONT_FACING ? NORMAL : -NORMAL;
+		NORMAL = normalize(normalize(n0) * (1.0 - dm) + dn * dm);
 		// тонкий край грозди: альфа (поле расстояния) чуть выше порога
 		v_thin = 1.0 - smoothstep(alpha_cut, alpha_cut + 0.22, a.a);
 	}
