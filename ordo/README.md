@@ -132,6 +132,8 @@
 - Проход партии по сценарию с кадрами (проверка первой играбельной сборки):
   `tools/godot.sh --path . --resolution 1920x1080 --fixed-fps 30 res://scenes/gorod/gorod.tscn -- --quality=high --faction=kokand --playthrough=/abs/dir`.
 - Кадр без монитора: `tools/shot.sh res://scenes/slice.tscn out.png --cam=CamRTS --at=19`.
+  На Windows (Git Bash, Godot в `C:\Godot`) те же `tools/shot.sh`, `tools/import.sh`, `tools/godot.sh` работают
+  с видеокартой ПК: кадр снимается за секунды, на миг открывается окно игры.
 - Модели и текстуры генерируются кодом: `python3 tools/gen_camp.py`, `gen_units.py`, `gen_world.py`,
   `gen_fx.py`, `gen_kokand.py`, `gen_kipchak2.py`, `gen_ui.py` (Python 3 + numpy + Pillow).
   Бюджеты ТЗ 11.5: `python3 tools/check_budgets.py`.
