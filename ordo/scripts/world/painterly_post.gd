@@ -43,6 +43,11 @@ const CTX_HALF := &"ordo_painterly_post_half"
 @export_range(0, 4320, 1) var max_height := 0
 ## Строгость совпадения цвета при увеличении мазков (больше — чётче края)
 @export_range(1.0, 200.0, 1.0) var upsample_guide := 40.0
+## Мелочь, которой нет в уменьшенном кадре (ни одна из четырёх его точек на неё не похожа цветом):
+## 1 — остаётся исходная точка кадра (вспышка, древко не теряются — «Среднее», «Низкое»);
+## 0 — её закрывает мазок, как в полном кадре (Кувахара полного кадра тоже закрашивает такую мелочь);
+## между — доля. WorldQuality: «Высокое» в уменьшенном кадре (post_cap) — ближе к полному кадру
+@export_range(0.0, 1.0, 0.01) var detail_keep := 1.0
 
 var _rd: RenderingDevice
 var _shaders := {}
@@ -234,7 +239,7 @@ func _render_scaled(sb: RenderSceneBuffersRD, size: Vector2i, k: float) -> void:
 			size.x, size.y, hsize.x, hsize.y,
 			shadow_lift.r, shadow_lift.g, shadow_lift.b, shadow_lift.a,
 			highlight_warm.r, highlight_warm.g, highlight_warm.b, highlight_warm.a,
-			_grain(sb), vignette, amount, shadow_range, upsample_guide, 1.0 / step.x, 1.0 / step.y, 0.0]))
+			_grain(sb), vignette, amount, shadow_range, upsample_guide, 1.0 / step.x, 1.0 / step.y, detail_keep]))
 		_rd.compute_list_dispatch(cl, gx, gy, 1)
 		_rd.compute_list_end()
 

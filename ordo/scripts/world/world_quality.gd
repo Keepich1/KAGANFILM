@@ -24,6 +24,7 @@ extends Node
 ## Ключи сравнения (автору — проверить на своём ПК с F9, что дала каждая мера, и вернуть прежнее):
 ##   --upscale=fsr1|fsr2|bilinear — способ увеличения; --post=full|half|off — живописный фильтр;
 ##   --post_cap=0 — фильтр «Высокого» в полном кадре на любом мониторе (как было), --post_cap=1440 — до 1440p;
+##   --post_detail=1 — мелочь при увеличении мазков не закрывать (как у «Среднего»), 0 — закрывать целиком;
 ##   --aa=msaa|msaa2|smaa|fxaa|off — сглаживание (msaa — 4×, как было);
 ##   --shadow_atlas=8192 — карта теней (размытие подстраивается); --fog_grid=128 --fog_depth=128 — сетка тумана;
 ##   --shadow_soft=medium — мягкая тень дешевле (вдвое меньше выборок; «Высокое» — high);
@@ -40,26 +41,28 @@ const NAMES := {HIGH: "Высокое", MEDIUM: "Среднее", LOW: "Низк
 ## Числа уровней. scale — доля разрешения 3D, upscale — как растянуть до экрана; aa — сглаживание:
 ## msaa (MSAA из настроек проекта, 4×) / smaa / fxaa; post — живописный фильтр: full / half (половина
 ## разрешения) / off; post_cap — кадр выше стольких точек фильтр считает уменьшенным до этой высоты
-## (0 — без предела); shadow_atlas — сторона карты теней солнца (размытие тени в точках карты
+## (0 — без предела); post_detail — мелочь, которой нет в уменьшенном кадре: 1 — исходная точка
+## («Среднее», «Низкое», как было), меньше — её наполовину закрывает мазок, как Кувахара полного кадра
+## («Высокое»: уменьшенный кадр ближе к прежнему полному); shadow_atlas — сторона карты теней солнца (размытие тени в точках карты
 ## подстраивается: та же мягкость в метрах, что у 8192 со значением сцены).
 const PRESETS := {
 	HIGH: {
 		"scale": 1.0, "upscale": "bilinear", "aa": "smaa",
-		"post": "full", "post_cap": 1080, "volfog": true, "fog_grid": 128, "fog_depth": 64, "ssao": true, "ssao_low": false,
+		"post": "full", "post_cap": 1080, "post_detail": 0.5, "volfog": true, "fog_grid": 128, "fog_depth": 64, "ssao": true, "ssao_low": false,
 		"shadow_splits": 4, "shadow_dist": 700.0, "shadow_atlas": 4096, "shadow_soft": "high",
 		"grass_density": 1.0, "grass_range": 1.0, "terrain_lod": 1.0, "scatter_lod": 1.0,
 		"crowd_lod": 1.0, "crowd_lod1_shadow": true, "crowd_shadow": 700.0, "fx": 1.0,
 	},
 	MEDIUM: {
 		"scale": 0.77, "upscale": "fsr1", "aa": "msaa",
-		"post": "half", "post_cap": 0, "volfog": true, "fog_grid": 96, "fog_depth": 64, "ssao": true, "ssao_low": true,
+		"post": "half", "post_cap": 0, "post_detail": 1.0, "volfog": true, "fog_grid": 96, "fog_depth": 64, "ssao": true, "ssao_low": true,
 		"shadow_splits": 4, "shadow_dist": 500.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.6, "grass_range": 0.85, "terrain_lod": 0.8, "scatter_lod": 0.8,
 		"crowd_lod": 0.75, "crowd_lod1_shadow": true, "crowd_shadow": 500.0, "fx": 0.75,
 	},
 	LOW: {
 		"scale": 0.67, "upscale": "fsr1", "aa": "fxaa",
-		"post": "half", "post_cap": 0, "volfog": false, "fog_grid": 64, "fog_depth": 48, "ssao": false, "ssao_low": true,
+		"post": "half", "post_cap": 0, "post_detail": 1.0, "volfog": false, "fog_grid": 64, "fog_depth": 48, "ssao": false, "ssao_low": true,
 		"shadow_splits": 2, "shadow_dist": 320.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.33, "grass_range": 0.6, "terrain_lod": 0.6, "scatter_lod": 0.6,
 		"crowd_lod": 0.5, "crowd_lod1_shadow": false, "crowd_shadow": 60.0, "fx": 0.5,
@@ -206,6 +209,7 @@ func apply(level: String) -> void:
 					e.enabled = post != "off" and not _has_arg("nopost")
 					e.half_res = post == "half"
 					e.max_height = int(_arg("post_cap", str(p.get("post_cap", 0))))
+					e.detail_keep = float(_arg("post_detail", str(p.get("post_detail", 1.0))))
 	var atlas := int(_arg("shadow_atlas", str(p.shadow_atlas)))
 	if sun:
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if int(p.shadow_splits) == 4 \

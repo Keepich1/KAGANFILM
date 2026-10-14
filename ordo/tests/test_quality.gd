@@ -165,6 +165,13 @@ func _check_post_scale() -> void:
 	_check(post.work_scale(2160) == 1.0, "без предела — всегда полный кадр")
 	post.half_res = true
 	_check(post.work_scale(1080) == 0.5 and post.work_scale(720) == 0.5, "half_res — половина при любом кадре")
+	# мелочь без пары в уменьшенном кадре: «Среднее» и «Низкое» — исходная точка (как было), «Высокое» —
+	# наполовину мазок (кадры 1440p: ближе к фильтру в полном кадре, чем 1 и 0)
+	_check(is_equal_approx(PainterlyPost.new().detail_keep, 1.0), "по умолчанию мелочь остаётся (прежний путь половины)")
+	_check(float(WorldQuality.preset("medium").post_detail) == 1.0 and float(WorldQuality.preset("low").post_detail) == 1.0,
+		"«Среднее», «Низкое» — мелочь остаётся, как было")
+	var hd := float(WorldQuality.preset("high").post_detail)
+	_check(hd > 0.0 and hd < 1.0, "«Высокое» — мелочь наполовину закрывает мазок (%.2f)" % hd)
 
 
 ## Земля: дерево кусков (HLOD). При любом положении камеры каждый участок покрыт ровно одним видимым
