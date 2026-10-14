@@ -88,7 +88,7 @@ PAL = {
     "elm": ["#13201a", "#1b2c20", "#263c26", "#35502d", "#4a6634", "#667c3d", "#8b9549", "#adb05c"],
     "poplar": ["#121c18", "#1a281f", "#253727", "#33492e", "#456036", "#5f7542", "#7f8b52", "#9fa266"],
     "poplar_silver": ["#7d8a80", "#94a096", "#aab3a4"],
-    "willow": ["#18231a", "#223121", "#304428", "#42582f", "#596f37", "#738540", "#919c4f", "#adb162"],
+    "willow": ["#18231a", "#223121", "#304428", "#42582f", "#566e37", "#6c8442", "#869a50", "#9fad62"],
     "willow_silver": ["#87917b", "#9ea78e"],
     "juniper": ["#0b1513", "#111d19", "#182a23", "#21362d", "#2d473a", "#3f5a4b", "#58715f", "#748a77"],
 }
@@ -569,8 +569,9 @@ def willow_strands(w, h, seed):
         len_g = h * rs.uniform(0.55, 0.95)
         lay_g = rs.uniform(0.0, 1.0)
         for j in range(int(rs.integers(3, 6))):
-            strands.append((float(np.clip(lay_g + rs.normal(0, 0.2), 0, 1)), gx + rs.normal(0, w * 0.04),
-                            h * rs.uniform(0.02, 0.09), reach_g * rs.uniform(0.75, 1.25),
+            x0 = gx + rs.normal(0, w * 0.04)
+            strands.append((float(np.clip(lay_g + rs.normal(0, 0.2), 0, 1)), x0,
+                            h * rs.uniform(0.02, 0.09), min(reach_g * rs.uniform(0.75, 1.25), w * 0.68 - x0),
                             len_g * rs.uniform(0.72, 1.05)))
     strands.sort(key=lambda q: q[0])
     margin = 14
@@ -585,7 +586,7 @@ def willow_strands(w, h, seed):
         t.leaf(x, y, Ln, Ln * rs.uniform(0.22, 0.3), ang, _shade(P, rs.uniform(0.1, 0.32)), asym=0.1,
                bend=rs.normal(0, 0.3))
     for (layer, x0, y0, reach, L) in strands:
-        _strand(t, P, S, x0, y0, reach, L, layer, margin)
+        _strand(t, P, S, x0, y0, reach, L, layer, margin, vmax=0.82)
     return t.finish(spread=10)
 
 
@@ -617,10 +618,11 @@ def bark(w, h, seed, kind):
         c.strokes(220, ["#2f2d28", "#3a3832", "#6a675c"], length=(30, 80), width=(3, 7), angle=90, angle_jitter=6,
                   alpha=(0.4, 0.8), bristles=2, region=(0, h * 0.8, w, h))
     elif kind == "juniper":
-        c = Canvas(w, h, base="#5e3424", seed=seed, tile=True)
-        c.underpaint(["#4e2a1d", "#633826", "#74432c", "#5a3122"], cell=40, octaves=3)
-        # волокнистые ленты, закрученные по стволу
-        c.strokes(900, ["#7c4a32", "#8e583c", "#5a2f20", "#6d3c29", "#9b6a4c"], length=(50, 140), width=(3, 8),
+        c = Canvas(w, h, base="#57372a", seed=seed, tile=True)
+        c.underpaint(["#4a2d22", "#5c3a2c", "#6a4534", "#533327"], cell=40, octaves=3)
+        # волокнистые ленты, закрученные по стволу (красно-бурые, не морковные: на закатном
+        # солнце кора и так теплеет)
+        c.strokes(900, ["#734d3b", "#825a45", "#553226", "#664031", "#8f6b56"], length=(50, 140), width=(3, 8),
                   angle=78, angle_jitter=5, alpha=(0.35, 0.8), bristles=3, curve=0.15, taper=0.3)
         c.strokes(260, ["#2a1710", "#331c13"], length=(60, 160), width=(1.5, 3), angle=78, angle_jitter=4,
                   alpha=(0.5, 0.9), bristles=1, curve=0.12)
