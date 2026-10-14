@@ -42,7 +42,7 @@ uniform float mass_dome = 0.35;          // доля купола у «масс�
 uniform float shadow_push = 1.0;         // отодвиг карточки в проходе теней, доля её радиуса
 uniform float self_shadow = 0.85;        // сила тени кроны на себе (1 — как есть)
 uniform float strand_shadow = 0.55;      // то же у прядей ивы: между прядями просветы, тень дырявая
-uniform float shadow_fill = 0.9;         // холодное заполнение неба в тени листвы: тени цветные, не чёрные
+uniform float shadow_fill = 1.1;         // холодное заполнение неба в тени листвы: тени цветные, не чёрные
 
 varying vec3 v_var;
 varying vec3 v_card;                     // xy — место в карточке (−1..1), z — тип (0 кора, 1, 2)
