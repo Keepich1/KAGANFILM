@@ -2,12 +2,14 @@
 
     python3 tools/gen_units_work.py            # атлас деҳқона, kok_dehqon, kip_malchy с инструментами
     python3 tools/gen_units_work.py --no-tex   # без перерисовки атласа
+(tools/gen_units.py зовёт этот генератор сам — общий запуск пересобирает и работников.)
 
 Пишет:
-    assets/textures/units/kokand_dehqon.png         атлас деҳқона (1024², та же «рука», что у юнитов)
-    assets/models/units/kok_dehqon(_lod1).glb       деҳқон: белая хлопковая рубаха, полосатые штаны,
-                                                    дўппи, бирюзовый кушак (цвет стороны)
-    assets/models/units/kip_malchy(_lod1).glb       малчы как в gen_units.py + инструменты
+    assets/textures/units/kokand_dehqon.png         атлас деҳқона (2048×1024, та же «рука» и разметка
+                                                    вариантов, что у атласов сторон: шаг 512 px)
+    assets/models/units/kok_dehqon(_lod1).glb       деҳқон: хлопковая рубаха (четыре варианта),
+                                                    полосатые штаны, дўппи, бирюзовый кушак (цвет стороны)
+    assets/models/units/kip_malchy(_lod1).glb       малчы (тело как у кыпчакской пехоты) + инструменты
 
 Инструменты — отдельные части (UV2.x — номер кости), в позе покоя хват в правой кисти
 (HAND_R), ось инструмента +Y, лезвие/боёк в +Z. Какая видна — решает шейдер толпы по
@@ -16,12 +18,10 @@
     18 TOOL_HOE     кетмень (копает, z = 0.25)
     19 TOOL_HAMMER  молот / деревянная колотушка (строит, z = 0.5)
     20 TOOL_LOAD    бревно на плече (несёт дерево, z = 0.875); мешок (z = 0.75) — прежняя часть ITEM
-Номера частей 17–20 продолжают HUMAN_PARTS из gen_units_kit.py (просьба к «Юнитам»: добавить их
-туда, тогда константы попадут в crowd_skeletons.gdshaderinc сами).
+Номера 17–20 — в HUMAN_PARTS (gen_units_kit.py), константы H_TOOL_* — в crowd_skeletons.gdshaderinc.
 """
 from __future__ import annotations
 
-import math
 import os
 import sys
 
@@ -32,96 +32,53 @@ from PIL import Image  # noqa: E402
 
 import gen_units as U  # noqa: E402
 import gen_units_tex as T  # noqa: E402
-from gen_units_kit import (GLB_IMPORT, HP, HUMAN_PIV, PNG_IMPORT, ROOT, Atlas, Mesh, bake_shade, ellipsoid,  # noqa: E402
+from gen_units_kit import (GLB_IMPORT, HP, HUMAN_PIV, PNG_IMPORT, ROOT, Atlas, Mesh, ellipsoid,  # noqa: E402
                            ensure_import, lathe, limb, seg, tag, two_sided, v3)
 from glb import Material, write_glb  # noqa: E402
 from paint import Canvas  # noqa: E402
-from palette import KOKAND, MATERIAL  # noqa: E402
+from palette import KOKAND  # noqa: E402
 
 OUT_MODELS = os.path.join(ROOT, "assets/models/units")
 OUT_TEX = os.path.join(ROOT, "assets/textures/units")
 
-TOOL = {"AXE": 17, "HOE": 18, "HAMMER": 19, "LOAD": 20}
+TOOL = {"AXE": HP["TOOL_AXE"], "HOE": HP["TOOL_HOE"], "HAMMER": HP["TOOL_HAMMER"], "LOAD": HP["TOOL_LOAD"]}
 LOAD_PT = (-0.2, 1.565, -0.06)    # точка бревна на правом плече (поза покоя) — H_LOAD_PT в шейдере
+
 
 # ---------------------------------------------------------------- атлас деҳқона
 
-DEHQON_ATLAS = Atlas("kokand_dehqon", 1024, 1024, {
-    "hat0": (0, 0, 256, 128), "hat1": (256, 0, 256, 128), "hat2": (512, 0, 256, 128), "hat3": (768, 0, 256, 128),
-    "skin": (0, 128, 512, 256), "leather": (512, 128, 512, 256),
-    "metal": (0, 384, 512, 256), "wood": (512, 384, 512, 256),
-    "torso": (0, 640, 256, 256), "skirt": (256, 640, 256, 256), "sleeve": (512, 640, 256, 256),
-    "trousers": (768, 640, 256, 256),
-    "sash": (0, 896, 256, 128), "sack": (256, 896, 256, 128), "log": (512, 896, 256, 128), "cotton": (768, 896, 256, 128),
-})
+def _dehqon_layout():
+    L = {}
+    for k in range(4):
+        x = 512 * k
+        L[f"hat{k}"] = (x, 0, 256, 256)
+        L[f"face{k}"] = (x + 256, 0, 256, 256)
+        L[f"torso{k}"] = (x, 256, 256, 256)
+        L[f"skirt{k}"] = (x + 256, 256, 256, 256)
+        L[f"sleeve{k}"] = (x, 512, 256, 128)
+        L[f"trousers{k}"] = (x, 640, 256, 128)
+        L[f"sash{k}"] = (x + 256, 512, 256, 128)
+        L[f"shirt{k}"] = (x + 256, 640, 256, 128)
+    L.update({"leather": (0, 768, 512, 256), "metal": (512, 768, 512, 128), "wood": (512, 896, 512, 128),
+              "hand": (1024, 768, 128, 128), "flask": (1024, 896, 128, 128), "sack": (1152, 768, 256, 128),
+              "log": (1408, 768, 256, 128), "cotton": (1664, 768, 256, 128), "fur": (1152, 896, 256, 128)})
+    return L
 
-SHIRT = "#e6dcc6"
-SHIRT_DARK = "#a59a84"
+
+DEHQON_ATLAS = Atlas("kokand_dehqon", 2048, 1024, _dehqon_layout())
+
 TURQ = KOKAND["tile"]
-
-
-def doppi(base, pattern, edge, seed=0):
-    """Чустская дўппи: u — вокруг (четыре грани), v — сверху (макушка) вниз к околышу.
-    Чёрный бархат, белые «қалампир» (стручки перца) на гранях, белая кайма по околышу."""
-    def p(c: Canvas, w, h):
-        c.underpaint([base, T._shade(base, 1.25), T._shade(base, 0.85)], cell=24, seed=seed)
-        c.strokes(240, [T._shade(base, 1.4), T._shade(base, 0.7)], length=(8, 20), width=(3, 6), angle=90, angle_jitter=25,
-                  alpha=(0.15, 0.35))
-        rim = h * 0.8
-        c.rect(0, rim, w, h, edge)
-        T.trim(c, [(-4, rim + 2), (w + 4, rim + 2)], T._shade(edge, 0.6), 2.5, seed=seed)
-        for k in range(8):                                        # строчка по околышу
-            c.ellipse((k + 0.5) * w / 8, (rim + h) / 2, 3.5, 2.2, base, 0.85)
-        for k in range(4):                                        # стручки перца на гранях
-            cx = (k + 0.5) * w / 4
-            pts = [(cx - 10, rim - 8), (cx - 12, rim - 34), (cx - 2, rim - 56), (cx + 9, rim - 70), (cx + 4, rim - 52),
-                   (cx + 10, rim - 30), (cx + 4, rim - 8)]
-            c.polygon(pts, pattern, 0.95, wobble=0.6, seed=seed + k)
-            c.line([(cx - 4, rim - 14), (cx - 2, rim - 40), (cx + 4, rim - 58)], 2.4, base, 0.8, wobble=0.4, seed=seed + 9 + k)
-            c.ellipse(cx, rim - 92, 6, 5, pattern, 0.9)           # арка-завиток к макушке
-        for k in range(4):                                        # рёбра граней (углы шапки)
-            x = k * w / 4
-            c.line([(x, 0), (x, rim)], 2.6, T._shade(pattern, 0.9), 0.7, wobble=0.5, seed=seed + 20 + k)
-        T.vgrad(c, 1.15, 0.8)
-        c.grain(0.02)
-    return p
-
-
-def shirt_torso(main, dark, light, emb, seed=0):
-    """Рубаха-куйлак: u — вокруг (0.5 — перёд), вверх — плечи; разрез ворота с вышивкой, пыль внизу."""
-    def p(c: Canvas, w, h):
-        T.plain_cloth(main, light, dark, seed=seed)(c, w, h)
-        T.folds(c, w, h, T._shade(main, 0.7), T._mix(main, "#ffffff", 0.3), n=26, vertical=True)
-        T.temperature(c, w, h)
-        cx = w * 0.5
-        c.line([(cx, -4), (cx, h * 0.34)], 4.0, T._shade(dark, 0.6), 0.9, wobble=0.5, seed=seed)    # разрез
-        for s in (-1, 1):                                          # вышивка по разрезу
-            T.trim(c, [(cx + s * 7, -4), (cx + s * 7, h * 0.34)], emb, 4.0, T._shade(emb, 0.5), seed=seed + s)
-        T.trim(c, [(-4, 8), (w + 4, 8)], emb, 6.0, T._shade(emb, 0.5), seed=seed + 5)               # ворот
-        c.strokes(140, ["#8a7458", "#9c8a6a"], length=(12, 30), width=(5, 10), angle=90, angle_jitter=30,
-                  alpha=(0.06, 0.14), region=(0, h * 0.7, w, h))   # пыль и пот работы
-        c.grain(0.025)
-    return p
-
-
-def shirt_skirt(main, dark, light, emb, seed=0):
-    def p(c: Canvas, w, h):
-        T.plain_cloth(main, light, dark, seed=seed)(c, w, h)
-        T.folds(c, w, h, T._shade(main, 0.68), T._mix(main, "#ffffff", 0.3), n=30, vertical=True, flare=0.4)
-        c.strokes(220, ["#8a7458", "#7a6448", "#9c8a6a"], length=(10, 28), width=(5, 11), angle=90, angle_jitter=35,
-                  alpha=(0.08, 0.2), region=(0, h * 0.55, w, h))   # пыльный подол
-        T.trim(c, [(-4, h - 10), (w + 4, h - 10)], emb, 5.0, T._shade(emb, 0.5), seed=seed + 3)
-        c.grain(0.025)
-    return p
 
 
 def sack_cloth(seed=0):
     def p(c: Canvas, w, h):
-        T.plain_cloth("#cbbd9c", "#efe4c8", "#8a7a5a", seed=seed)(c, w, h)
+        T.plain_weave(c, w, h, "#cbbd9c", "#efe4c8", "#8a7a5a", seed=seed)
+        T.folds(c, w, h, "#8a7a5a", "#efe4c8", n=14)
         c.rect(w * 0.6, h * 0.2, w * 0.78, h * 0.55, "#b8a47c", 0.9)                               # заплата
         c.line([(w * 0.6, h * 0.2), (w * 0.78, h * 0.2), (w * 0.78, h * 0.55), (w * 0.6, h * 0.55), (w * 0.6, h * 0.2)],
                1.6, "#6a5a40", 0.8, wobble=0.4)
         T.trim(c, [(-4, h * 0.12), (w + 4, h * 0.12)], "#8a6a40", 6, "#4a3820", seed=seed)            # завязка
+        T.vgrad(c, 1.1, 0.75)
         c.grain(0.03)
     return p
 
@@ -138,31 +95,51 @@ def log_bark(seed=0):
     return p
 
 
+def dehqon_robes():
+    """Рубахи деҳқонов: некрашеный хлопок, синяя полоска, выцветшее индиго, короткий бурый чапан;
+    штаны из алачи; цвет стороны (ТЗ 11.2) — дўппи, кушак, обшлага и кайма подола: бирюза и изумруд."""
+    gold, turq, emer = KOKAND["gold"], TURQ, KOKAND["main"]
+    return [
+        dict(base="#e2d8c2", cloth=lambda c, w, h: T.plain_weave(c, w, h, "#e2d8c2", "#ffffff", "#a59a84", seed=501),
+             cuff=turq, trim=turq, edge="#145f63", lining="#e9e0c8", band=turq,
+             trousers=("#34345a", "#6a6a98", "#8e3a3a"), sash=(turq, "#7fe8c8", [(gold, 0.3, 0.05), (gold, 0.8, 0.05)])),
+        dict(base="#d6d2c4", cloth=lambda c, w, h: T.stripes_alacha(c, w, h, "#ddd6c4", [("#4a5a8a", 0.2, 2.5),
+                                                                                     ("#4a5a8a", 0.6, 2.5)], seed=502),
+             cuff=emer, trim=emer, edge="#2a3050", lining="#e9e0c8", band=emer,
+             trousers=("#3a2c22", "#6a5444", "#c49a4a"), sash=(emer, "#7fe8c8", [("#e9e0c8", 0.5, 0.08)])),
+        dict(base="#5a6a8e", cloth=lambda c, w, h: T.plain_weave(c, w, h, "#5a6a8e", "#9aa8c8", "#3a4460", seed=503),
+             cuff=turq, trim="#e2d8c2", edge="#2a3050", lining="#e2d8c2", band=turq,
+             trousers=("#2a2a3e", "#565878", None), sash=(turq, "#7fe8c8", [("#145f63", 0.5, 0.12)])),
+        dict(base="#7a5a3c", cloth=lambda c, w, h: T.stripes_alacha(c, w, h, "#7a5a3c", [("#a8844a", 0.15, 3),
+                                                                                     ("#3a2a1e", 0.4, 2),
+                                                                                     ("#a8844a", 0.7, 3)], seed=504),
+             cuff=emer, trim=emer, edge="#17463a", lining="#e2d8c2", band=emer,
+             trousers=("#34345a", "#6a6a98", "#d8d0c0"), sash=(turq, "#7fe8c8", [(gold, 0.5, 0.06)])),
+    ]
+
+
 def build_dehqon_atlas(path):
     A = DEHQON_ATLAS
     img = Image.new("RGB", (A.w, A.h), (40, 40, 40))
-    hats = [("#1c1a1c", "#f2ece0", "#f2ece0"), ("#1f3a2e", "#efe8d8", "#e8dcc0"), ("#3a1418", "#ecd8a8", "#d8b878"),
-            ("#18161a", "#ece6d6", "#2aa39a")]
+    # дўппи — цвет стороны (бирюза и изумруд с белым «қалампир»): работник Коканда узнаётся и сверху
+    hats = [(KOKAND["main"], "#f2ece0", "#f2ece0"), (KOKAND["tile"], "#efe8d8", KOKAND["gold"]),
+            ("#1f7a5c", "#ecd8a8", "#f2ece0"), (KOKAND["tile_deep"], "#ece6d6", KOKAND["tile"])]
     for i, (b, pt, e) in enumerate(hats):
-        T.region(img, A, f"hat{i}", doppi(b, pt, e, seed=900 + i), seed=900 + i)
-    T.region(img, A, "skin", T.skin_region("#b07a58", MATERIAL["skin_dark"], "#1a120e", True, seed=910), seed=910)
+        T.region(img, A, f"hat{i}", T.doppi_hat(b, pt, e, seed=900 + i), seed=900 + i)
+    faces = [("#b07a58", "#1e1612", "short", 0.1), ("#a8724f", "#241a14", "moustache", 0.0),
+             ("#b98466", "#2a2420", "full", 0.75), ("#9c6a4c", "#1a1210", "none", 0.0)]
+    for i, (sk, hr, bd, age) in enumerate(faces):
+        T.region(img, A, f"face{i}", T.face(sk, hr, bd, "round", age, seed=960 + i, stubble="#2a2420"), seed=960 + i)
+    T.region(img, A, "hand", T.hands("#b07a58", seed=969), seed=969)
+    T.paint_robes(img, A, dehqon_robes(), 500)
     T.region(img, A, "leather", T.leather_region("#3a281c", "#6e4428", "#d8ccb0", seed=911), seed=911)
     T.region(img, A, "metal", T.metal_region(912), seed=912)
     T.region(img, A, "wood", T.wood_region(913), seed=913)
-    T.region(img, A, "torso", shirt_torso(SHIRT, SHIRT_DARK, "#ffffff", TURQ, seed=920), seed=920)
-    T.region(img, A, "skirt", shirt_skirt(SHIRT, SHIRT_DARK, "#ffffff", TURQ, seed=921), seed=921)
-    T.region(img, A, "sleeve", T.plain_cloth(SHIRT, "#ffffff", SHIRT_DARK, seed=922, grad=(1.1, 0.8)), seed=922)
-    # штаны из «алача»: тёмно-синие в тонкую красную и белую полоску
-    T.region(img, A, "trousers", T.plain_cloth("#34345a", "#6a6a98", seed=923,
-                                               stripes=[("#8e3a3a", 0.2, 3), ("#d8d0c0", 0.4, 2), ("#8e3a3a", 0.6, 3),
-                                                        ("#d8d0c0", 0.8, 2)]), seed=923)
-    # кушак: бирюза с золотой нитью (цвет стороны)
-    T.region(img, A, "sash", T.plain_cloth(TURQ, "#7fe8c8", seed=924, vertical=False,
-                                           stripes=[(KOKAND["gold"], 0.3, 4), (KOKAND["tile_deep"], 0.55, 6),
-                                                    (KOKAND["gold"], 0.8, 4)]), seed=924)
     T.region(img, A, "sack", sack_cloth(925), seed=925)
     T.region(img, A, "log", log_bark(926), seed=926)
-    T.region(img, A, "cotton", T.plain_cloth("#e9e0c8", "#ffffff", seed=927), seed=927)
+    T.region(img, A, "cotton", lambda c, w, h: T.plain_weave(c, w, h, "#e9e0c8", "#ffffff", "#a59a84", seed=927), seed=927)
+    T.region(img, A, "flask", lambda c, w, h: T.plain_weave(c, w, h, "#b58a3c", "#f0c878", "#6e4a1e", seed=928), seed=928)
+    T.region(img, A, "fur", T.fur("#5a3a22", "#a07a50", seed=929), seed=929)
     img.save(path, optimize=True)
     return img
 
@@ -237,6 +214,8 @@ def load_log(A, d):
     return [tag(m, part, DEHQON_ATLAS.rect("log"), flip=False)]
 
 
+
+
 def staff3(A, part, W, d):
     """Посох малчы как в gen_units.staff, трёхгранный (бюджет: инструменты не выходят за 600)."""
     W = v3(W)
@@ -248,30 +227,13 @@ def staff3(A, part, W, d):
 
 
 def sack_cotton(A, d):
-    sk = ellipsoid(0.2, 0.13, 0.14, seg(6, d), 3).rotate_z(20).translate(-0.17, 1.58, -0.05)
+    sk = ellipsoid(0.2, 0.13, 0.14, seg(5, d), 3).rotate_z(20).translate(-0.17, 1.58, -0.05)
     return [tag(sk, HP["ITEM"], A.rect("sack"))]
-
-
-def doppi_mesh(A, part, c, d):
-    """Дўппи: невысокая четырёхгранная шапочка со скруглёнными углами по макушке."""
-    cx, cy, cz = c
-    n = 8
-    prof = [(0.108, 0.03), (0.112, 0.085), (0.075, 0.135), (0.0, 0.15)] if d > 0.8 else \
-        [(0.108, 0.03), (0.105, 0.09), (0.0, 0.15)]
-    m = lathe(prof, n, start=22.5)
-    th = np.arctan2(m.P[:, 0], m.P[:, 2])
-    sq = 1.0 / np.maximum(np.abs(np.cos(th)), np.abs(np.sin(th))) ** 0.55   # квадрат со скруглением
-    m.P[:, 0] *= sq * 0.94
-    m.P[:, 2] *= sq * 1.04
-    m.translate(cx, cy, cz - 0.004)
-    m.smooth()
-    return tag(m, part, A.rect("hat0"), coat=0.5)
 
 
 # ---------------------------------------------------------------- юниты
 
-DEHQON = dict(torso="torso", skirt="skirt", sleeve="sleeve", trousers="trousers", hat="doppi", sash="sash",
-              side_sash=1.0, side_torso=0.0, side_skirt=0.0, side_sleeve=0.0, hem=0.56, hat_variant=True)
+DEHQON = dict(U.ROBE, hat="doppi", hem=0.56, cuff_side=True, hem_side=True)
 
 
 def tools_parts(A, d, wooden_hammer=False, log=True):
@@ -284,27 +246,19 @@ def tools_parts(A, d, wooden_hammer=False, log=True):
 def build_dehqon(d):
     A = DEHQON_ATLAS
     parts = U.human_upper(A, DEHQON, d, HUMAN_PIV, HP) + U.human_legs(A, DEHQON, d)
-    hc = (0.0, 1.638, 0.012)
-    parts.append(doppi_mesh(A, HP["HEAD"], hc, d))
-    if d < 0.8:   # кушак и вдали: цвет стороны узнаётся с RTS-камеры (ТЗ 11.2)
-        sash = lathe([(0.168, 0.955), (0.172, 1.05)], 6)
-        parts.append(tag(sash, HP["PELVIS"], A.rect("sash"), side=1.0, flip=False))
     parts += sack_cotton(A, d)
     parts += tools_parts(A, d, wooden_hammer=False, log=True)
-    m = Mesh.merge(parts)
-    bake_shade(m, 0.0, 1.75, low=0.62, down=0.82)
-    return m, A
+    return U.finish_human(parts, d), A
 
 
 def build_malchy(d):
-    """Малчы как в gen_units.py (MALCHY), посох трёхгранный, плюс топор, кетмень, колотушка."""
+    """Малчы: тело кыпчакской пехоты (халат-вариант, калпак, кушак киноварью), посох трёхгранный,
+    мешок на плече, топор, кетмень, колотушка."""
     A = U.KIPCHAK_ATLAS
     spec = dict(U.MALCHY, weapon=None)
-    m0 = U.build_infantry(A, spec, d)          # тело, мешок (bake_shade уже нанесён)
-    extra = staff3(A, HP["WEAPON"], HUMAN_PIV["HAND_R"], d) + tools_parts(A, d, wooden_hammer=True, log=False)
-    ex = Mesh.merge(extra)
-    bake_shade(ex, 0.0, 1.75, low=0.62, down=0.82)
-    return Mesh.merge([m0, ex]), A
+    parts = U.build_infantry(A, spec, d, finish=False)
+    parts += staff3(A, HP["WEAPON"], HUMAN_PIV["HAND_R"], d) + tools_parts(A, d, wooden_hammer=True, log=False)
+    return U.finish_human(parts, d), A
 
 
 def write_unit(name, builder):
