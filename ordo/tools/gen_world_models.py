@@ -952,7 +952,9 @@ def poplar(seed, lod=0):
         p = np.array([0.08 * tt, y, 0.05 * tt]) + d * rr
         nn = _unit(d + np.array([0, 0.1 + max(0.0, tt - 0.8) * 2.5, 0]))
         ao = (0.74 + 0.3 * tt) * (0.78 + 0.28 * rr / max(R, 1e-3)) * (0.82 + 0.18 * min(1.0, (y - y0) / 4))
-        T.card(p, nn, w, hh, REG["poplar"][rs.integers(4)], ao, roll=rs.normal(0, 0.05))
+        # «масса» (тип 3): купол карточки слабый — языки лепятся колонной целиком, а не
+        # каждый своим шариком (иначе колонна читается чешуёй, как шишка)
+        T.card(p, nn, w, hh, REG["poplar"][rs.integers(4)], ao, roll=rs.normal(0, 0.05), kind=3)
     n_core = 6 if lod == 0 else 3
     for k in range(n_core):                              # тёмная сердцевина колонны
         tt = (k + 0.5) / n_core * 0.85
