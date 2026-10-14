@@ -2,17 +2,21 @@ class_name MainMenu
 extends Node3D
 ## Главное меню «Ордо» (ТЗ §9 режимы, §12 интерфейс, §11.7 качество). Сцена по умолчанию проекта.
 ##
-## Фон — долина на закате и лагерь кыпчаков среза (тот же мир, тот же лагерь, жизнь лагеря BattleAmbient),
-## камера медленно плывёт (MenuCamera). Слева — доска резного ореха в латунной раме: «Ордо», пояс двух
-## сторон (бирюзовые изразцы Коканда и красный войлок кыпчаков) и пункты:
+## Фон — долина и лагерь кыпчаков среза (тот же мир, тот же лагерь, жизнь лагеря BattleAmbient) в свете
+## выбранного времени суток, камера медленно плывёт (MenuCamera). Слева — доска резного ореха в латунной
+## раме: «Ордо», пояс двух сторон (бирюзовые изразцы Коканда и красный войлок кыпчаков), переключатель
+## «Время суток: День | Закат» (Ordo.set_light_mode — фон меняется сразу, выбор запоминается и действует
+## в «Сражении» и обоих «Городах») и пункты:
 ##   «Сражение»            — срез стиля (scenes/slice.tscn) ровно как одобрен; Esc там — назад сюда;
 ##   «Город: за Коканд»    — scenes/gorod/gorod.tscn, местный игрок — Коканд, ИИ — кыпчаки;
 ##   «Город: за кыпчаков»  — то же за кыпчаков;
-##   «Настройки»           — качество (как F2: «Высокое» / «Среднее» / «Низкое»), громкость, во весь экран;
+##   «Настройки»           — качество (как F2: «Высокое» / «Среднее» / «Низкое»), время суток, громкость,
+##                           во весь экран;
 ##   «Выход».
 ## Картинки — assets/ui (tools/gen_ui.py, пакет UI); если их нет — простые цветные рамки.
 ## Ключи запуска (для инструментов кадров): --menu_settings — открыть «Настройки»; --menu_hover=N — подсветить
-## пункт N (кадр проверки); --start=slice|kokand|kipchak — сразу в режим.
+## пункт N (кадр проверки); --start=slice|kokand|kipchak — сразу в режим; --menu_press_light=day|sunset — нажать
+## переключатель времени суток на доске после запуска (кадр проверки: фон меняется на лету).
 
 const SLICE := "res://scenes/slice.tscn"
 const GOROD := "res://scenes/gorod/gorod.tscn"
@@ -53,6 +57,9 @@ var _settings: Control
 var _loading: Control
 var _buttons: Array[Button] = []
 var _q_buttons := {}
+## Переключатели времени суток: на доске и в «Настройках» — {режим: Button}
+var _light_board := {}
+var _light_settings := {}
 var _volume: HSlider
 var _full: CheckButton
 var _cache := {}
@@ -65,8 +72,13 @@ func _ready() -> void:
 	_clear_grass()
 	_build_ui()
 	if _ordo:
+		_ordo.connect("light_mode_changed", _on_light_mode_changed)
 		if _ordo.has_arg("menu_settings"):
 			_open_settings()
+		if _ordo.has_arg("menu_press_light"):
+			var lb := _light_board.get(String(_ordo.arg("menu_press_light")), null) as Button
+			if lb:
+				(func() -> void: lb.button_pressed = true).call_deferred()
 		if _ordo.has_arg("menu_hover"):
 			var i := clampi(int(_ordo.arg("menu_hover")), 0, _buttons.size() - 1)
 			_buttons[i].grab_focus()
@@ -244,7 +256,10 @@ func _build_ui() -> void:
 	col.add_child(sub)
 	col.add_child(_gap(22))
 	col.add_child(_belts())
-	col.add_child(_gap(30))
+	col.add_child(_gap(24))
+	# время суток — до выбора режима: действует в «Сражении» и обоих «Городах»
+	col.add_child(_light_switch())
+	col.add_child(_gap(20))
 	# пункты
 	for it: Array in ITEMS:
 		var b := _item_button(it)
@@ -264,10 +279,19 @@ func _build_ui() -> void:
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	foot.modulate.a = 0.85
 	col.add_child(foot)
-	# соседние пункты по стрелкам (по кругу)
+	# соседние пункты по стрелкам (по кругу); переключатель времени суток — над первым пунктом
 	for i in _buttons.size():
 		_buttons[i].focus_neighbor_top = _buttons[(i - 1 + _buttons.size()) % _buttons.size()].get_path()
 		_buttons[i].focus_neighbor_bottom = _buttons[(i + 1) % _buttons.size()].get_path()
+	var day := _light_board[LightPresets.DAY] as Button
+	var dusk := _light_board[LightPresets.SUNSET] as Button
+	for sb: Button in [day, dusk]:
+		sb.focus_neighbor_bottom = _buttons[0].get_path()
+		sb.focus_neighbor_top = _buttons[_buttons.size() - 1].get_path()
+	day.focus_neighbor_right = dusk.get_path()
+	dusk.focus_neighbor_left = day.get_path()
+	_buttons[0].focus_neighbor_top = day.get_path()
+	_buttons[_buttons.size() - 1].focus_neighbor_bottom = day.get_path()
 	_build_settings()
 	_build_loading()
 	var flash := _label("", _font(FONT_ITALIC, 500), 24, PARCH)
@@ -342,6 +366,115 @@ func _item_button(it: Array) -> Button:
 	return b
 
 
+## Переключатель «Время суток: День | Закат» на доске: две дощечки встык, выбранная — латунь с тушью,
+## другая — тёмный орех; у каждой рисованный знак (солнце высоко / солнце на горизонте)
+func _light_switch() -> Control:
+	var row := HBoxContainer.new()
+	row.name = "LightSwitch"
+	row.custom_minimum_size = Vector2(0, 56)
+	row.add_theme_constant_override("separation", 0)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cap := _label(tr("Время суток"), _font(FONT_HEAD), 30, PARCH)
+	cap.add_theme_constant_override("outline_size", 4)
+	cap.add_theme_color_override("font_outline_color", Color(0.1, 0.05, 0.02, 0.9))
+	cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cap.custom_minimum_size = Vector2(206, 0)
+	row.add_child(cap)
+	var group := ButtonGroup.new()
+	for mode: String in [LightPresets.DAY, LightPresets.SUNSET]:
+		var b := _light_button(mode, group, mode == LightPresets.DAY, 36, 26)
+		b.name = "Light_" + mode
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+		_light_board[mode] = b
+	_sync_light()
+	return row
+
+
+## Дощечка времени суток: [знак] Название; left — левая половина пары (скругления снаружи)
+func _light_button(mode: String, group: ButtonGroup, left: bool, font_size: int, icon_size: int) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.button_group = group
+	b.focus_mode = Control.FOCUS_ALL
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.custom_minimum_size = Vector2(0, 56)
+	b.tooltip_text = tr("Солнце высоко, свет ровный и светлый") if mode == LightPresets.DAY \
+		else tr("Низкое солнце, тёплый свет и длинные тени — как в срезе стиля")
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(st, _seg_box(st, left))
+	b.toggled.connect(func(on: bool) -> void:
+		if on:
+			_set_light(mode))
+	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(row)
+	var mark := SunMark.new()
+	mark.name = "Mark"
+	mark.sunset = mode == LightPresets.SUNSET
+	mark.custom_minimum_size = Vector2(icon_size + 6, icon_size)
+	mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(mark)
+	var head := _label(tr(LightPresets.mode_name(mode)), _font(FONT_HEAD), font_size, PARCH)
+	head.name = "Head"
+	head.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(head)
+	var lit := func() -> void:
+		var on := b.button_pressed
+		head.add_theme_color_override("font_color", INK if on else (BRASS if b.has_focus() else PARCH_DIM))
+		mark.on = on
+		mark.queue_redraw()
+	b.toggled.connect(func(_on: bool) -> void: lit.call())
+	b.focus_entered.connect(lit)
+	b.focus_exited.connect(lit)
+	b.mouse_entered.connect(func() -> void: b.grab_focus())
+	b.set_meta("lit", lit)
+	return b
+
+
+## Половина пары: выбранная — латунь, другая — тёмный орех; рамка латунная, снаружи скруглено
+func _seg_box(state: String, left: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	var on := state in ["pressed", "hover_pressed"]
+	sb.bg_color = Color("#d5ad62") if on else (Color("#5a3a22") if state == "hover" else Color("#3a2414"))
+	sb.border_color = BRASS if state in ["hover", "focus", "hover_pressed"] else BRASS_DIM
+	sb.set_border_width_all(2)
+	var r := 10
+	sb.corner_radius_top_left = r if left else 0
+	sb.corner_radius_bottom_left = r if left else 0
+	sb.corner_radius_top_right = 0 if left else r
+	sb.corner_radius_bottom_right = 0 if left else r
+	sb.set_content_margin_all(6)
+	if state == "focus":
+		sb.draw_center = false
+		sb.set_border_width_all(3)
+	return sb
+
+
+func _on_light_mode_changed(_mode: String) -> void:
+	_sync_light()
+
+
+func _set_light(mode: String) -> void:
+	if _ordo:
+		_ordo.call("set_light_mode", mode)
+	_sync_light()
+
+
+func _sync_light() -> void:
+	var cur: String = String(_ordo.get("light_mode")) if _ordo else LightPresets.DAY
+	for d: Dictionary in [_light_board, _light_settings]:
+		for m: String in d:
+			var b := d[m] as Button
+			b.set_pressed_no_signal(m == cur)
+			if b.has_meta("lit"):
+				(b.get_meta("lit") as Callable).call()
+
+
 ## Пояс двух сторон: бирюзовые изразцы Коканда и красный войлок кыпчаков встык, с латунной кромкой
 func _belts() -> Control:
 	var box := HBoxContainer.new()
@@ -402,8 +535,8 @@ func _build_settings() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_settings.add_child(dim)
 	var sheet := Control.new()
-	sheet.position = Vector2(BOARD_X + BOARD_W + 40.0, 210.0)
-	sheet.size = Vector2(660, 560)
+	sheet.position = Vector2(BOARD_X + BOARD_W + 40.0, 120.0)
+	sheet.size = Vector2(660, 780)
 	_settings.add_child(sheet)
 	var paper := _nine("paper", 28.0, Color("#e9d8b0"))
 	sheet.add_child(paper)
@@ -446,6 +579,20 @@ func _build_settings() -> void:
 		_q_buttons[lv] = qb
 	col.add_child(_label(tr("В игре — клавиша F2. «Низкое» — для слабых компьютеров."), _font(FONT_ITALIC, 480), 20, INK_SOFT))
 	col.add_child(_gap(8))
+	# время суток — то же, что переключатель на доске
+	col.add_child(_label(tr("Время суток"), _font(FONT_HEAD), 28, INK))
+	var lrow := HBoxContainer.new()
+	lrow.add_theme_constant_override("separation", 0)
+	col.add_child(lrow)
+	var lgroup := ButtonGroup.new()
+	for mode: String in [LightPresets.DAY, LightPresets.SUNSET]:
+		var lb := _light_button(mode, lgroup, mode == LightPresets.DAY, 30, 22)
+		lb.name = "SetLight_" + mode
+		lb.custom_minimum_size = Vector2(210, 54)
+		lrow.add_child(lb)
+		_light_settings[mode] = lb
+	col.add_child(_label(tr("Для «Сражения» и «Города». Закат — как в срезе стиля."), _font(FONT_ITALIC, 480), 20, INK_SOFT))
+	col.add_child(_gap(8))
 	# громкость (звука пока нет — ползунок уже запоминается)
 	col.add_child(_label(tr("Громкость"), _font(FONT_HEAD), 28, INK))
 	_volume = HSlider.new()
@@ -486,10 +633,12 @@ func _build_settings() -> void:
 	done.pressed.connect(_close_settings)
 	col.add_child(done)
 	_sync_quality()
+	_sync_light()
 
 
 func _open_settings() -> void:
 	_sync_quality()
+	_sync_light()
 	_settings.visible = true
 	var cur: String = _ordo.get("quality") if _ordo else WorldQuality.HIGH
 	(_q_buttons.get(cur, _q_buttons[WorldQuality.HIGH]) as Button).grab_focus()
@@ -722,3 +871,41 @@ class ArrowMark extends Control:
 		draw_colored_polygon(pts, Color("#e2bf72"))
 		draw_polyline(PackedVector2Array([tip, Vector2(w, 3.0), Vector2(w * 0.62, h * 0.5), Vector2(w, h - 3.0), tip]),
 			Color(0.16, 0.08, 0.02, 0.9), 1.6, true)
+
+
+## Рисованный знак времени суток: день — солнце с лучами; закат — полдиска над чертой горизонта.
+## on — дощечка выбрана (тушь по латуни), иначе — латунь по ореху
+class SunMark extends Control:
+	var sunset := false
+	var on := false
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		var ink := Color("#2b1a10") if on else Color("#e2bf72")
+		var fill := Color("#fff1c9") if on else Color("#e2bf72")
+		if not sunset:
+			var c := Vector2(w * 0.5, h * 0.5)
+			var r := h * 0.24
+			for i in 8:
+				var a := TAU * float(i) / 8.0
+				var d := Vector2(cos(a), sin(a))
+				draw_line(c + d * (r + 2.5), c + d * (h * 0.48), ink, 2.0, true)
+			draw_circle(c, r, fill)
+			draw_arc(c, r, 0.0, TAU, 24, ink, 1.6, true)
+		else:
+			var base := h * 0.74
+			var c := Vector2(w * 0.5, base)
+			var r := h * 0.3
+			for i in 5:
+				var a := PI + PI * float(i + 1) / 6.0
+				var d := Vector2(cos(a), sin(a))
+				draw_line(c + d * (r + 2.5), c + d * (r + h * 0.2), ink, 2.0, true)
+			var pts := PackedVector2Array()
+			for i in 13:
+				var a := PI + PI * float(i) / 12.0
+				pts.append(c + Vector2(cos(a), sin(a)) * r)
+			draw_colored_polygon(pts, Color("#e07a3a") if on else Color("#f2a35a"))
+			pts.append(pts[0])
+			draw_polyline(pts, ink, 1.6, true)
+			draw_line(Vector2(1.0, base), Vector2(w - 1.0, base), ink, 2.0, true)
