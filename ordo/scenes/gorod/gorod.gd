@@ -34,6 +34,10 @@ signal series_done
 @onready var overlay: OverlayView = $HUD/Overlay
 @onready var camera: RtsCamera = $Cameras/CamRTS
 
+## Высота солнца в «Городе», градусы (у среза — 10°: закат). Ниже ~14° горы на западе накрывают тенью
+## лагерь кыпчаков (−170, 110), а длинные тени построек — город; ключ --sun_el=N — для подбора
+@export var sun_elevation := 10.0
+
 ## Выделение (до RtsInput из UI)
 var selection := SelectionModel.new()
 ## Игра (I4): интерфейс и управление над GameDriver; null — драйвер не GameDriver (FakeCity, ряды образцов)
@@ -55,6 +59,10 @@ var _log_t := 0.0
 
 func _ready() -> void:
 	_ordo = get_node_or_null("/root/Ordo")
+	var el := float(_ordo.arg("sun_el", str(sun_elevation))) if _ordo else sun_elevation
+	if not is_equal_approx(el, world.sun_elevation):
+		world.sun_elevation = el
+		world.place_sun()
 	# своя модель — только если RtsInput (UI, его _ready раньше) не поставил свою
 	if selection_view.selection == null:
 		selection_view.selection = selection
