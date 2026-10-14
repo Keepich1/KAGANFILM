@@ -11,7 +11,10 @@ extends Node3D
 ## F2 — качество «Высокое» → «Среднее» → «Низкое» (ТЗ 11.7, выбор запоминается);
 ## F9 — нагрузочная проверка: +1000 / +3000 солдат на южной части луга и экран скорости
 ## (выкл → 1000 → 3000 → выкл): кадры, шаг боя, толпа, эффекты, отрисовка на процессоре
-## и видеокарте, вызовы отрисовки, солдаты, качество и разрешение 3D. --perf — экран без нагрузки,
+## и видеокарте, вызовы отрисовки и треугольники (всего и в тенях), толпа по LOD, дым и пыль,
+## солдаты, качество и разрешение 3D, цена точки кадра (сглаживание, кадр живописного фильтра,
+## карта теней, сетка тумана — WorldQuality.pixel_summary). Нагрузочный бой стреляет и пылит
+## через те же эффекты (BattleFx.add_driver), что и основной. --perf — экран без нагрузки,
 ## --perf_log — те же числа раз в секунду в консоль.
 ##
 ## Кадры героев — камеры Cam* в узле Cameras (tools/shot.sh … --cam=CamRTS --at=19).
@@ -262,15 +265,52 @@ func _perf_text(one_line: bool) -> String:
 		"Шаг боя %s мс (%s)%s" % [_ms(step_avg), _ms(step_max), sim_where],
 		"Толпа %s мс · эффекты %s мс" % [_ms(PerfMeter.avg(&"view")), _ms(PerfMeter.avg(&"fx"))],
 		"Отрисовка: процессор %s · видеокарта %s мс" % [_ms(PerfMeter.avg(&"render_cpu")), _ms(PerfMeter.avg(&"render_gpu"))],
-		"Вызовов %d · треугольников %s" % [int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
-			_count(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))],
+		"Вызовов %d (тени %d) · треугольников %s (тени %s)" % [_info(RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME, false)
+			+ _info(RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME, true),
+			_info(RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME, true),
+			_count(_info(RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME, false)
+				+ _info(RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME, true)),
+			_count(_info(RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME, true))],
+		_crowd_line(),
+		_fx_line(),
 		"Солдат %d · «%s» · 3D %d %% (%s)" % [units, WorldQuality.level_name(q), roundi(vp.scaling_3d_scale * 100.0),
 			WorldQuality.upscale_name(vp)],
+		WorldQuality.pixel_summary(vp, world.painterly_post()),
 	])
 	if one_line:
 		return " | ".join(lines)
 	lines.append("F9 — нагрузка дальше · F2 — качество")
 	return "\n".join(lines)
+
+
+## Вызовы и треугольники кадра: основной проход или проходы теней
+func _info(what: int, shadow: bool) -> int:
+	var t := RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW if shadow else RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE
+	return RenderingServer.viewport_get_render_info(get_viewport().get_viewport_rid(), t, what)
+
+
+## Толпа по LOD: подробных, облегчённых, с тенью (CrowdLayer.lod_counts; по блокам — юнит на границе
+## полос может быть посчитан дважды)
+func _crowd_line() -> String:
+	var c := PackedInt32Array([0, 0, 0])
+	for v: BattleView in [battle.get_node_or_null("View") as BattleView,
+			_stress.get_node_or_null("View") as BattleView if _stress else null]:
+		if v == null:
+			continue
+		for l in v.layers.values():
+			if l.has_method("lod_counts"):
+				var k: PackedInt32Array = l.lod_counts()
+				for i in 3:
+					c[i] += k[i]
+	return "Толпа: подробных %d · облегчённых %d · с тенью %d" % [c[0], c[1], c[2]]
+
+
+## Эффекты за секунду: клубов дыма и пыли, залпов стеной (общий запас частиц BattleFx)
+func _fx_line() -> String:
+	var fx := battle.get_node_or_null("Fx") as BattleFx
+	if fx == null:
+		return "Эффекты: нет"
+	return "Дым %d/с · пыль %d/с · залпов стеной %d" % [int(fx.stat.smoke), int(fx.stat.dust), int(fx.stat.merged)]
 
 
 func _ms(v: float) -> String:
@@ -301,6 +341,8 @@ func _show_notice(text: String) -> void:
 func _cycle_stress() -> void:
 	_stress_level = (_stress_level + 1) % STRESS_LEVELS.size()
 	if _stress:
+		# старый узел уходит из дерева сразу: новый получит своё имя «Stress», а не «@Node3D@…»
+		remove_child(_stress)
 		_stress.queue_free()
 		_stress = null
 	var n: int = STRESS_LEVELS[_stress_level]
@@ -318,6 +360,11 @@ func _cycle_stress() -> void:
 	view.name = "View"
 	view.ambient_path = ^"../NoAmbient"
 	_stress.add_child(view)
+	# эффекты нагрузочного боя — те же, что у основного (общий запас частиц): дым залпов, вспышки,
+	# пыль коней и натиска; без них проверка нечестна (видеокарта не рисовала бы дым)
+	var fx := battle.get_node_or_null("Fx") as BattleFx
+	if fx:
+		fx.add_driver(sc, view)
 	sc.start(7)
 
 

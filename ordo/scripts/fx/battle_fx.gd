@@ -9,7 +9,16 @@ extends Node3D
 ## События приходят от сценария (SimDriver: ScenarioClash, GameDriver): shot, volley, impact, charge_hit, melee_hit,
 ## death, war_cry; пыль за скачущими конями — каждый кадр по скорости из симуляции.
 ## Скорость эффектов следует скорости боя (+/−, пауза). Частиц по уровню качества
-## (WorldQuality.preset().fx): «Среднее» — ×0,75, «Низкое» — вдвое меньше. Время кадра — PerfMeter «fx».
+## (WorldQuality.preset().fx): «Среднее» — ×0,75, «Низкое» — вдвое меньше. Время кадра — PerfMeter «fx»
+## (каждый кадр и обработчики событий).
+##
+## Несколько боёв на одни эффекты: add_driver(сценарий, вид) — так срез подключает нагрузку F9
+## (тысячи солдат). Общий запас частиц: у дыма, пыли и лучей — «ведро» клубов (сколько система
+## может держать живыми: amount / средняя жизнь в секунду). Ближнее (ближе NEAR м от камеры)
+## рисуется как раньше всегда; дальнее — пока в ведре есть запас, иначе крупнее и реже:
+## дым залпа дальней шеренги — одной стеной крупных клубов вместо клубов от каждого ружья,
+## пыль дальних коней — реже и крупнее. Вспышки, искры и свет дальних и невидимых выстрелов
+## не рисуются (их не разглядеть). Пока бой маленький (срез), запаса хватает — вид прежний.
 
 const ATLAS_SMOKE := preload("res://assets/textures/fx/smoke_billow.png")
 const ATLAS_DUST := preload("res://assets/textures/fx/dust_puff.png")
@@ -29,7 +38,30 @@ const SH_RAY := preload("res://shaders/fx/fx_ray.gdshader")
 const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELOCITY \
 	| GPUParticles3D.EMIT_FLAG_COLOR | GPUParticles3D.EMIT_FLAG_CUSTOM
 
+## Ближе этого (м от камеры) дым и пыль всегда как раньше, по клубу на ружьё и коня
+const NEAR := 50.0
+## Дальше этого залп при нехватке запаса дыма идёт одной стеной (запас на ближние залпы растёт с дальностью)
+const MERGE_FROM := 50.0
+## Вспышки выстрелов и искры — только ближе и в кадре с запасом (вспышка у края кадра заходит в него,
+## искры разлетаются); свет — по любому выстрелу ближе LIGHT_DIST, как раньше: свет дула за краем
+## кадра освещает тех, кто в кадре. Случайные числа берутся всё равно — остальные эффекты не меняются.
+const FLASH_DIST := 260.0
+const LIGHT_DIST := 200.0
+const SPARK_DIST := 120.0
+## Запас кадра, м: вспышка (длина до 1,25 м и ореол) и искры (разлёт за полсекунды)
+const FLASH_PAD := 2.0
+const SPARK_PAD := 4.0
+## Пыль коней дальше этого не поднимается (с такой дали её не разглядеть)
+const DUST_FAR := 300.0
+## Сколько дыма успевает рассеяться у залпа, слитого в стену: окно, в которое выстрелы шеренги без своих клубов, с
+const MERGE_WINDOW := 1.6
+
+## Ведра: система → [запас клубов, вместимость, пополнение в секунду]
+const BUCKET_SHARE := 0.92
+
 @export var scenario_path: NodePath = ^"../Scenario"
+## Вид боя (BattleView): у большого боя шаг считается в фоне — пыль коней читает его снимок
+@export var view_path: NodePath = ^"../View"
 ## Солнце (пусто — первый DirectionalLight3D в сцене)
 @export var sun_path: NodePath
 ## Пух ковыля и пепел вокруг камеры
@@ -53,13 +85,25 @@ var _lights: Array[OmniLight3D] = []
 var _light_t := PackedFloat32Array()
 var _light_i := 0
 var _last_pop := -1.0
-var _dust_acc := PackedFloat32Array()
 var _spark_budget := 0
 var _fx_k := 1.0            # доля частиц по уровню качества
 var _clock := 0.0           # своё время эффектов (идёт со скоростью боя)
 var _puff_mats: Array[ShaderMaterial] = []
 var _mote_mats: Array[ShaderMaterial] = []
 var _ray_mat: ShaderMaterial
+# бои: {driver, view, sim, mounted (PackedInt32Array), acc (пыль), merge_until (по отрядам), start}
+var _drivers: Array[Dictionary] = []
+# запас клубов: ключ — система
+var _bucket := {}
+# камера кадра и её плоскости (наружу)
+var _cam: Camera3D
+var _frustum: Array[Plane] = []
+var _cam_pos := Vector3(0.0, 1.0e6, 0.0)
+## Счёт за прошлую секунду: клубов дыма и пыли пущено, залпов стеной (экран F9)
+var stat := {"smoke": 0, "dust": 0, "merged": 0}
+var _stat_acc := {"smoke": 0, "dust": 0, "merged": 0}
+var _stat_sum := {"smoke": 0, "dust": 0, "merged": 0}  # за прошлые полные секунды
+var _stat_t := 0.0
 
 
 func _ready() -> void:
@@ -95,6 +139,8 @@ func _ready() -> void:
 		ash = _make_system("Ash", int(120 * k), 12.0, SH_MOTE_MOVE, {
 			"box": Vector3(50, 8, 50), "size_min": 0.03, "size_max": 0.07, "wind_scale": 1.2, "rise": 0.25}, am, true)
 		_mote_mats.append(am)
+	# запас клубов: средняя жизнь клуба — около 0,8 общей (доля жизни w 0,45…1)
+	_bucket = {smoke: _new_bucket(smoke, 0.8), dust: _new_bucket(dust, 0.75), rays: _new_bucket(rays, 0.8)}
 	for i in 6:
 		var l := OmniLight3D.new()
 		l.name = "MuzzleLight%d" % i
@@ -109,14 +155,47 @@ func _ready() -> void:
 	scenario = get_node_or_null(scenario_path) as SimDriver
 	if scenario:
 		scenario.started.connect(_on_started)
-		scenario.shot.connect(_on_shot)
-		scenario.volley.connect(_on_volley)
-		scenario.impact.connect(_on_impact)
-		scenario.charge_hit.connect(_on_charge_hit)
-		scenario.melee_hit.connect(_on_melee_hit)
-		scenario.death.connect(_on_death)
-		scenario.war_cry.connect(_on_war_cry)
+		add_driver(scenario, get_node_or_null(view_path) as BattleView)
+	if ordo and ordo.has_signal("quality_changed"):
+		ordo.connect("quality_changed", _on_quality)
 	_find_sun()
+
+
+## Смена качества (F2): число частиц по уровню и запас клубов (системы начинаются заново)
+func _on_quality(level: String) -> void:
+	_fx_k = float(WorldQuality.preset(level).get("fx", 1.0))
+	smoke.amount = maxi(int(1100 * _fx_k), 8)
+	dust.amount = maxi(int(1600 * _fx_k), 8)
+	if fluff:
+		fluff.amount = maxi(int(320 * _fx_k), 8)
+	if ash:
+		ash.amount = maxi(int(120 * _fx_k), 8)
+	_bucket = {smoke: _new_bucket(smoke, 0.8), dust: _new_bucket(dust, 0.75), rays: _new_bucket(rays, 0.8)}
+
+
+## Подключить ещё один бой к этим эффектам (нагрузка F9): сигналы сценария и пыль его коней.
+## view — его BattleView (снимок шагов, если бой считается в фоне); бой уходит сам, когда узел удалён.
+func add_driver(d: SimDriver, view: BattleView = null) -> void:
+	if d == null:
+		return
+	for e in _drivers:
+		if is_instance_valid(e.driver) and e.driver == d:
+			return
+	_drivers.append({"driver": d, "view": view, "sim": null, "mounted": PackedInt32Array(), "n": -1,
+		"acc": PackedFloat32Array(), "merge_until": PackedFloat32Array(), "start": 0})
+	d.shot.connect(_on_shot.bind(d))
+	d.volley.connect(_on_volley.bind(d))
+	d.impact.connect(_on_impact.bind(d))
+	d.charge_hit.connect(_on_charge_hit.bind(d))
+	d.melee_hit.connect(_on_melee_hit.bind(d))
+	d.death.connect(_on_death.bind(d))
+	d.war_cry.connect(_on_war_cry.bind(d))
+
+
+func _new_bucket(p: GPUParticles3D, mean_life: float) -> Array:
+	var rate := float(p.amount) / maxf(p.lifetime * mean_life, 0.05) * BUCKET_SHARE
+	var cap := float(p.amount) * 0.5
+	return [cap, cap, rate]
 
 
 func _find_sun() -> void:
@@ -177,6 +256,56 @@ func _make_puffs(nm: String, amount: int, lifetime: float, atlas: Texture2D, gri
 func puff(sys: GPUParticles3D, pos: Vector3, vel: Vector3, size: float, life: float, tint := Color(1, 1, 1, 1)) -> void:
 	sys.emit_particle(Transform3D(Basis.from_scale(Vector3.ONE * size), pos), vel, tint,
 		Color(_rng.range_f(-0.4, 0.4), 0.0, size, clampf(life, 0.05, 1.0)), FLAGS)
+	var b: Array = _bucket.get(sys, [])
+	if not b.is_empty():
+		b[0] = float(b[0]) - 1.0
+	if sys == smoke:
+		_stat_acc.smoke += 1
+	elif sys == dust:
+		_stat_acc.dust += 1
+
+
+## Нехватка запаса: дальнему (дальше NEAR) событию система отдаёт клубы по-старому, только пока
+## в ведре есть need и ещё доля для ближних (чем дальше событие, тем больше оставляем ближним).
+## Пока бой маленький (срез), запаса хватает всегда — эффекты те же, что раньше, клуб в клуб.
+func _tight(sys: GPUParticles3D, dist: float, need: float) -> bool:
+	if dist <= NEAR:
+		return false
+	var b: Array = _bucket.get(sys, [])
+	if b.is_empty():
+		return false
+	var keep := float(b[1]) * 0.6 * clampf((dist - NEAR) / 200.0, 0.0, 1.0)
+	return float(b[0]) < need + keep
+
+
+## Сколько клубов система ещё может принять без вытеснения (запас ведра)
+func room(sys: GPUParticles3D) -> float:
+	var b: Array = _bucket.get(sys, [])
+	return float(b[0]) if not b.is_empty() else 1.0e9
+
+
+## Дальний клуб: только если в ведре есть запас (ближние идут всегда)
+func _far_puff(sys: GPUParticles3D, pos: Vector3, vel: Vector3, size: float, life: float, tint := Color(1, 1, 1, 1)) -> bool:
+	if room(sys) < 1.0:
+		return false
+	puff(sys, pos, vel, size, life, tint)
+	return true
+
+
+func _dist(p: Vector3) -> float:
+	return _cam_pos.distance_to(p)
+
+
+## Точка в кадре камеры с запасом pad, м (плоскости кадра — раз за кадр в _frame)
+func _in_view(p: Vector3, pad := 0.0) -> bool:
+	if _cam == null:
+		return true
+	if _frustum.is_empty():
+		return _cam.is_position_in_frustum(p)
+	for pl in _frustum:
+		if pl.distance_to(p) > pad:
+			return false
+	return true
 
 
 # ================================================================= события боя
@@ -185,48 +314,126 @@ func _on_started(_s: int) -> void:
 	for p in [smoke, dust, flash, sparks, rays]:
 		p.restart()
 		p.emitting = false
-	_dust_acc.resize(0)
+	for e in _drivers:
+		e.sim = null
 
 
-func _on_shot(_u: int, muzzle: Vector3, dir: Vector3, _hit: bool) -> void:
+func _on_shot(u: int, muzzle: Vector3, dir: Vector3, _hit: bool, drv: SimDriver = null) -> void:
+	var t0 := Time.get_ticks_usec()
 	var d := dir.normalized()
+	var dist := _dist(muzzle)
+	var seen := dist < 15.0 or (dist < FLASH_DIST and _in_view(muzzle, FLASH_PAD))
 	# вспышка вдоль ствола
 	var x := d * _rng.range_f(0.9, 1.25)
-	var b := Basis(x, Vector3.UP, x.cross(Vector3.UP).normalized())
-	flash.emit_particle(Transform3D(b, muzzle + d * 0.05), Vector3.ZERO, Color.WHITE,
-		Color(0, 0, 1, _rng.range_f(0.7, 1.0)), FLAGS)
-	# дым: крупный клуб у дула и тугая струя вперёд; иногда ленивый клуб над стрелком
-	var side := Vector3(d.z, 0.0, -d.x)
-	puff(smoke, muzzle + d * 0.5, d * _rng.range_f(5.5, 8.0) + Vector3(0, 0.35, 0), _rng.range_f(1.0, 1.45), _rng.range_f(0.8, 1.0))
-	puff(smoke, muzzle + d * 1.4 + side * _rng.range_f(-0.4, 0.4), d * _rng.range_f(13.0, 18.0) + Vector3(0, 0.5, 0),
-		_rng.range_f(0.55, 0.8), _rng.range_f(0.55, 0.85))
-	if _rng.chance(0.3):
-		puff(smoke, muzzle + Vector3(0, 0.3, 0) - d * 0.2, d * 1.0 + Vector3(0, 0.6, 0), _rng.range_f(0.6, 0.85),
-			_rng.range_f(0.7, 1.0), Color(0.92, 0.92, 0.95, 0.9))
-	# тлеющий пыж и угольки
+	var fa := _rng.range_f(0.7, 1.0)
+	if seen:
+		var b := Basis(x, Vector3.UP, x.cross(Vector3.UP).normalized())
+		flash.emit_particle(Transform3D(b, muzzle + d * 0.05), Vector3.ZERO, Color.WHITE, Color(0, 0, 1, fa), FLAGS)
+	# дым: крупный клуб у дула и тугая струя вперёд; иногда ленивый клуб над стрелком.
+	# Залп дальней шеренги при нехватке дыма уже лёг одной стеной (_on_volley) — своих клубов нет
+	if not _merged(drv, u):
+		var side := Vector3(d.z, 0.0, -d.x)
+		puff(smoke, muzzle + d * 0.5, d * _rng.range_f(5.5, 8.0) + Vector3(0, 0.35, 0), _rng.range_f(1.0, 1.45), _rng.range_f(0.8, 1.0))
+		puff(smoke, muzzle + d * 1.4 + side * _rng.range_f(-0.4, 0.4), d * _rng.range_f(13.0, 18.0) + Vector3(0, 0.5, 0),
+			_rng.range_f(0.55, 0.8), _rng.range_f(0.55, 0.85))
+		if _rng.chance(0.3):
+			puff(smoke, muzzle + Vector3(0, 0.3, 0) - d * 0.2, d * 1.0 + Vector3(0, 0.6, 0), _rng.range_f(0.6, 0.85),
+				_rng.range_f(0.7, 1.0), Color(0.92, 0.92, 0.95, 0.9))
+	# тлеющий пыж и угольки (дальше SPARK_DIST их не разглядеть)
+	var sparks_on := dist < SPARK_DIST and (dist < 15.0 or _in_view(muzzle, SPARK_PAD))
 	for i in _rng.range_i(3):
 		var v := d * _rng.range_f(4.0, 9.0) + Vector3(_rng.range_f(-1, 1), _rng.range_f(0.5, 2.5), _rng.range_f(-1, 1))
-		sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, _rng.range_f(0.5, 1.0)), FLAGS)
-	_pop_light(muzzle + d * 0.4)
+		var sa := _rng.range_f(0.5, 1.0)
+		if sparks_on:
+			sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, sa), FLAGS)
+	if dist < LIGHT_DIST:
+		_pop_light(muzzle + d * 0.4)
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
 
 
-## Лучи сквозь дым залпа: ленты по солнечному лучу вдоль дымовой стены перед шеренгой
-func _on_volley(s: int, _rank: int, center: Vector3, count: int) -> void:
-	# лучи сквозь дым видны только против солнца: иначе 64 больших полотна рисуются впустую
-	var cam := get_viewport().get_camera_3d()
-	if cam and _sun and (-cam.global_basis.z).dot(_sun.global_basis.z.normalized()) < 0.1:
+## Выстрел из шеренги, чей залп лёг стеной: у него своих клубов нет
+func _merged(drv: SimDriver, u: int) -> bool:
+	if drv == null or u < 0:
+		return false
+	var e := _entry(drv)
+	if e.is_empty():
+		return false
+	var mu: PackedFloat32Array = e.merge_until
+	var sim := drv.sim
+	if sim == null or u >= sim.u_squad.size():
+		return false
+	var s := sim.u_squad[u]
+	return s < mu.size() and mu[s] > _clock
+
+
+func _entry(drv: SimDriver) -> Dictionary:
+	for e in _drivers:
+		if is_instance_valid(e.driver) and e.driver == drv:
+			return e
+	return {}
+
+
+## Залп шеренги: дальний при нехватке дыма — одной стеной крупных клубов перед строем;
+## лучи сквозь дым — ленты по солнечному лучу вдоль дымовой стены
+func _on_volley(s: int, _rank: int, center: Vector3, count: int, drv: SimDriver = null) -> void:
+	var t0 := Time.get_ticks_usec()
+	var d := drv if drv else scenario
+	var sim := d.sim if d else null
+	if sim == null:
 		return
-	var sim := scenario.sim
 	var f := sim.squad_forward(s)
 	var fw := Vector3(f.x, 0.0, f.y)
 	var side := Vector3(-f.y, 0.0, f.x)
 	var half := sim.sq_files[s] * 0.5
+	var dist := _dist(center)
+	# по клубу на ружьё (2,3 клуба) — если запас дыма это позволяет; чем дальше залп, тем больше
+	# запаса оставляем ближним
+	if _tight(smoke, dist, count * 2.3):
+		_merge_volley(d, s, center, count, fw, side, half)
+	# лучи сквозь дым видны только против солнца: иначе 64 больших полотна рисуются впустую
+	var cam := _cam
+	if cam and _sun and (-cam.global_basis.z).dot(_sun.global_basis.z.normalized()) < 0.1:
+		PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
+		return
 	for i in clampi(count / 5, 3, 12):
+		if dist > NEAR and room(rays) < 1.0:
+			break
 		var p := center + fw * _rng.range_f(5.0, 14.0) + side * _rng.range_f(-half, half)
 		p.y += _rng.range_f(1.5, 3.5)
 		var b := Basis.from_scale(Vector3(_rng.range_f(26.0, 40.0), _rng.range_f(2.0, 4.5), 1.0))
 		rays.emit_particle(Transform3D(b, p), Vector3.ZERO, Color.WHITE,
 			Color(_rng.range_f(0.0, 10.0), 0.0, 1.0, _rng.range_f(0.6, 1.0)), FLAGS)
+		var rb: Array = _bucket[rays]
+		rb[0] = float(rb[0]) - 1.0
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
+
+
+## Дымовая стена залпа: по крупному клубу на три ружья и струи вперёд — вместо клубов от каждого
+func _merge_volley(d: SimDriver, s: int, center: Vector3, count: int, fw: Vector3, side: Vector3, half: float) -> void:
+	var e := _entry(d)
+	if not e.is_empty():
+		var mu: PackedFloat32Array = e.merge_until
+		if mu.size() <= s:
+			var old := mu.size()
+			mu.resize(s + 1)
+			for i in range(old, s + 1):
+				mu[i] = -1.0
+		mu[s] = _clock + MERGE_WINDOW
+		e.merge_until = mu
+	_stat_acc.merged += 1
+	# по клубу на три ружья; запаса совсем нет — меньше клубов, но крупнее (стена всё равно видна)
+	var want := clampi(int(ceil(count / 3.0)), 3, 18)
+	var n := clampi(int(room(smoke)), 3, want)
+	var grow := minf(sqrt(float(want) / float(n)), 1.5)
+	var y := center.y + 1.4
+	for i in n:
+		var k := (float(i) + _rng.range_f(0.2, 0.8)) / float(n)
+		var p := center + side * lerpf(-half, half, k) + fw * _rng.range_f(0.6, 2.2)
+		p.y = y + _rng.range_f(-0.1, 0.3)
+		puff(smoke, p, fw * _rng.range_f(4.5, 7.5) + Vector3(0, 0.4, 0), _rng.range_f(1.8, 2.5) * grow, _rng.range_f(0.8, 1.0))
+		if i % 2 == 0:
+			var q := p + fw * _rng.range_f(1.5, 3.0)
+			puff(smoke, q, fw * _rng.range_f(11.0, 15.0) + Vector3(0, 0.5, 0), _rng.range_f(1.0, 1.4), _rng.range_f(0.55, 0.85))
 
 
 func _pop_light(pos: Vector3) -> void:
@@ -243,48 +450,79 @@ func _pop_light(pos: Vector3) -> void:
 	l.light_energy = 3.2
 
 
-func _on_impact(_s: int, pos: Vector3, _strength: float) -> void:
-	# удар натиска: тяжёлая пыль низом во все стороны
-	for i in 26:
+func _on_impact(_s: int, pos: Vector3, _strength: float, _drv: SimDriver = null) -> void:
+	var t0 := Time.get_ticks_usec()
+	# удар натиска: тяжёлая пыль низом во все стороны (дальний при нехватке пыли — меньше клубов, крупнее)
+	var tight := _tight(dust, _dist(pos), 26.0)
+	var n := 12 if tight else 26
+	var grow := 1.45 if tight else 1.0
+	for i in n:
 		var a := _rng.range_f(-PI, PI)
 		var r := _rng.range_f(0.5, 5.0)
 		var p := pos + Vector3(cos(a) * r, 0.5, sin(a) * r * 1.6)
 		var v := Vector3(cos(a), 0.0, sin(a)) * _rng.range_f(2.0, 6.0) + Vector3(0, _rng.range_f(0.6, 2.0), 0)
-		puff(dust, p, v, _rng.range_f(1.0, 1.8), _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0))
+		if not tight or i < 4:
+			puff(dust, p, v, _rng.range_f(1.0, 1.8) * grow, _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0))
+		elif not _far_puff(dust, p, v, _rng.range_f(1.0, 1.8) * grow, _rng.range_f(0.8, 1.0), Color(0.82, 0.72, 0.6, 1.0)):
+			break
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
 
 
-func _on_charge_hit(_u: int, _t: int, pos: Vector3) -> void:
-	for i in 3:
-		var p := pos + Vector3(_rng.range_f(-1.0, 1.0), 0.4, _rng.range_f(-1.0, 1.0))
-		puff(dust, p, Vector3(_rng.range_f(-2, 2), _rng.range_f(0.8, 2.2), _rng.range_f(-2, 2)),
-			_rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
+func _on_charge_hit(_u: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> void:
+	var t0 := Time.get_ticks_usec()
+	if not _tight(dust, _dist(pos), 3.0):
+		for i in 3:
+			var p := pos + Vector3(_rng.range_f(-1.0, 1.0), 0.4, _rng.range_f(-1.0, 1.0))
+			puff(dust, p, Vector3(_rng.range_f(-2, 2), _rng.range_f(0.8, 2.2), _rng.range_f(-2, 2)),
+				_rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
+	else:
+		# дальний удар при нехватке пыли: один клуб крупнее
+		_far_puff(dust, pos + Vector3(_rng.range_f(-1.0, 1.0), 0.5, _rng.range_f(-1.0, 1.0)),
+			Vector3(_rng.range_f(-2, 2), _rng.range_f(0.8, 2.2), _rng.range_f(-2, 2)), _rng.range_f(1.3, 1.9), _rng.range_f(0.6, 0.9))
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
 
 
-func _on_melee_hit(_a: int, _t: int, pos: Vector3) -> void:
+func _on_melee_hit(_a: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> void:
 	if _spark_budget <= 0 or not _rng.chance(0.55):
 		return
 	var n := 2 + _rng.range_i(4)
 	_spark_budget -= n
+	# дальних и невидимых искр не рисуем (случайные числа — как раньше)
+	var on := _dist(pos) < SPARK_DIST and _in_view(pos, SPARK_PAD)
 	for i in n:
 		var v := Vector3(_rng.range_f(-3.5, 3.5), _rng.range_f(0.5, 4.0), _rng.range_f(-3.5, 3.5))
-		sparks.emit_particle(Transform3D(Basis(), pos + Vector3(0, _rng.range_f(-0.2, 0.3), 0)), v, Color.WHITE,
-			Color(0, 0, 1, _rng.range_f(0.4, 1.0)), FLAGS)
+		var y := _rng.range_f(-0.2, 0.3)
+		var a := _rng.range_f(0.4, 1.0)
+		if on:
+			sparks.emit_particle(Transform3D(Basis(), pos + Vector3(0, y, 0)), v, Color.WHITE, Color(0, 0, 1, a), FLAGS)
 
 
-func _on_death(u: int, pos: Vector3) -> void:
-	var sim := scenario.sim
+func _on_death(u: int, pos: Vector3, drv: SimDriver = null) -> void:
+	var d := drv if drv else scenario
+	var sim := d.sim if d else null
+	if sim == null:
+		return
+	var t0 := Time.get_ticks_usec()
+	var dist := _dist(pos)
 	if sim.is_mounted(u):
 		# конь валится на бок: пыль низом
+		var tight := _tight(dust, dist, 5.0)
 		var v := Vector3(sim.u_vx[u], 0.0, sim.u_vz[u]) * 0.4
-		for i in 5:
-			puff(dust, pos + Vector3(_rng.range_f(-1.4, 1.4), 0.35, _rng.range_f(-1.4, 1.4)),
-				v + Vector3(_rng.range_f(-1.5, 1.5), _rng.range_f(0.4, 1.2), _rng.range_f(-1.5, 1.5)),
-				_rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
-	else:
+		for i in (2 if tight else 5):
+			var p := pos + Vector3(_rng.range_f(-1.4, 1.4), 0.35, _rng.range_f(-1.4, 1.4))
+			var w := v + Vector3(_rng.range_f(-1.5, 1.5), _rng.range_f(0.4, 1.2), _rng.range_f(-1.5, 1.5))
+			if not tight:
+				puff(dust, p, w, _rng.range_f(0.8, 1.3), _rng.range_f(0.6, 0.9))
+			elif not _far_puff(dust, p, w, _rng.range_f(1.1, 1.7), _rng.range_f(0.6, 0.9)):
+				break
+	elif not _tight(dust, dist, 1.0):
 		puff(dust, pos + Vector3(0, 0.3, 0), Vector3(_rng.range_f(-1, 1), 0.6, _rng.range_f(-1, 1)), 0.6, 0.5)
+	else:
+		_far_puff(dust, pos + Vector3(0, 0.3, 0), Vector3(_rng.range_f(-1, 1), 0.6, _rng.range_f(-1, 1)), 0.7, 0.5)
+	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
 
 
-func _on_war_cry(_u: int, pos: Vector3) -> void:
+func _on_war_cry(_u: int, pos: Vector3, _drv: SimDriver = null) -> void:
 	# конь полководца встаёт на дыбы — пыль из-под копыт
 	for i in 5:
 		var a := float(i) / 5.0 * TAU + _rng.range_f(-0.3, 0.3)
@@ -308,11 +546,45 @@ func _frame(delta: float) -> void:
 	for p in [smoke, dust, flash, sparks, fluff, ash, rays]:
 		if p:
 			p.speed_scale = scale
+	_cam = get_viewport().get_camera_3d()
+	if _cam:
+		_cam_pos = _cam.global_position
+		_frustum = _cam.get_frustum()
+	else:
+		_frustum.clear()
+	_refill(delta * scale)
 	_update_sun()
 	_update_lights(delta * scale)
 	_follow_camera()
-	if scenario and scenario.sim and scale > 0.0:
-		_gallop_dust(delta * scale)
+	# бои, чьи узлы удалены (нагрузка F9 выключена), — из списка
+	for i in range(_drivers.size() - 1, -1, -1):
+		if not is_instance_valid(_drivers[i].driver):
+			_drivers.remove_at(i)
+	if scale > 0.0:
+		for e in _drivers:
+			_gallop_dust(e, delta * scale)
+	_stat_t += delta
+	if _stat_t >= 1.0:
+		_stat_t = 0.0
+		stat = _stat_acc.duplicate()
+		for k in _stat_acc:
+			_stat_sum[k] = int(_stat_sum[k]) + int(_stat_acc[k])
+			_stat_acc[k] = 0
+
+
+## Счёт с начала: клубов дыма и пыли пущено, залпов стеной (проверки: tests/bench_stress_fx.gd)
+func stat_total() -> Dictionary:
+	var out := {}
+	for k in _stat_acc:
+		out[k] = int(_stat_sum[k]) + int(_stat_acc[k])
+	return out
+
+
+## Ведра пополняются со скоростью, с которой клубы рассеиваются
+func _refill(dt: float) -> void:
+	for sys in _bucket:
+		var b: Array = _bucket[sys]
+		b[0] = minf(float(b[0]) + float(b[2]) * dt, float(b[1]))
 
 
 func _update_sun() -> void:
@@ -350,7 +622,7 @@ func _update_lights(dt: float) -> void:
 
 
 func _follow_camera() -> void:
-	var cam := get_viewport().get_camera_3d()
+	var cam := _cam
 	if cam == null:
 		return
 	var p := cam.global_position
@@ -364,27 +636,85 @@ func _follow_camera() -> void:
 		ash.global_position = c
 
 
-func _gallop_dust(dt: float) -> void:
-	var sim := scenario.sim
-	if _dust_acc.size() != sim.n:
-		_dust_acc.resize(sim.n)
-		_dust_acc.fill(0.0)
-	for u in sim.n:
-		if sim.u_life[u] != BattleSim.Life.ALIVE or not sim.is_mounted(u):
+## Пыль за скачущими конями одного боя. Большой бой (шаг в фоне) — по снимку SimStepper.
+## Пока запаса пыли хватает — как раньше (кони по порядку, клуб в клуб). При нехватке дальние кони
+## (дальше NEAR) пылят вдвое реже и крупнее и только из запаса, а обход начинается каждый кадр
+## с другого коня — запаса хватает всем по очереди. Дальше DUST_FAR пыли нет.
+func _gallop_dust(e: Dictionary, dt: float) -> void:
+	var drv: SimDriver = e.driver
+	var sim := drv.sim
+	if sim == null:
+		return
+	var view: BattleView = e.view if is_instance_valid(e.view) else null
+	var st := view.stepper() if view else null
+	var snap := st != null and st.uses_snapshot()
+	var xs := st.s_x if snap else sim.u_x
+	var zs := st.s_z if snap else sim.u_z
+	var vxs := st.s_vx if snap else sim.u_vx
+	var vzs := st.s_vz if snap else sim.u_vz
+	var lifes := st.s_life if snap else sim.u_life
+	var n := mini(xs.size(), lifes.size())
+	if e.sim != sim or int(e.n) != n:
+		# список конных: тип юнита после создания не меняется
+		e.sim = sim
+		e.n = n
+		var m := PackedInt32Array()
+		for u in n:
+			if sim.is_mounted(u):
+				m.append(u)
+		e.mounted = m
+		var fresh := PackedFloat32Array()
+		fresh.resize(n)
+		e.acc = fresh
+		e.merge_until = PackedFloat32Array()
+		e.start = 0
+	var mounted: PackedInt32Array = e.mounted
+	var acc: PackedFloat32Array = e.acc
+	var cnt := mounted.size()
+	if cnt == 0:
+		return
+	var start: int = int(e.start) % cnt
+	var rate := dust_rate * dt * _fx_k
+	var cam := _cam_pos
+	var b: Array = _bucket[dust]
+	var cap := float(b[1]) * 0.6
+	var pressed := false
+	for k in cnt:
+		var u := mounted[(start + k) % cnt]
+		if u >= n or lifes[u] != BattleSim.Life.ALIVE:
 			continue
-		var vx := sim.u_vx[u]
-		var vz := sim.u_vz[u]
-		var sp := sqrt(vx * vx + vz * vz)
-		if sp < 4.0:
+		var vx := vxs[u]
+		var vz := vzs[u]
+		var sp2 := vx * vx + vz * vz
+		if sp2 < 16.0:
 			continue
-		_dust_acc[u] += (sp - 4.0) * dust_rate * dt * _fx_k
-		while _dust_acc[u] >= 1.0:
-			_dust_acc[u] -= 1.0
+		var x := xs[u]
+		var z := zs[u]
+		var dx := x - cam.x
+		var dz := z - cam.z
+		var d2 := dx * dx + dz * dz
+		if d2 > DUST_FAR * DUST_FAR:
+			continue
+		var sp := sqrt(sp2)
+		# дальний конь при нехватке пыли (как _tight, без лишнего корня для ближних)
+		var tight := false
+		if d2 > NEAR * NEAR:
+			var dd := sqrt(d2)
+			tight = float(b[0]) < 1.0 + cap * clampf((dd - NEAR) / 200.0, 0.0, 1.0)
+		if tight:
+			pressed = true
+		acc[u] += (sp - 4.0) * rate * (0.5 if tight else 1.0)
+		while acc[u] >= 1.0:
+			acc[u] -= 1.0
+			if tight and float(b[0]) < 1.0:
+				acc[u] = 0.0
+				break
 			var f := Vector3(vx, 0.0, vz) / sp
 			var side := Vector3(f.z, 0.0, -f.x)
-			var x := sim.u_x[u]
-			var z := sim.u_z[u]
 			var p := Vector3(x, 0.0, z) - f * _rng.range_f(0.3, 2.4) + side * _rng.range_f(-0.9, 0.9)
 			p.y = Terrain.height_at(p.x, p.z) + _rng.range_f(0.2, 0.5)
 			var v := -f * _rng.range_f(0.8, 2.2) + side * _rng.range_f(-0.8, 0.8) + Vector3(0, _rng.range_f(0.3, 0.9), 0)
-			puff(dust, p, v, _rng.range_f(0.7, 1.8), _rng.range_f(0.45, 0.95))
+			puff(dust, p, v, _rng.range_f(0.7, 1.8) * (1.4 if tight else 1.0), _rng.range_f(0.45, 0.95))
+	e.acc = acc
+	# по очереди — только когда запаса не хватает (иначе порядок как раньше)
+	e.start = start + 7 if pressed else 0

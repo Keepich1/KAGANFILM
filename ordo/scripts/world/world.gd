@@ -63,6 +63,9 @@ func _ready() -> void:
 			RenderingServer.global_shader_parameter_set(k, PAINT_GLOBALS[k])
 		Ordo.set_wind(PAINT_GLOBALS["ordo_wind"])
 	place_sun()
+	# толпа (CrowdLayer.SUN_GROUP) смотрит каскады теней солнца: тень юнита — только в тех каскадах, куда она падает
+	if sun:
+		sun.add_to_group(&"ordo_sun")
 	_place_markers()
 	_debug_args()
 	built.emit()

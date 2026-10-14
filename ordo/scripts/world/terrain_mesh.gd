@@ -1,17 +1,24 @@
 class_name TerrainMesh
 extends Node3D
-## Земля среза: куски 64 × 64 м, у каждого 4 уровня детализации (2, 4, 8, 16 м).
-## Ближние куски подробнее — переключает сам движок по расстоянию до камеры
-## (visibility_range). Швы между уровнями закрыты «юбками». Вокруг карты —
-## дальнее кольцо гор (far.bin, шаг 32 м) до ±2,5 км. Плюс тело столкновений
-## (HeightMapShape3D) для выбора точки мышью.
+## Земля среза: дерево кусков (HLOD). Вблизи — куски 128 × 128 м с шагом сетки 2 м, дальше —
+## блоки 256 м (шаг 4 м), ещё дальше — 512 м (шаг 8 м); у каждого куска одна сетка 64 × 64 клетки.
+## Блок, к центру которого камера ближе его дальности, прячется, и вместо него видны его четыре
+## куска помельче (visibility_parent — движок решает сам, без щелей и двойного покрытия).
+## Дальности подобраны так, что каждая точка земли не грубее прежних уровней 2/4/8 м
+## (220 и 500 м × lod_scale), а вызовов отрисовки (и в каждом каскаде теней) в разы меньше,
+## чем у прежних 256 кусков по 64 м (ближняя земля подробная чуть дальше, чем раньше).
+## Швы между уровнями закрыты «юбками». Вокруг карты — дальнее кольцо гор (far.bin, шаг 32 м)
+## до ±2,5 км. Плюс тело столкновений (HeightMapShape3D) для выбора точки мышью.
 
 const SHADER := preload("res://shaders/terrain.gdshader")
 
-## Сторона куска, м
-@export var chunk_size := 64.0
-## Дальность каждого уровня детализации, м (дальше последнего — самый грубый)
+## Сторона самого подробного куска, м (блоки уровней — вдвое и вчетверо больше)
+@export var chunk_size := 128.0
+## Дальше какой дальности земля может стать грубее: 2 м → 4 м, 4 м → 8 м (последнее — без предела).
+## Дальность считается от центра блока, поэтому к ней прибавляется полдиагонали блока.
 @export var lod_ranges: PackedFloat32Array = PackedFloat32Array([220.0, 500.0, 1100.0])
+## Уровней дерева (2 м, 4 м, 8 м)
+const LEVELS := 3
 ## Глубина «юбки» под краем куска, м
 @export var skirt := 3.0
 @export var build_far_ring := true
@@ -37,24 +44,35 @@ func build() -> void:
 	if n == 0:
 		return
 	_compute_normals()
-	var cells := int(chunk_size / Terrain.spacing())     # клеток сетки на кусок (32)
-	var chunks := (n - 1) / cells                         # 16
+	var cells := int(chunk_size / Terrain.spacing())     # клеток сетки на самый подробный кусок (64)
 	var chunks_root := Node3D.new()
 	chunks_root.name = "Chunks"
 	add_child(chunks_root)
-	for cj in chunks:
-		for ci in chunks:
-			for lod in 4:
-				var step := 1 << lod
+	var o := Terrain.origin()
+	# от грубых к подробным: родитель (блок) создаётся раньше своих четырёх кусков
+	var parents := {}
+	for level in range(LEVELS - 1, -1, -1):
+		var block := cells << level                     # клеток на сторону блока уровня
+		var step := 1 << level
+		var count := (n - 1) / block
+		var size := chunk_size * float(1 << level)
+		var next := {}
+		for cj in count:
+			for ci in count:
 				var mi := MeshInstance3D.new()
-				mi.name = "C%d_%d_L%d" % [ci, cj, lod]
-				mi.mesh = _chunk_mesh(ci * cells, cj * cells, cells, step)
+				mi.name = "L%d_%d_%d" % [level, ci, cj]
+				mi.mesh = _chunk_mesh(ci * block, cj * block, block, step)
 				mi.material_override = material
-				var o := Terrain.origin()
-				mi.position = Vector3(o.x + (ci + 0.5) * chunk_size, 0.0, o.y + (cj + 0.5) * chunk_size)
-				mi.set_meta("lod", lod)
+				mi.position = Vector3(o.x + (ci + 0.5) * size, 0.0, o.y + (cj + 0.5) * size)
+				mi.set_meta("lod", level)
+				mi.set_meta("half_diag", size * 0.5 * sqrt(2.0))
 				chunks_root.add_child(mi)
+				var parent: MeshInstance3D = parents.get(Vector2i(ci / 2, cj / 2))
+				if parent:
+					mi.visibility_parent = mi.get_path_to(parent)
+				next[Vector2i(ci, cj)] = mi
 				_lod_nodes.append(mi)
+		parents = next
 	apply_lod_ranges()
 	if build_far_ring:
 		_build_far_ring()
@@ -79,13 +97,27 @@ static func make_material() -> ShaderMaterial:
 	return m
 
 
+## Дальности дерева кусков: блок уровня L (L ≥ 1) прячется (и видны его куски помельче), когда
+## камера ближе его центра на lod_ranges[L − 1] × lod_scale + полдиагонали блока. Полдиагонали
+## без множителя: любая точка блока ближе к его центру, поэтому земля нигде не грубее прежних
+## кусков 64 м на любом уровне качества (tests/test_quality.gd проверяет по сетке положений камеры).
+## Самые грубые блоки без родителя видны всегда, пока их не сменили куски помельче.
 func apply_lod_ranges() -> void:
 	for mi in _lod_nodes:
 		var lod: int = mi.get_meta("lod")
-		var begin := 0.0 if lod == 0 else lod_ranges[lod - 1] * lod_scale
-		var end := 0.0 if lod == 3 else lod_ranges[lod] * lod_scale
-		mi.visibility_range_begin = begin
-		mi.visibility_range_end = end
+		mi.visibility_range_end = 0.0
+		mi.visibility_range_begin_margin = 0.0
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		if lod == 0:
+			mi.visibility_range_begin = 0.0
+		else:
+			mi.visibility_range_begin = lod_ranges[mini(lod - 1, lod_ranges.size() - 1)] * lod_scale \
+				+ float(mi.get_meta("half_diag"))
+
+
+## Куски дерева (для проверок): все уровни, у каждого meta «lod» и «half_diag»
+func lod_nodes() -> Array[MeshInstance3D]:
+	return _lod_nodes
 
 
 func _compute_normals() -> void:
