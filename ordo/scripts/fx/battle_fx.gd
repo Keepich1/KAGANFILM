@@ -42,11 +42,15 @@ const FLAGS := GPUParticles3D.EMIT_FLAG_POSITION | GPUParticles3D.EMIT_FLAG_VELO
 const NEAR := 50.0
 ## Дальше этого залп при нехватке запаса дыма идёт одной стеной (запас на ближние залпы растёт с дальностью)
 const MERGE_FROM := 50.0
-## Вспышки выстрелов, свет и искры — только ближе и в кадре (случайные числа берутся всё равно —
-## остальные эффекты от этого не меняются)
+## Вспышки выстрелов и искры — только ближе и в кадре с запасом (вспышка у края кадра заходит в него,
+## искры разлетаются); свет — по любому выстрелу ближе LIGHT_DIST, как раньше: свет дула за краем
+## кадра освещает тех, кто в кадре. Случайные числа берутся всё равно — остальные эффекты не меняются.
 const FLASH_DIST := 260.0
 const LIGHT_DIST := 200.0
 const SPARK_DIST := 120.0
+## Запас кадра, м: вспышка (длина до 1,25 м и ореол) и искры (разлёт за полсекунды)
+const FLASH_PAD := 2.0
+const SPARK_PAD := 4.0
 ## Пыль коней дальше этого не поднимается (с такой дали её не разглядеть)
 const DUST_FAR := 300.0
 ## Сколько дыма успевает рассеяться у залпа, слитого в стену: окно, в которое выстрелы шеренги без своих клубов, с
@@ -91,8 +95,9 @@ var _ray_mat: ShaderMaterial
 var _drivers: Array[Dictionary] = []
 # запас клубов: ключ — система
 var _bucket := {}
-# камера кадра
+# камера кадра и её плоскости (наружу)
 var _cam: Camera3D
+var _frustum: Array[Plane] = []
 var _cam_pos := Vector3(0.0, 1.0e6, 0.0)
 ## Счёт за прошлую секунду: клубов дыма и пыли пущено, залпов стеной (экран F9)
 var stat := {"smoke": 0, "dust": 0, "merged": 0}
@@ -291,8 +296,16 @@ func _dist(p: Vector3) -> float:
 	return _cam_pos.distance_to(p)
 
 
-func _in_view(p: Vector3) -> bool:
-	return _cam == null or _cam.is_position_in_frustum(p)
+## Точка в кадре камеры с запасом pad, м (плоскости кадра — раз за кадр в _frame)
+func _in_view(p: Vector3, pad := 0.0) -> bool:
+	if _cam == null:
+		return true
+	if _frustum.is_empty():
+		return _cam.is_position_in_frustum(p)
+	for pl in _frustum:
+		if pl.distance_to(p) > pad:
+			return false
+	return true
 
 
 # ================================================================= события боя
@@ -309,7 +322,7 @@ func _on_shot(u: int, muzzle: Vector3, dir: Vector3, _hit: bool, drv: SimDriver 
 	var t0 := Time.get_ticks_usec()
 	var d := dir.normalized()
 	var dist := _dist(muzzle)
-	var seen := dist < 15.0 or (dist < FLASH_DIST and _in_view(muzzle))
+	var seen := dist < 15.0 or (dist < FLASH_DIST and _in_view(muzzle, FLASH_PAD))
 	# вспышка вдоль ствола
 	var x := d * _rng.range_f(0.9, 1.25)
 	var fa := _rng.range_f(0.7, 1.0)
@@ -327,13 +340,13 @@ func _on_shot(u: int, muzzle: Vector3, dir: Vector3, _hit: bool, drv: SimDriver 
 			puff(smoke, muzzle + Vector3(0, 0.3, 0) - d * 0.2, d * 1.0 + Vector3(0, 0.6, 0), _rng.range_f(0.6, 0.85),
 				_rng.range_f(0.7, 1.0), Color(0.92, 0.92, 0.95, 0.9))
 	# тлеющий пыж и угольки (дальше SPARK_DIST их не разглядеть)
-	var sparks_on := seen and dist < SPARK_DIST
+	var sparks_on := dist < SPARK_DIST and (dist < 15.0 or _in_view(muzzle, SPARK_PAD))
 	for i in _rng.range_i(3):
 		var v := d * _rng.range_f(4.0, 9.0) + Vector3(_rng.range_f(-1, 1), _rng.range_f(0.5, 2.5), _rng.range_f(-1, 1))
 		var sa := _rng.range_f(0.5, 1.0)
 		if sparks_on:
 			sparks.emit_particle(Transform3D(Basis(), muzzle + d * 0.3), v, Color.WHITE, Color(0, 0, 1, sa), FLAGS)
-	if seen and dist < LIGHT_DIST:
+	if dist < LIGHT_DIST:
 		_pop_light(muzzle + d * 0.4)
 	PerfMeter.add_frame(&"fx", (Time.get_ticks_usec() - t0) / 1000.0)
 
@@ -475,7 +488,7 @@ func _on_melee_hit(_a: int, _t: int, pos: Vector3, _drv: SimDriver = null) -> vo
 	var n := 2 + _rng.range_i(4)
 	_spark_budget -= n
 	# дальних и невидимых искр не рисуем (случайные числа — как раньше)
-	var on := _dist(pos) < SPARK_DIST and _in_view(pos)
+	var on := _dist(pos) < SPARK_DIST and _in_view(pos, SPARK_PAD)
 	for i in n:
 		var v := Vector3(_rng.range_f(-3.5, 3.5), _rng.range_f(0.5, 4.0), _rng.range_f(-3.5, 3.5))
 		var y := _rng.range_f(-0.2, 0.3)
@@ -536,6 +549,9 @@ func _frame(delta: float) -> void:
 	_cam = get_viewport().get_camera_3d()
 	if _cam:
 		_cam_pos = _cam.global_position
+		_frustum = _cam.get_frustum()
+	else:
+		_frustum.clear()
 	_refill(delta * scale)
 	_update_sun()
 	_update_lights(delta * scale)
