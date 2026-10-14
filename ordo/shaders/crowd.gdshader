@@ -12,8 +12,8 @@
 // ДО расчёта позы — вершины почти ничего не стоят, треугольники отбрасываются до растеризации:
 //   • не своя полоса дальности LOD (crowd_lod.xy — у каждой части слоя своя, дальность от главной камеры);
 //   • проход теней солнца и юнит дальше crowd_lod.z (дальние юниты теней не отбрасывают);
-//   • проход теней солнца шире crowd_lod.w (дальний каскад: он охватывает и ближнее поле, но тени
-//     юнитов из него не читаются — их дальность покрывают первые каскады; 0 — во всех каскадах);
+//   • проход теней солнца — каскад, куда тень юнита не падает (каскады охватывают и ближнее поле:
+//     юнит нужен только тем, чья полоса глубины задевает его тень — crowd_casc_*, crowd_reach);
 //   • юнит целиком вне кадра этого прохода (камера или каскад тени — свой у каждого).
 // Анимация не меняется: у оставшихся юнитов всё считается как раньше.
 shader_type spatial;
@@ -42,9 +42,15 @@ uniform vec2 glow_range = vec2(14.0, 70.0);
 
 // Полоса дальности части слоя (CrowdLayer: LOD0 с тенью, LOD0, LOD1, «Тень» — облегчённая модель
 // только в проходах теней): x..y — дальность юнита от главной камеры, м;
-// z — дальше юниты не отбрасывают тень (0 — эта часть без теней);
-// w — в проходе теней с полушириной больше w (дальний каскад солнца) юниты не рисуются (0 — рисуются)
+// z — дальше юниты не отбрасывают тень (0 — эта часть без теней); w — не используется
 instance uniform vec4 crowd_lod = vec4(0.0, 1e9, 1e9, 0.0);
+// Каскады солнца (CrowdLayer._shadow_cfg): полуширина каждого (0 — нет; r.x = 0 — юнит во всех
+// проходах теней), начало и конец его полосы по глубине главной камеры, м; crowd_reach — тень юнита
+// и он сам лежат по глубине от глубины юнита − x до + y
+instance uniform vec4 crowd_casc_r = vec4(0.0);
+instance uniform vec4 crowd_casc_lo = vec4(0.0);
+instance uniform vec4 crowd_casc_hi = vec4(1e9);
+instance uniform vec2 crowd_reach = vec2(0.0);
 // Сфера юнита для отсечения по кадру: центр над ступнями, радиус (копья, знамёна, лежащие тела)
 const vec3 CROWD_CENTER = vec3(0.0, 1.5, 0.0);
 const float CROWD_RADIUS = 4.0;
@@ -67,14 +73,42 @@ varying vec3 v_body_nrm;
 varying float v_metal_f;
 varying float v_dist;
 
-// Нужен ли юнит в этом проходе (полоса LOD, дальность теней, кадр прохода)
-bool crowd_keep(mat4 model, mat4 view, mat4 proj, vec3 main_cam, vec4 band) {
+// Каскад солнца, чей проход сейчас рисуется: полуширина прохода ближе всех к его полуширине
+// (каскады растут в 2–3 раза — ошибиться нельзя)
+int crowd_cascade(mat4 proj) {
+	float hw = 1.0 / max(abs(proj[0][0]), 1e-6);
+	int k = 0;
+	float best = 1e9;
+	for (int i = 0; i < 4; i++) {
+		float r = crowd_casc_r[i];
+		if (r > 0.0) {
+			float e = max(hw / r, r / hw);
+			if (e < best) {
+				best = e;
+				k = i;
+			}
+		}
+	}
+	return k;
+}
+
+// Нужен ли юнит в этом проходе (полоса LOD, дальность теней, каскад, кадр прохода)
+bool crowd_keep(mat4 model, mat4 view, mat4 proj, mat4 main_inv_view, vec4 band) {
 	vec3 o = model[3].xyz;
+	vec3 main_cam = main_inv_view[3].xyz;
 	float d = distance(main_cam, o);
 	// ортографическая проекция — проход теней солнца (камеры игры перспективные)
 	bool shadow_pass = proj[3][3] > 0.5;
-	if (d < band.x || d >= band.y || (shadow_pass && (d > band.z || (band.w > 0.0 && abs(proj[0][0]) * band.w < 1.0)))) {
+	if (d < band.x || d >= band.y || (shadow_pass && d > band.z)) {
 		return false;
+	}
+	if (shadow_pass && crowd_casc_r.x > 0.0) {
+		// глубина юнита у главной камеры (по ней движок выбирает каскад для точки кадра)
+		float depth = dot(o - main_cam, -main_inv_view[2].xyz);
+		int k = crowd_cascade(proj);
+		if (depth + crowd_reach.y < crowd_casc_lo[k] || depth - crowd_reach.x > crowd_casc_hi[k]) {
+			return false;
+		}
 	}
 	vec4 c = proj * (view * vec4(o + CROWD_CENTER * unit_scale, 1.0));
 	float r = CROWD_RADIUS * unit_scale;
@@ -83,7 +117,7 @@ bool crowd_keep(mat4 model, mat4 view, mat4 proj, vec3 main_cam, vec4 band) {
 }
 
 void vertex() {
-	if (!crowd_keep(MODEL_MATRIX, VIEW_MATRIX, PROJECTION_MATRIX, MAIN_CAM_INV_VIEW_MATRIX[3].xyz, crowd_lod)) {
+	if (!crowd_keep(MODEL_MATRIX, VIEW_MATRIX, PROJECTION_MATRIX, MAIN_CAM_INV_VIEW_MATRIX, crowd_lod)) {
 		// вне прохода: все вершины юнита в одну точку — треугольники нулевой площади
 		VERTEX = vec3(0.0);
 		v_tint = vec3(1.0);

@@ -9,7 +9,7 @@ extends Node
 ##                   (настройка проекта: глубина и цвет кадра хранились вчетверо);
 ##                   карта теней 4096 вместо 8192 (размытие тени вдвое меньше в точках карты —
 ##                   та же мягкость в метрах); сетка тумана 128 × 128 × 64 слоя в глубину (было 128);
-##                   юниты дальше 126 м (за вторым каскадом) теней не отбрасывают.
+##                   тень юнита рисуется только в тех каскадах солнца, куда она падает (не во всех четырёх).
 ##   «Среднее» (ПК попроще): тот же вид дешевле — живописный фильтр в половине разрешения
 ##                   с бережным увеличением, сетка тумана реже, тени те же 4 каскада, но карта
 ##                   вдвое меньше и ближе (500 м), SSAO проще, травы меньше, кадр 3D 77 % (FSR 1).
@@ -27,8 +27,8 @@ extends Node
 ##   --aa=msaa|msaa2|smaa|fxaa|off — сглаживание (msaa — 4×, как было);
 ##   --shadow_atlas=8192 — карта теней (размытие подстраивается); --fog_grid=128 --fog_depth=128 — сетка тумана;
 ##   --shadow_soft=medium — мягкая тень дешевле (вдвое меньше выборок; «Высокое» — high);
-##   --crowd_cascades=all — тени юнитов во всех каскадах солнца, как было; --crowd_shadow=700 — дальность
-##   теней юнитов, м (CrowdLayer).
+##   --crowd_cascades=all — тени юнитов во всех каскадах солнца, как было; --crowd_shadow=126 — дальность
+##   теней юнитов, м; --crowd_lod=90 — дальность смены LOD юнитов, м (CrowdLayer).
 
 const HIGH := "high"
 const MEDIUM := "medium"
@@ -48,14 +48,14 @@ const PRESETS := {
 		"post": "full", "post_cap": 1080, "volfog": true, "fog_grid": 128, "fog_depth": 64, "ssao": true, "ssao_low": false,
 		"shadow_splits": 4, "shadow_dist": 700.0, "shadow_atlas": 4096, "shadow_soft": "high",
 		"grass_density": 1.0, "grass_range": 1.0, "terrain_lod": 1.0, "scatter_lod": 1.0,
-		"crowd_lod": 1.0, "crowd_lod1_shadow": true, "crowd_shadow": 126.0, "fx": 1.0,
+		"crowd_lod": 1.0, "crowd_lod1_shadow": true, "crowd_shadow": 700.0, "fx": 1.0,
 	},
 	MEDIUM: {
 		"scale": 0.77, "upscale": "fsr1", "aa": "msaa",
 		"post": "half", "post_cap": 0, "volfog": true, "fog_grid": 96, "fog_depth": 64, "ssao": true, "ssao_low": true,
 		"shadow_splits": 4, "shadow_dist": 500.0, "shadow_atlas": 4096, "shadow_soft": "low",
 		"grass_density": 0.6, "grass_range": 0.85, "terrain_lod": 0.8, "scatter_lod": 0.8,
-		"crowd_lod": 0.75, "crowd_lod1_shadow": true, "crowd_shadow": 90.0, "fx": 0.75,
+		"crowd_lod": 0.75, "crowd_lod1_shadow": true, "crowd_shadow": 500.0, "fx": 0.75,
 	},
 	LOW: {
 		"scale": 0.67, "upscale": "fsr1", "aa": "fxaa",

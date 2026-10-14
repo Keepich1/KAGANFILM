@@ -2,7 +2,7 @@ extends SceneTree
 ## Проверка уровней качества без графики:
 ##   godot --headless --path ordo --script res://tests/test_quality.gd
 ## Порядок F2, числа уровней, выбор уровня по имени видеокарты (первый запуск).
-## Ускорение видеокарты (perf2): сглаживание и тени «Высокого», тени толпы только в ближних каскадах,
+## Ускорение видеокарты (perf2): сглаживание и тени «Высокого», тень юнита только в своих каскадах солнца,
 ## живописный фильтр в уменьшенном кадре на мониторах выше 1080p, дерево кусков земли — ни щелей,
 ## ни двойной земли, нигде не грубее прежнего.
 
@@ -76,50 +76,70 @@ func _check_perf2() -> void:
 		_check(hv >= mv and mv >= lv, "%s: высокое ≥ среднее ≥ низкое" % k)
 
 
-## Тени толпы — только в первых каскадах солнца (CrowdLayer.shadow_pass_limit → crowd_lod.w):
-## порог полуширины прохода между каскадом, что покрывает дальность теней юнитов, и следующим
+## Тень юнита — только в тех каскадах солнца, куда она падает (CrowdLayer.cascade_bands, shadow_reach →
+## crowd_casc_*, crowd_reach шейдера): ни одной точки кадра без тени юнита (при любом солнце), а юнит
+## в среднем — в полутора каскадах, не во всех
 func _check_crowd_cascades() -> void:
-	print("[толпа: тени только в ближних каскадах]")
+	print("[толпа: тень юнита — только в тех каскадах солнца, куда она падает]")
 	# солнце среза: 4 каскада, доли 0,06 / 0,18 / 0,45, смешивание каскадов; камера 50° по высоте, 16:9
 	var splits := [0.06, 0.18, 0.45]
 	var ty := tan(deg_to_rad(25.0))
 	var tx := ty * 16.0 / 9.0
+	# солнце заката (10° над горизонтом) с разных сторон от взгляда камеры и солнце повыше
+	var lights: Array[Vector3] = []
+	for elev in [10.0, 35.0]:
+		for az in [0.0, 90.0, 180.0, 270.0]:
+			var e := deg_to_rad(elev)
+			var a := deg_to_rad(az)
+			lights.append(Vector3(sin(a) * cos(e), -sin(e), -cos(a) * cos(e)))
+	var fwd := Vector3(0.0, -0.5, -1.0).normalized()   # камера стратегии: вперёд и вниз (−Z)
 	for level in ["high", "medium", "low"]:
 		var p := WorldQuality.preset(level)
 		var count := int(p.shadow_splits)
 		var dist := CrowdLayer.cascade_distances(0.05, 4000.0, float(p.shadow_dist), count, splits)
 		var radii := CrowdLayer.cascade_radii(tx, ty, dist, true)
-		var lim := CrowdLayer.shadow_pass_limit(radii, dist, float(p.crowd_shadow))
-		print("    %s: дальности %s, полуширина %s, порог %.0f м" % [level, _round_all(dist), _round_all(radii), lim])
+		print("    %s: дальности %s, полуширина %s" % [level, _round_all(dist), _round_all(radii)])
 		var grows := true
 		for i in radii.size() - 1:
 			grows = grows and radii[i + 1] > radii[i] * 1.8
-		_check(grows, "%s: каскады растут вдвое и больше — порог надёжно между ними" % level)
-		if level == "low":
-			_check(lim == 0.0, "«Низкое» (2 каскада, тени юнитов 60 м): юниты во всех каскадах, как было")
-			continue
-		# дальность теней юнитов покрывает второй каскад: юниты — в первом и втором, порог между вторым и третьим
-		_check(dist[2] >= float(p.crowd_shadow) - 1.0 and dist[1] < float(p.crowd_shadow),
-			"%s: тени юнитов (%.0f м) — в пределах второго каскада (%.0f м)" % [level, p.crowd_shadow, dist[2]])
-		_check(lim > radii[1] * 1.3 and lim < radii[2] / 1.3,
-			"%s: первые два каскада (до %.0f м) рисуют юнитов, третий и четвёртый (от %.0f м) — нет" % [level, radii[1], radii[2]])
-	# без смешивания каскадов — тоже между вторым и третьим; узкая камера — тоже
-	var d4 := CrowdLayer.cascade_distances(0.05, 4000.0, 700.0, 4, splits)
-	for t in [Vector2(0.3, 0.17), Vector2(1.2, 0.68)]:
-		for blend in [false, true]:
-			var r := CrowdLayer.cascade_radii(t.x, t.y, d4, blend)
-			var lim := CrowdLayer.shadow_pass_limit(r, d4, 126.0)
-			_check(lim > r[1] and lim < r[2], "угол %.2f, смешивание %s: порог %.0f м между %.0f и %.0f" % [
-				t.y, blend, lim, r[1], r[2]])
-	# дальность теней юнитов дальше второго каскада — порог после третьего; дальше всех — без порога
-	var r4 := CrowdLayer.cascade_radii(tx, ty, d4, true)
-	var lim3 := CrowdLayer.shadow_pass_limit(r4, d4, 200.0)
-	_check(lim3 > r4[2] and lim3 < r4[3], "тени юнитов 200 м — первые три каскада")
-	_check(CrowdLayer.shadow_pass_limit(r4, d4, 400.0) == 0.0, "тени юнитов дальше третьего каскада — во всех")
-	# камера ближе дальности теней (короткий far): каскады короче, порог тоже
-	var dn := CrowdLayer.cascade_distances(0.05, 100.0, 700.0, 4, splits)
-	_check(CrowdLayer.shadow_pass_limit(CrowdLayer.cascade_radii(tx, ty, dn, true), dn, 126.0) == 0.0,
-		"камера видит не дальше 100 м — тени юнитов во всех каскадах")
+		_check(grows, "%s: каскады растут вдвое и больше — шейдер узнаёт каскад прохода по полуширине" % level)
+		var cfg := CrowdLayer.cascade_bands(dist, radii, true)
+		var missing := 0
+		var drawn := 0
+		var units := 0
+		for light in lights:
+			cfg.reach = CrowdLayer.shadow_reach(light, fwd)
+			var reach: Vector2 = cfg.reach
+			var d := 0.0
+			while d <= float(p.crowd_shadow):
+				var mask := CrowdLayer.shadow_cascades(d, cfg)
+				units += 1
+				for k in 4:
+					if mask & (1 << k):
+						drawn += 1
+				# каждая точка кадра, куда может лечь тень юнита, берёт тень из каскада, где юнит есть
+				var e := d - reach.x
+				while e <= d + reach.y:
+					var need := 0
+					for k in count:
+						if e >= float(cfg.lo[k]) and e <= float(cfg.hi[k]):
+							need |= 1 << k
+					if need & ~mask:
+						missing += 1
+					e += 0.5
+				d += 1.0
+		_check(missing == 0, "%s: тень юнита есть во всех каскадах, откуда её читают точки кадра (пропусков %d)" % [level, missing])
+		var per := float(drawn) / maxf(units, 1.0)
+		_check(per <= (2.0 if count == 4 else 1.6), "%s: юнит в среднем в %.2f каскадах из %d (было — во всех)" % [level, per, count])
+	# досягаемость тени: солнце в зените — только радиус юнита; низкое солнце за спиной — тень вперёд
+	var up := CrowdLayer.shadow_reach(Vector3(0.0, -1.0, 0.0), fwd)
+	_check(is_equal_approx(up.x, CrowdLayer.UNIT_RADIUS) and is_equal_approx(up.y, CrowdLayer.UNIT_RADIUS),
+		"солнце в зените: тень не дальше юнита")
+	var behind := CrowdLayer.shadow_reach(Vector3(0.0, -sin(deg_to_rad(10.0)), -cos(deg_to_rad(10.0))), fwd)
+	_check(behind.y > 25.0 and is_equal_approx(behind.x, CrowdLayer.UNIT_RADIUS),
+		"солнце 10° за спиной: тень вперёд на %.0f м, назад — только радиус" % behind.y)
+	# без деления (нет солнца, --crowd_cascades=all) — во всех каскадах
+	_check(CrowdLayer.shadow_cascades(50.0, CrowdLayer._no_cascades(52.0)) == 0xF, "без деления — во всех каскадах")
 
 
 func _round_all(a: PackedFloat32Array) -> String:
