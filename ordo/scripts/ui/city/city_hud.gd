@@ -454,8 +454,8 @@ func on_event(kind: int, _a: int, _b: int, _c: int, pos := Vector2.INF) -> void:
 	var E := SimEvents.Ev
 	if kind == E.RAID_STARTED:
 		top.set_raid_active(true)
-	elif kind == E.RAID_ENDED:
-		top.set_raid_active(false)
+	elif kind == E.RAID_ENDED or kind == E.VICTORY:
+		top.set_raid_active(false)          # конец партии — и конец набега
 	if pos != Vector2.INF and kind in [E.RAID_WARNING, E.RAID_STARTED, E.BUILDING_DESTROYED, E.HERD_STOLEN, E.BUILDING_HIT]:
 		bottom.minimap.ping(pos, UiTheme.RED_LIGHT if kind != E.RAID_WARNING else UiTheme.GOLD_LIGHT)
 

@@ -342,6 +342,8 @@ func idle_workers(p: int) -> PackedInt32Array:
 
 ## Тактов до набега на игрока p: ближайшая волна любого ИИ, −1 — набегов не ждём, 0 — набег идёт
 func raid_eta_ticks(p: int) -> int:
+	if _victory != null and _victory.over:
+		return -1          # партия кончилась — набегов больше нет (табличка «Набег!» уходит)
 	var best := -1
 	for a in _ai:
 		var rd := a as RaidDirector
