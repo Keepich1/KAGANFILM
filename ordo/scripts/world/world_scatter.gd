@@ -155,3 +155,9 @@ func _apply_ranges() -> void:
 		mi.visibility_range_end_margin = 10.0
 		# дизеринг: без «щели» между LOD0 и LOD1, где дерево пропадало бы совсем
 		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# дальние валуны (дальше rock_lod_distance, на «Высоком» 160 м) теней не отбрасывают: тень
+		# камня там — несколько точек кадра, а в каскадах теней это вызов на каждую клетку каждого
+		# вида камня (кадр стратегии: 83 вызова теней из 367 ради 3 тыс. треугольников).
+		# Деревья тень отбрасывают всегда.
+		if mi.get_meta("rock") and lod == 1:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
