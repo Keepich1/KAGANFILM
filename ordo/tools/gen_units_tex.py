@@ -924,13 +924,16 @@ def banner_kipchak(seed=0):
     return p
 
 
-def caparison(main, light, dark, orn, trimc, seed=0, kind="kipchak", field=None, field_w=0.16):
+def caparison(main, light, dark, orn, trimc, seed=0, kind="kipchak", field=None, field_w=0.16, light_mix=0.25,
+              back_k=(0.72, 0.4)):
     """Попона: u — от левого подола через спину к правому, v — от хвоста к груди.
     field — цвет полосы вдоль хребта (у кыпчаков — некрашеный войлок под седлом, доля field_w
-    ширины), бока — цвет стороны: сверху, с камеры RTS, конь читается киноварью (ТЗ 11.2)."""
+    ширины), бока — цвет стороны: сверху, с камеры RTS, конь читается киноварью (ТЗ 11.2).
+    light_mix и back_k — сколько светлого в мазках и насколько светлее спина: у кыпчаков меньше,
+    иначе под низким солнцем киноварь уходит в розовый."""
     def p(c: Canvas, w, h):
-        c.underpaint([_shade(main, 0.85), main, _mix(main, light, 0.15)], cell=44, seed=seed)
-        c.strokes(500, [_mix(main, light, 0.25), _shade(main, 0.75), main], length=(16, 40), width=(4, 10),
+        c.underpaint([_shade(main, 0.85), main, _mix(main, light, light_mix * 0.6)], cell=44, seed=seed)
+        c.strokes(500, [_mix(main, light, light_mix), _shade(main, 0.75), main], length=(16, 40), width=(4, 10),
                   angle=0, angle_jitter=20, alpha=(0.15, 0.35))
         if field:
             f0, f1 = 0.5 - field_w / 2, 0.5 + field_w / 2
@@ -943,7 +946,7 @@ def caparison(main, light, dark, orn, trimc, seed=0, kind="kipchak", field=None,
                 for s in (f0 - 0.07, f1 + 0.07):
                     ram_horn(c, w * s, yy, 22, orn, 3.5, 0.85, seed=int(yy * 3 + s * 100))
         x = np.linspace(0, 1, c.w * c.ss)
-        k = 0.72 + 0.4 * np.exp(-((x - 0.5) / 0.22) ** 2)
+        k = back_k[0] + back_k[1] * np.exp(-((x - 0.5) / 0.22) ** 2)
         arr = np.asarray(c.img, dtype=np.float64)
         c._blend(arr * k[None, :, None])
         for side in (0, 1):
@@ -1493,8 +1496,9 @@ def build_kipchak(path):
     region(img, A, "sleeveX", lamellar("#8a9098", "#3a3e44", "#4a2a1a", main, seed=146, rows=3, cols=10), seed=146)
     region(img, A, "hatx", helmet("#8a9098", "#b58a3c", main, seed=147), seed=147)
     region(img, A, "banner", banner_kipchak(149), seed=149)
-    region(img, A, "caparison", caparison(main, light, dark, "#efe6d2", "#e6dcc4", seed=150, kind="kipchak",
-                                          field="#d8ccb0", field_w=0.16), seed=150)
+    region(img, A, "caparison", caparison(_shade(main, 0.94), light, dark, "#efe6d2", "#e6dcc4", seed=150,
+                                          kind="kipchak", field="#d8ccb0", field_w=0.16, light_mix=0.1,
+                                          back_k=(0.8, 0.22)), seed=150)
     region(img, A, "saddlecloth", caparison("#8e1f2f", "#d0505a", "#4a0f18", "#c9a24a", "#c9a24a", seed=154,
                                             kind="kipchak"), seed=154)
     region(img, A, "cloak", cape(main, light, dark, felt, seed=151), seed=151)
