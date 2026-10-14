@@ -97,6 +97,7 @@ var _cam_pos := Vector3(0.0, 1.0e6, 0.0)
 ## Счёт за прошлую секунду: клубов дыма и пыли пущено, залпов стеной (экран F9)
 var stat := {"smoke": 0, "dust": 0, "merged": 0}
 var _stat_acc := {"smoke": 0, "dust": 0, "merged": 0}
+var _stat_sum := {"smoke": 0, "dust": 0, "merged": 0}  # за прошлые полные секунды
 var _stat_t := 0.0
 
 
@@ -551,7 +552,16 @@ func _frame(delta: float) -> void:
 		_stat_t = 0.0
 		stat = _stat_acc.duplicate()
 		for k in _stat_acc:
+			_stat_sum[k] = int(_stat_sum[k]) + int(_stat_acc[k])
 			_stat_acc[k] = 0
+
+
+## Счёт с начала: клубов дыма и пыли пущено, залпов стеной (проверки: tests/bench_stress_fx.gd)
+func stat_total() -> Dictionary:
+	var out := {}
+	for k in _stat_acc:
+		out[k] = int(_stat_sum[k]) + int(_stat_acc[k])
+	return out
 
 
 ## Ведра пополняются со скоростью, с которой клубы рассеиваются
