@@ -8,16 +8,25 @@ extends Node
 ##   --at=секунды      момент кадра по времени сцены (по умолчанию 1.0)
 ##   --cam=Имя         сделать текущей камеру Camera3D с этим именем
 ##   --quality=high|medium|low  режим качества (ТЗ 11.7; не запоминается)
+##   --light=day|sunset  время суток: день или закат (LightPresets; не запоминается)
 ##   --seed=N          зерно случайностей сцены
 ## Качество: выбор игрока (F2) хранится в user://settings.cfg; при первом запуске —
 ## по видеокарте (WorldQuality.auto_level). Съёмка (--shot, --movie, --hero) — всегда «Высокое»,
 ## если не задано --quality, и настройки не читает и не пишет.
+## Время суток (решение автора 2026-10-14): «День» (по умолчанию) или «Закат» — переключатель в главном
+## меню и в «Настройках», выбор хранится в user://settings.cfg; свет каждого — scripts/world/light_presets.gd,
+## ставит мир (World.apply_light). Съёмка без --light — «День», настройки не читает и не пишет.
 
 signal quality_changed(level: String)
+signal light_mode_changed(mode: String)
 
 const QUALITY_HIGH := "high"
 const QUALITY_MEDIUM := "medium"
 const QUALITY_LOW := "low"
+## Время суток: день (по умолчанию для нового игрока) и закат (одобренный срез стиля)
+const LIGHT_DAY := "day"
+const LIGHT_SUNSET := "sunset"
+const LIGHT_MODES := [LIGHT_DAY, LIGHT_SUNSET]
 const SETTINGS_PATH := "user://settings.cfg"
 ## Главное меню (сцена по умолчанию проекта)
 const MENU_SCENE := "res://scenes/menu/main_menu.tscn"
@@ -25,7 +34,13 @@ const MENU_SCENE := "res://scenes/menu/main_menu.tscn"
 var quality := QUALITY_HIGH
 ## Откуда качество: arg (ключ), saved (выбор игрока), auto (по видеокарте), shot (съёмка), mobile
 var quality_source := "default"
+## Время суток: LIGHT_DAY / LIGHT_SUNSET. Менять через set_light_mode() — мир и меню слушают light_mode_changed
+var light_mode := LIGHT_DAY
+## Откуда время суток: arg (ключ), saved (выбор игрока), default
+var light_source := "default"
 var seed := 1
+## Файл настроек игрока (проверки подменяют его своим до входа в дерево)
+var settings_path := SETTINGS_PATH
 var scene_time := 0.0
 ## Громкость (главная шина, 0..1) и окно во весь экран — настройки игрока (главное меню)
 var volume := 0.8
@@ -73,6 +88,14 @@ func _ready() -> void:
 		else:
 			quality = WorldQuality.auto_level()
 			quality_source = "auto"
+	if _args.has("light") and String(_args["light"]) in LIGHT_MODES:
+		light_mode = _args["light"]
+		light_source = "arg"
+	elif not _capturing():
+		var saved_light := _load_light()
+		if saved_light != "":
+			light_mode = saved_light
+			light_source = "saved"
 
 
 func arg(name: String, default_value := "") -> String:
@@ -107,16 +130,38 @@ func set_quality(level: String, remember := true) -> void:
 	if remember and not _capturing() and not _args.has("quality"):
 		quality_source = "saved"
 		var cfg := ConfigFile.new()
-		cfg.load(SETTINGS_PATH)
+		cfg.load(settings_path)
 		cfg.set_value("graphics", "quality", level)
 		cfg.set_value("graphics", "adapter", RenderingServer.get_video_adapter_name())
-		cfg.save(SETTINGS_PATH)
+		cfg.save(settings_path)
 	quality_changed.emit(level)
+
+
+## Сменить время суток (день / закат); remember — запомнить выбор игрока (user://settings.cfg).
+## Неизвестное значение — «День». Мир ставит свет сразу (World слушает light_mode_changed).
+func set_light_mode(mode: String, remember := true) -> void:
+	if not (mode in LIGHT_MODES):
+		mode = LIGHT_DAY
+	var changed := mode != light_mode
+	light_mode = mode
+	if remember and not _capturing() and not _args.has("light"):
+		light_source = "saved"
+		_save_value("graphics", "light", mode)
+	if changed:
+		light_mode_changed.emit(mode)
+
+
+func _load_light() -> String:
+	var cfg := ConfigFile.new()
+	if cfg.load(settings_path) != OK:
+		return ""
+	var m := String(cfg.get_value("graphics", "light", ""))
+	return m if m in LIGHT_MODES else ""
 
 
 func _load_quality() -> String:
 	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS_PATH) != OK:
+	if cfg.load(settings_path) != OK:
 		return ""
 	var q := String(cfg.get_value("graphics", "quality", ""))
 	return q if q in [QUALITY_HIGH, QUALITY_MEDIUM, QUALITY_LOW] else ""
@@ -179,14 +224,14 @@ func _save_value(section: String, key: String, v: Variant) -> void:
 	if _capturing():
 		return
 	var cfg := ConfigFile.new()
-	cfg.load(SETTINGS_PATH)
+	cfg.load(settings_path)
 	cfg.set_value(section, key, v)
-	cfg.save(SETTINGS_PATH)
+	cfg.save(settings_path)
 
 
 func _load_prefs() -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS_PATH) != OK:
+	if cfg.load(settings_path) != OK:
 		return
 	set_volume(float(cfg.get_value("audio", "volume", 0.8)), false)
 	if bool(cfg.get_value("display", "fullscreen", false)):

@@ -198,10 +198,8 @@ func apply(level: String) -> void:
 		var volfog: bool = p.volfog
 		env.volumetric_fog_enabled = volfog and not (_has_arg("nofog") or _has_arg("novolfog"))
 		env.ssao_enabled = p.ssao
-		# без объёмного тумана низинам нужна обычная высотная дымка погуще
-		env.fog_height_density = 0.025 if volfog else 0.06
-		env.fog_density = 0.0005 if volfog else 0.0016
-		env.fog_sun_scatter = 0.05 if volfog else 0.25
+		# без объёмного тумана низинам нужна обычная высотная дымка погуще (числа — по времени суток)
+		LightPresets.apply_fog(env, String(world.get("light_mode")) if world.get("light_mode") else LightPresets.current_mode(), volfog)
 		if we.compositor:
 			# --post=full|half|off и --post_cap=N подменяют живописный фильтр уровня (сравнение кадров, F9)
 			var post := _arg("post", String(p.post))
