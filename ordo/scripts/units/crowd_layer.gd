@@ -517,7 +517,8 @@ static func _no_cascades(near: float) -> Dictionary:
 ##          (со смешиванием каскадов — от конца позапрошлого, как у движка);
 ##   reach — досягаемость тени юнита по глубине: тень и сам юнит лежат от глубины юнита − x до + y.
 ## Нет солнца с тенью, камера не перспективная или --crowd_cascades=all — без деления (во всех каскадах).
-func _shadow_cfg(cam: Camera3D) -> Dictionary:
+## aspect — ширина кадра к высоте (0 — по окну; замер без окна задаёт свой).
+func _shadow_cfg(cam: Camera3D, aspect := 0.0) -> Dictionary:
 	var whole := minf(_lod_d, _shadow_end())
 	if _casc_mode == "all" or cam == null or cam.projection != Camera3D.PROJECTION_PERSPECTIVE or not is_inside_tree():
 		return _no_cascades(whole)
@@ -530,8 +531,9 @@ func _shadow_cfg(cam: Camera3D) -> Dictionary:
 			count = 2
 		DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS:
 			count = 4
-	var size := get_viewport().get_visible_rect().size
-	var aspect := size.x / maxf(size.y, 1.0)
+	if aspect <= 0.0:
+		var size := get_viewport().get_visible_rect().size
+		aspect = size.x / maxf(size.y, 1.0)
 	var t := tan(deg_to_rad(cam.fov) * 0.5)
 	var by_height := cam.keep_aspect == Camera3D.KEEP_HEIGHT
 	var dist := cascade_distances(cam.near, cam.far, sun.directional_shadow_max_distance, count,

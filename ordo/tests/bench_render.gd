@@ -1,9 +1,11 @@
 extends SceneTree
 ## Замер отрисовки среза (видеокарта): вызовы отрисовки, треугольники и объекты — отдельно основной
 ## проход и проходы теней (RenderingServer.viewport_get_render_info), по уровням качества и камерам,
-## с нагрузкой F9 (+3000 солдат) и эффектами боя. Нужен настоящий рендер (не --headless):
+## с нагрузкой F9 (+3000 солдат) и эффектами боя. Счёт движка — только с настоящим рендером:
 ##   tools/godot.sh --path ordo --resolution 1920x1080 --audio-driver Dummy --fixed-fps 30 \
 ##       --script res://tests/bench_render.gd -- --quality=high [ключи]
+## Только толпа по юнитам (что остаётся после шейдера) — быстро, без видеокарты:
+##   godot --headless --path ordo --script res://tests/bench_render.gd -- --stress=2 --freeze
 ## Ключи (после «--»):
 ##   --presets=high,medium,low   уровни по очереди (смена как по F2: Ordo.set_quality)
 ##   --cams=CamRTS,CamBattleRTS  камеры (CamBattleRTS — та, что после F9 по умолчанию)
@@ -26,6 +28,11 @@ extends SceneTree
 ##                               процессора за работу видеокарты (шумно при занятой машине), но доли мер видны
 ## Числа вызовов и треугольников честны и на программном Vulkan (lavapipe): это счёт отправленного
 ## на видеокарту. Время видеокарты здесь не меряется — его смотреть на F9 у автора.
+## Толпа отправляет больше, чем рисует: шейдер сжимает в точку юнитов не своей полосы LOD, вне кадра
+## прохода и вне каскадов, куда падает их тень. Строка «толпа по юнитам» — оценка того, что остаётся
+## (по каждому юниту, как в шейдере: полоса LOD, кадр камеры, каскады тени; кадр каскада не учтён —
+## оценка сверху). С --headless счёта движка нет (нули), а толпа по юнитам — есть: быстро, без видеокарты
+## (кадр 1920 × 1080 для каскадов задаётся сам).
 ## До замера (загрузка, разогрев боя) 3D не рисуется (Viewport.disable_3d).
 ## Процессор: «толпа» и «эффекты» — PerfMeter view / fx (мс за последний кадр замера).
 
@@ -43,6 +50,7 @@ var _out := ""
 var _results: Array = []
 var _started := false
 var _gpu_rounds := 0
+var _headless := DisplayServer.get_name() == "headless"
 
 ## Варианты --gpu_ab: имя → ключи сравнения WorldQuality (пусто — уровень как есть)
 const GPU_VARIANTS := {
@@ -85,6 +93,10 @@ func _initialize() -> void:
 			"gpu_ab":
 				_gpu_rounds = maxi(1, int(v)) if v != "" else 3
 				_full = true
+	if _headless:
+		# без окна кадр 64 × 64 — каскады теней толпы считались бы для другого кадра
+		root.size = Vector2i(1920, 1080)
+		print("[замер] без видеокарты (--headless): счёта движка нет, только толпа по юнитам")
 	change_scene_to_file(SLICE)
 
 
@@ -209,12 +221,12 @@ func _sample() -> Dictionary:
 
 func _measure(level: String, cam_name: String, settle := -1) -> Dictionary:
 	for i in (_settle if settle < 0 else settle):
-		await RenderingServer.frame_post_draw
+		await _next_frame()
 	var acc := {}
 	var view_ms := 0.0
 	var fx_ms := 0.0
 	for i in _frames:
-		await RenderingServer.frame_post_draw
+		await _next_frame()
 		var s := _sample()
 		for k in s:
 			acc[k] = int(acc.get(k, 0)) + int(s[k])
@@ -229,7 +241,116 @@ func _measure(level: String, cam_name: String, settle := -1) -> Dictionary:
 	r["view_ms"] = view_ms / _frames
 	r["fx_ms"] = fx_ms / _frames
 	r["particles"] = _particles()
+	r.merge(_crowd_estimate())
 	return r
+
+
+## Толпа по юнитам — что остаётся после отбрасывания в шейдере (crowd.gdshader, crowd_keep), тем же
+## правилом: основной проход — юниты, чья сфера (над ступнями, радиус 4 м) в кадре камеры, своей моделью
+## (LOD0 ближе дальности LOD, дальше LOD1); проходы теней — юниты ближе конца теней (подробной моделью
+## ближе near_shadow_distance, дальше облегчённой) в каждом каскаде, куда падает их тень
+## (CrowdLayer.shadow_cascades) и в чей квадрат (полуширина каскада вокруг середины его куска кадра,
+## в осях солнца) попадает сфера юнита; движок до того отбрасывает отбрасывающих тень вне куска кадра,
+## протянутого к солнцу, — здесь: юнит дальше боковых плоскостей кадра, чем радиус и длина его тени.
+## Кадр — 16:9 без окна (--headless), иначе окна. Оценка сверху (кадр каскада — шаром, как в шейдере).
+func _crowd_estimate() -> Dictionary:
+	var cam := root.get_camera_3d()
+	var out := {"crowd_units": 0, "crowd_main_est": 0, "crowd_shadow_est": 0, "crowd_casc": 0.0}
+	if cam == null or current_scene == null:
+		return out
+	var size := Vector2(root.size)
+	var aspect := 16.0 / 9.0 if _headless or size.y < 1.0 else size.x / size.y
+	var proj := Projection.create_perspective(cam.fov, aspect, cam.near, cam.far)
+	var view := cam.global_transform.affine_inverse()
+	var cp := cam.global_position
+	var fwd := -cam.global_basis.z
+	var sun := current_scene.get_tree().get_first_node_in_group(CrowdLayer.SUN_GROUP) as DirectionalLight3D
+	var sx := sun.global_basis.x if sun else Vector3.RIGHT
+	var sy := sun.global_basis.y if sun else Vector3.UP
+	# боковые плоскости кадра (наружу) и длина тени юнита при этом солнце (как CrowdLayer.shadow_reach)
+	var ty := tan(deg_to_rad(cam.fov) * 0.5)
+	var tx := ty * aspect
+	var sides: Array[Vector3] = [Vector3(1.0, 0.0, tx).normalized(), Vector3(-1.0, 0.0, tx).normalized(),
+		Vector3(0.0, 1.0, ty).normalized(), Vector3(0.0, -1.0, ty).normalized()]
+	var light := -sun.global_basis.z if sun else Vector3.DOWN
+	var hl := Vector2(light.x, light.z).length()
+	var shadow_len := minf(CrowdLayer.SHADOW_HEIGHT * hl / maxf(-light.y, 0.01), CrowdLayer.SHADOW_REACH_MAX)
+	var casc_sum := 0
+	var casters := 0
+	for v: BattleView in _views(current_scene):
+		for l in v.layers.values():
+			var layer := l as CrowdLayer
+			if layer == null or layer._mm.size() < CrowdLayer.PARTS:
+				continue
+			var t0 := _tris(layer._mm[CrowdLayer.Part.LOD0_NEAR].mesh)
+			var t1 := _tris(layer._mm[CrowdLayer.Part.LOD1].mesh)
+			var cfg: Dictionary = layer._shadow_cfg(cam, aspect)
+			var send: float = 0.0 if layer._casc_mode == "none" else layer._shadow_end()
+			var near: float = cfg.near
+			var lod: float = layer._lod_d
+			var r4: Vector4 = cfg.r
+			var lo4: Vector4 = cfg.lo
+			var hi4: Vector4 = cfg.hi
+			var buf := layer.buffer()
+			for i in layer.get_visible_count():
+				var o := Vector3(buf[i * 16 + 3], buf[i * 16 + 7], buf[i * 16 + 11])
+				var d := cp.distance_to(o)
+				out.crowd_units += 1
+				# кадр камеры — как crowd_keep: сфера над ступнями в пирамиде (без ближней и дальней плоскости)
+				var c := proj * _v4(view * (o + Vector3(0.0, 1.5, 0.0)))
+				var rw := absf(proj.z.w) * 4.0
+				if absf(c.x) <= c.w + absf(proj.x.x) * 4.0 + rw and absf(c.y) <= c.w + absf(proj.y.y) * 4.0 + rw:
+					out.crowd_main_est += t0 if d < lod else t1
+				if d >= send:
+					continue
+				var beside := false
+				var oc := view * o
+				for n in sides:
+					if n.dot(oc) > CrowdLayer.UNIT_RADIUS + shadow_len:
+						beside = true
+						break
+				if beside:
+					continue
+				var mask := CrowdLayer.shadow_cascades(fwd.dot(o - cp), cfg)
+				var k := 0
+				for b in 4:
+					if not (mask >> b) & 1:
+						continue
+					if r4[b] > 0.0:
+						var cc := cp + fwd * (0.5 * (lo4[b] + minf(hi4[b], cam.far)))
+						var e := o - cc
+						if absf(e.dot(sx)) > r4[b] + 4.0 or absf(e.dot(sy)) > r4[b] + 4.0:
+							continue
+					k += 1
+				out.crowd_shadow_est += (t0 if d < near else t1) * k
+				casc_sum += k
+				casters += 1
+	out.crowd_casc = float(casc_sum) / maxf(casters, 1.0)
+	return out
+
+
+func _v4(p: Vector3) -> Vector4:
+	return Vector4(p.x, p.y, p.z, 1.0)
+
+
+## Треугольников в меше (все поверхности)
+func _tris(mesh: Mesh) -> int:
+	if mesh == null:
+		return 0
+	var n := 0
+	for s in mesh.get_surface_count():
+		var a := mesh.surface_get_arrays(s)
+		var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX] if a[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		n += idx.size() / 3 if idx.size() > 0 else (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+	return n
+
+
+## Следующий кадр: после отрисовки; без видеокарты (--headless) кадров отрисовки нет — следующий кадр игры
+func _next_frame() -> void:
+	if _headless:
+		await process_frame
+	else:
+		await RenderingServer.frame_post_draw
 
 
 func _frame_ms(name: StringName) -> float:
@@ -294,18 +415,20 @@ func _print_row(r: Dictionary) -> void:
 	print("[замер] %-6s %-13s вызовов %4d (основн. %d, тени %d) · треугольников %s (основн. %s, тени %s) · толпа %.1f мс · эффекты %.1f мс" % [
 		r.level, r.cam, r.draws, r.main_draws, r.shadow_draws, _num(r.prims), _num(r.main_prims), _num(r.shadow_prims),
 		r.view_ms, r.fx_ms])
+	print("         толпа по юнитам (%d): шейдер оставляет треугольников основн. %s, тени %s · тень юнита в среднем в %.2f каскадах" % [
+		r.crowd_units, _num(r.crowd_main_est), _num(r.crowd_shadow_est), r.crowd_casc])
 
 
 func _print_table() -> void:
 	print("")
-	print("| уровень | камера | вызовов: всего / основн. / тени | треугольников: всего / основн. / тени | объектов осн./тени | толпа мс | эффекты мс |")
-	print("|---|---|---|---|---|---|---|")
+	print("| уровень | камера | вызовов: всего / основн. / тени | треугольников: всего / основн. / тени | объектов осн./тени | толпа по юнитам: основн. / тени (каскадов на юнит) | толпа мс | эффекты мс |")
+	print("|---|---|---|---|---|---|---|---|")
 	for r: Dictionary in _results:
 		if r.has("part"):
 			continue
-		print("| %s | %s | %d / %d / %d | %s / %s / %s | %d / %d | %.1f | %.1f |" % [r.level, r.cam, r.draws, r.main_draws,
-			r.shadow_draws, _num(r.prims), _num(r.main_prims), _num(r.shadow_prims), r.main_objs, r.shadow_objs,
-			r.view_ms, r.fx_ms])
+		print("| %s | %s | %d / %d / %d | %s / %s / %s | %d / %d | %s / %s (%.2f) | %.1f | %.1f |" % [r.level, r.cam, r.draws,
+			r.main_draws, r.shadow_draws, _num(r.prims), _num(r.main_prims), _num(r.shadow_prims), r.main_objs, r.shadow_objs,
+			_num(r.crowd_main_est), _num(r.crowd_shadow_est), r.crowd_casc, r.view_ms, r.fx_ms])
 
 
 ## Время видеокарты «Высокого»: варианты по кругу, на каждый — кадр на смену (карта теней и сетка
