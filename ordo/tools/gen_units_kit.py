@@ -29,7 +29,9 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Человек стоя (пехота). Части: номер → имя (для шейдера: H_<ИМЯ>)
 HUMAN_PARTS = ["ROOT", "PELVIS", "CHEST", "HEAD", "UARM_L", "FARM_L", "UARM_R", "FARM_R",
-               "THIGH_L", "SHIN_L", "THIGH_R", "SHIN_R", "WEAPON", "ITEM", "CLOTH", "SKIRT_L", "SKIRT_R"]
+               "THIGH_L", "SHIN_L", "THIGH_R", "SHIN_R", "WEAPON", "ITEM", "CLOTH", "SKIRT_L", "SKIRT_R",
+               # инструменты работников (tools/gen_units_work.py): видна та, что нужна работе
+               "TOOL_AXE", "TOOL_HOE", "TOOL_HAMMER", "TOOL_LOAD"]
 HUMAN_PIV = {
     "PELVIS": (0.0, 0.98, 0.0),
     "CHEST": (0.0, 1.06, 0.0),
@@ -179,6 +181,71 @@ def bake_shade(m: Mesh, y0, y1, low=0.72, down=0.85, parts=None):
     return m
 
 
+def bake_ao(m: Mesh, exclude_parts=(), rays=24, dist=0.26, strength=0.6, floor=0.45, seed=7):
+    """Нарисованная тень у стыков и в складках (ТЗ 11.1: свет и тень частично в цвете):
+    доля лучей полусферы вокруг нормали, которые упираются в соседние части в позе покоя.
+    Множитель ложится в COLOR.r (как bake_shade). exclude_parts — части, которые не затеняют
+    (оружие, знамя, инструменты — они двигаются и уходят от тела)."""
+    if not len(m.F):
+        return m
+    part_f = np.round(m.UV2[m.F[:, 0], 0]).astype(int)
+    F = m.F[~np.isin(part_f, list(exclude_parts))]
+    v0 = m.P[F[:, 0]]
+    e1 = m.P[F[:, 1]] - v0
+    e2 = m.P[F[:, 2]] - v0
+    # косинусное распределение направлений (одна и та же сетка лучей для всех вершин)
+    k = np.arange(rays) + 0.5
+    u1 = k / rays
+    phi = k * 2.399963229728653 + seed
+    loc = np.column_stack([np.sqrt(u1) * np.cos(phi), np.sqrt(u1) * np.sin(phi), np.sqrt(1 - u1)])
+    N = m.N / np.maximum(np.linalg.norm(m.N, axis=1, keepdims=True), 1e-9)
+    a = np.where(np.abs(N[:, 1:2]) < 0.9, np.array([[0.0, 1.0, 0.0]]), np.array([[1.0, 0.0, 0.0]]))
+    t1 = np.cross(a, N)
+    t1 /= np.maximum(np.linalg.norm(t1, axis=1, keepdims=True), 1e-9)
+    t2 = np.cross(N, t1)
+    occ = np.zeros(len(m.P))
+    chunk = max(1, 24000 // max(len(F), 1))
+    for s in range(0, len(m.P), chunk):
+        sl = slice(s, s + chunk)
+        D = (loc[None, :, 0:1] * t1[sl, None] + loc[None, :, 1:2] * t2[sl, None] + loc[None, :, 2:3] * N[sl, None])
+        D = D.reshape(-1, 3)
+        O = np.repeat(m.P[sl] + N[sl] * 0.006, rays, axis=0)
+        # Мёллер — Трумбор: лучи × треугольники
+        pv = np.cross(D[:, None], e2[None])
+        det = np.einsum("rtk,tk->rt", pv, e1)
+        inv = 1.0 / np.where(np.abs(det) < 1e-12, 1e-12, det)
+        tv = O[:, None] - v0[None]
+        u = np.einsum("rtk,rtk->rt", tv, pv) * inv
+        qv = np.cross(tv, e1[None])
+        v = np.einsum("rk,rtk->rt", D, qv) * inv
+        t = np.einsum("rtk,tk->rt", qv, e2) * inv
+        hit = (np.abs(det) > 1e-12) & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-4) & (t < dist)
+        w = np.where(hit, 1.0 - t / dist, 0.0).max(axis=1)
+        occ[sl] = w.reshape(-1, rays).mean(axis=1)
+    m.C[:, 0] *= np.clip(1.0 - strength * occ, floor, 1.0)
+    return m
+
+
+def joint_weight(m: Mesh, joint, axis, radius=0.12, peak=0.5):
+    """Вес смешивания с соседней костью у сустава (плечо, локоть, колено, запястье коня):
+    peak у самого сустава → 0 через radius вдоль кости. axis — направление кости ОТ сустава
+    (у плеча — к локтю, у локтя для плеча — назад к плечу, для предплечья — к кисти).
+    Считается по оси, а не по расстоянию до точки: всё кольцо у сустава получает один вес,
+    и кольца соседних костей сходятся без щели. Пишется в UV2.y; кого смешивать — решает
+    шейдер толпы (crowd_human / crowd_horse: ближе к какому суставу вершина)."""
+    a = v3(axis) / max(np.linalg.norm(axis), 1e-9)
+    t = (m.P - v3(joint)[None]) @ a
+    x = np.clip(1.0 - np.maximum(t, 0.0) / radius, 0.0, 1.0)
+    m.UV2[:, 1] = np.maximum(m.UV2[:, 1], peak * x * x * (3.0 - 2.0 * x))
+    return m
+
+
+def drop_degenerate(m: Mesh) -> Mesh:
+    n = np.cross(m.P[m.F[:, 1]] - m.P[m.F[:, 0]], m.P[m.F[:, 2]] - m.P[m.F[:, 0]])
+    m.F = m.F[np.linalg.norm(n, axis=1) > 1e-10]
+    return m
+
+
 # ---------------------------------------------------------------- запись
 
 GLB_IMPORT = """[remap]
@@ -261,7 +328,7 @@ def lerp(a, b, t):
     return v3(a) + (v3(b) - v3(a)) * t
 
 
-__all__ = ["HUMAN_PARTS", "HUMAN_PIV", "RIDER_PARTS", "HORSE_PIV", "SHEEP_PARTS", "SHEEP_PIV", "HP", "RP", "SP",
+__all__ = ["bake_ao", "joint_weight", "drop_degenerate", "HUMAN_PARTS", "HUMAN_PIV", "RIDER_PARTS", "HORSE_PIV", "SHEEP_PARTS", "SHEEP_PIV", "HP", "RP", "SP",
            "RIDER_OFF", "ring_axis", "limb", "seg", "two_sided", "Atlas", "tag", "bake_shade", "ensure_import",
            "write_skeleton_include", "GLB_IMPORT", "PNG_IMPORT", "v3", "smoothstep", "lerp", "math", "np",
            "Mesh", "loft", "lathe", "tube", "ellipsoid", "grid", "ring"]

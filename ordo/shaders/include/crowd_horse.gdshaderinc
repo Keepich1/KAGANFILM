@@ -389,6 +389,19 @@ RPose rider_pose(int st, float ph, float aux, float var, float t) {
 	return p;
 }
 
+// Сгиб у сустава (как hp_joint_blend у человека): вес UV2.y, верхняя кость у корня — с родителем,
+// у среднего сустава (локоть, запястье, скакательный сустав) — с нижней; нижняя — с верхней.
+Xf rp_joint_blend(bool upper, Xf parent, Xf up, Xf lo, vec3 v, vec3 root, vec3 mid, float wgt) {
+	Xf X = upper ? up : lo;
+	if (wgt <= 0.001) {
+		return X;
+	}
+	if (upper) {
+		return xf_mix(up, distance(v, root) < distance(v, mid) ? parent : lo, wgt);
+	}
+	return xf_mix(lo, up, wgt);
+}
+
 Xf rider_bone(int part, RPose p, inout vec3 v, float wgt, vec3 wind_m, float t, float var) {
 	Xf X = xf_id();
 	Xf B = rp_body(p);
@@ -404,22 +417,22 @@ Xf rider_bone(int part, RPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 		Xf up;
 		Xf lo;
 		ik_chain(RP_F_TOP_L, RP_F_KNEE_L, RP_F_HOOF_L, B, p.hoof_fl, fwd, 1.12, up, lo);
-		X = part == R_FU_L ? up : lo;
+		X = rp_joint_blend(part == R_FU_L, B, up, lo, v, RP_F_TOP_L, RP_F_KNEE_L, wgt);
 	} else if (part == R_FU_R || part == R_FL_R) {
 		Xf up;
 		Xf lo;
 		ik_chain(RP_F_TOP_R, RP_F_KNEE_R, RP_F_HOOF_R, B, p.hoof_fr, fwd, 1.12, up, lo);
-		X = part == R_FU_R ? up : lo;
+		X = rp_joint_blend(part == R_FU_R, B, up, lo, v, RP_F_TOP_R, RP_F_KNEE_R, wgt);
 	} else if (part == R_HU_L || part == R_HL_L) {
 		Xf up;
 		Xf lo;
 		ik_chain(RP_H_TOP_L, RP_H_HOCK_L, RP_H_HOOF_L, B, p.hoof_hl, -fwd, 1.12, up, lo);
-		X = part == R_HU_L ? up : lo;
+		X = rp_joint_blend(part == R_HU_L, B, up, lo, v, RP_H_TOP_L, RP_H_HOCK_L, wgt);
 	} else if (part == R_HU_R || part == R_HL_R) {
 		Xf up;
 		Xf lo;
 		ik_chain(RP_H_TOP_R, RP_H_HOCK_R, RP_H_HOOF_R, B, p.hoof_hr, -fwd, 1.12, up, lo);
-		X = part == R_HU_R ? up : lo;
+		X = rp_joint_blend(part == R_HU_R, B, up, lo, v, RP_H_TOP_R, RP_H_HOCK_R, wgt);
 	} else if (part == R_TAIL) {
 		// хвост гнётся по длине: поворот растёт к концу, по нему бежит волна
 		vec3 tr = p.tail_rot * (0.45 + 0.9 * wgt);
@@ -439,13 +452,15 @@ Xf rider_bone(int part, RPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 	} else if (part == R_R_UARM_L || part == R_R_FARM_L || part == R_R_ITEM) {
 		Xf up;
 		Xf lo;
-		ik_chain(RP_R_SHOULDER_L, RP_R_ELBOW_L, RP_R_HAND_L, rp_torso(p), p.hand_l, p.elbow_l, 1.04, up, lo);
-		X = part == R_R_UARM_L ? up : lo;
+		Xf T = rp_torso(p);
+		ik_chain(RP_R_SHOULDER_L, RP_R_ELBOW_L, RP_R_HAND_L, T, p.hand_l, p.elbow_l, 1.04, up, lo);
+		X = part == R_R_ITEM ? lo : rp_joint_blend(part == R_R_UARM_L, T, up, lo, v, RP_R_SHOULDER_L, RP_R_ELBOW_L, wgt);
 	} else if (part == R_R_UARM_R || part == R_R_FARM_R) {
 		Xf up;
 		Xf lo;
-		ik_chain(RP_R_SHOULDER_R, RP_R_ELBOW_R, RP_R_HAND_R, rp_torso(p), p.hand_r, p.elbow_r, 1.04, up, lo);
-		X = part == R_R_UARM_R ? up : lo;
+		Xf T = rp_torso(p);
+		ik_chain(RP_R_SHOULDER_R, RP_R_ELBOW_R, RP_R_HAND_R, T, p.hand_r, p.elbow_r, 1.04, up, lo);
+		X = rp_joint_blend(part == R_R_UARM_R, T, up, lo, v, RP_R_SHOULDER_R, RP_R_ELBOW_R, wgt);
 	} else if (part == R_R_WEAPON || part == R_R_CLOTH) {
 		X = xf_grip(p.w_rot, p.w_pos, RP_R_HAND_R, p.w_vis);
 		if (part == R_R_CLOTH) {

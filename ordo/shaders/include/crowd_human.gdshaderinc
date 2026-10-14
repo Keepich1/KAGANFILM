@@ -41,10 +41,10 @@ const vec3 H_SACK_PT = vec3(-0.17, 1.58, -0.05);
 // Инструменты работников — отдельные части (tools/gen_units_work.py), видна та, что нужна работе.
 // Хват в правой кисти (HP_HAND_R) в позе покоя, ось инструмента +Y, лезвие/боёк в +Z.
 // Бревно на плече держится за точку H_LOAD_PT. Невидимые сжимаются в точку (как оружие при бегстве).
-const int H_TOOL_AXE = 17;     // топор: рубит (WORK, z = 0)
-const int H_TOOL_HOE = 18;     // кетмень: копает (z = 0.25)
-const int H_TOOL_HAMMER = 19;  // молот / колотушка: строит (z = 0.5)
-const int H_TOOL_LOAD = 20;    // бревно на плече: несёт дерево (z = 0.875); мешок (z = 0.75) — часть ITEM
+// Номера частей — в crowd_skeletons.gdshaderinc (HUMAN_PARTS в gen_units_kit.py):
+//   H_TOOL_AXE 17 топор: рубит (WORK, z = 0); H_TOOL_HOE 18 кетмень: копает (z = 0.25);
+//   H_TOOL_HAMMER 19 молот / колотушка: строит (z = 0.5);
+//   H_TOOL_LOAD 20 бревно на плече: несёт дерево (z = 0.875); мешок (z = 0.75) — часть ITEM
 const vec3 H_LOAD_PT = vec3(-0.2, 1.565, -0.06);
 
 struct HPose {
@@ -807,6 +807,19 @@ HPose human_pose(int st, float ph, float aux, float var, float t) {
 	return p;
 }
 
+// Сгиб у сустава: вершины верхней кости у корня (плечо, бедро) смешиваются с родителем
+// (грудь, таз), у среднего сустава (локоть, колено) — с нижней костью; нижняя кость у сустава —
+// с верхней. Вес — UV2.y (gen_units_kit.joint_weight), 0 — жёсткая часть (кулак, обшлаг, сапог).
+Xf hp_joint_blend(bool upper, Xf X, Xf parent, Xf up, Xf lo, vec3 v, vec3 root, vec3 mid, float wgt) {
+	if (wgt <= 0.001) {
+		return X;
+	}
+	if (upper) {
+		return xf_mix(up, distance(v, root) < distance(v, mid) ? parent : lo, wgt);
+	}
+	return xf_mix(lo, up, wgt);
+}
+
 // Преобразование части part (вершина v в позе покоя; ткань деформируется здесь же)
 Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, float var) {
 	Xf X = xf_id();
@@ -819,8 +832,12 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 	} else if (part == H_UARM_L || part == H_FARM_L || (part == H_ITEM && item_kind == IK_SHIELD)) {
 		Xf up;
 		Xf lo;
-		ik_chain(HP_SHOULDER_L, HP_ELBOW_L, HP_HAND_L, hp_chest(p), p.hand_l, p.elbow_l, 1.04, up, lo);
+		Xf C = hp_chest(p);
+		ik_chain(HP_SHOULDER_L, HP_ELBOW_L, HP_HAND_L, C, p.hand_l, p.elbow_l, 1.04, up, lo);
 		X = part == H_UARM_L ? up : lo;
+		if (part != H_ITEM) {
+			X = hp_joint_blend(part == H_UARM_L, X, C, up, lo, v, HP_SHOULDER_L, HP_ELBOW_L, wgt);
+		}
 		if (part == H_ITEM) {
 			X.b *= p.i_vis;
 			X.o = mix(xf_pt(lo, HP_HAND_L), X.o, p.i_vis);
@@ -828,8 +845,9 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 	} else if (part == H_UARM_R || part == H_FARM_R) {
 		Xf up;
 		Xf lo;
-		ik_chain(HP_SHOULDER_R, HP_ELBOW_R, HP_HAND_R, hp_chest(p), p.hand_r, p.elbow_r, 1.04, up, lo);
-		X = part == H_UARM_R ? up : lo;
+		Xf C = hp_chest(p);
+		ik_chain(HP_SHOULDER_R, HP_ELBOW_R, HP_HAND_R, C, p.hand_r, p.elbow_r, 1.04, up, lo);
+		X = hp_joint_blend(part == H_UARM_R, part == H_UARM_R ? up : lo, C, up, lo, v, HP_SHOULDER_R, HP_ELBOW_R, wgt);
 	} else if (part == H_THIGH_L || part == H_SHIN_L || part == H_SKIRT_L) {
 		Xf P = hp_pel(p);
 		Xf up;
@@ -842,7 +860,7 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 			v.xz += normalize(v.xz + vec2(0.0001)) * p.flare * wgt;
 			X = xf_mul(P, xf_piv(rot_z(roll * 0.2) * rot_x(-pitch * p.skirt), HP_SKIRT_L, vec3(0.0)));
 		} else {
-			X = part == H_THIGH_L ? up : lo;
+			X = hp_joint_blend(part == H_THIGH_L, part == H_THIGH_L ? up : lo, P, up, lo, v, HP_HIP_L, HP_KNEE_L, wgt);
 		}
 	} else if (part == H_THIGH_R || part == H_SHIN_R || part == H_SKIRT_R) {
 		Xf P = hp_pel(p);
@@ -856,7 +874,7 @@ Xf human_bone(int part, HPose p, inout vec3 v, float wgt, vec3 wind_m, float t, 
 			v.xz += normalize(v.xz + vec2(0.0001)) * p.flare * wgt;
 			X = xf_mul(P, xf_piv(rot_z(roll * 0.2) * rot_x(-pitch * p.skirt), HP_SKIRT_R, vec3(0.0)));
 		} else {
-			X = part == H_THIGH_R ? up : lo;
+			X = hp_joint_blend(part == H_THIGH_R, part == H_THIGH_R ? up : lo, P, up, lo, v, HP_HIP_R, HP_KNEE_R, wgt);
 		}
 	} else if (part == H_WEAPON || part == H_CLOTH) {
 		X = xf_grip(p.w_rot, p.w_pos, HP_HAND_R, p.w_vis);

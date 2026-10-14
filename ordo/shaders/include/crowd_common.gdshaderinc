@@ -22,6 +22,13 @@ Xf xf_mul(Xf a, Xf c) {
 	return Xf(a.b * c.b, a.b * c.o + a.o);
 }
 
+// Смешивание двух костей у сустава (линейное, как скиннинг): w = 0 — a, w = 1 — b.
+// Вес w — UV2.y вершины (gen_units_kit.joint_weight): рукав, штанина, нога коня гнутся
+// дугой, а не ломаются щелью между жёсткими частями.
+Xf xf_mix(Xf a, Xf b, float w) {
+	return Xf(a.b * (1.0 - w) + b.b * w, mix(a.o, b.o, w));
+}
+
 // Поворот r вокруг точки piv и сдвиг off
 Xf xf_piv(mat3 r, vec3 piv, vec3 off) {
 	return Xf(r, piv - r * piv + off);
