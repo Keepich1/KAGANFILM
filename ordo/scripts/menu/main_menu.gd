@@ -566,6 +566,9 @@ func _make_theme() -> Theme:
 	var empty := StyleBoxEmpty.new()
 	for st in ["normal", "hover", "pressed", "focus", "hover_pressed", "disabled"]:
 		th.set_stylebox(st, "CheckButton", empty)
+	# переключатель крупный и контрастный (ТЗ 11.2): выкл — тёмная дорожка, вкл — латунь
+	th.set_icon("unchecked", "CheckButton", _switch_icon(false))
+	th.set_icon("checked", "CheckButton", _switch_icon(true))
 	# ползунок: латунная дорожка и головка
 	var track := StyleBoxFlat.new()
 	track.bg_color = Color(INK_SOFT.r, INK_SOFT.g, INK_SOFT.b, 0.35)
@@ -581,6 +584,38 @@ func _make_theme() -> Theme:
 	th.set_stylebox("grabber_area", "HSlider", fill)
 	th.set_stylebox("grabber_area_highlight", "HSlider", fill)
 	return th
+
+
+## Значок переключателя 64×32: дорожка-капсула с ободком и головка (вкл — справа, латунная)
+static func _switch_icon(on: bool) -> Texture2D:
+	const W := 64
+	const H := 32
+	var img := Image.create(W, H, false, Image.FORMAT_RGBA8)
+	var r := H * 0.5 - 1.0
+	var knob := Vector2(W - H * 0.5, H * 0.5) if on else Vector2(H * 0.5, H * 0.5)
+	var track := BRASS_DIM if on else Color(INK_SOFT.r, INK_SOFT.g, INK_SOFT.b, 0.45)
+	var rim := INK
+	var head := BRASS if on else PARCH
+	for y in H:
+		for x in W:
+			var p := Vector2(x + 0.5, y + 0.5)
+			# расстояние до капсулы: отрезок между центрами торцов
+			var cx := clampf(p.x, H * 0.5, W - H * 0.5)
+			var d := p.distance_to(Vector2(cx, H * 0.5)) - r
+			var c := Color(0, 0, 0, 0)
+			if d < 0.0:
+				c = track
+			if absf(d + 1.0) < 1.2:
+				c = rim
+			var dk := p.distance_to(knob) - (r - 3.0)
+			if dk < 0.0:
+				c = head
+			if absf(dk) < 1.0:
+				c = rim
+			var a := clampf(0.5 - maxf(d, -1.0e9), 0.0, 1.0) if d > -0.5 else 1.0
+			c.a *= a
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
 
 
 func _label(text: String, font: Font, size: int, color: Color) -> Label:
