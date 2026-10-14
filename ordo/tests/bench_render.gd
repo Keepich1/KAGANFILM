@@ -13,6 +13,8 @@ extends SceneTree
 ##   --settle=8                  кадров перед замером после смены уровня, камеры или части: толпа
 ##                               раскладывает блоки по LOD за 8 кадров, трава и LOD догоняют камеру
 ##   --breakdown                 на первом уровне и первой камере — вклад частей (прячем по одной)
+##   --freeze                    после разогрева бои на паузе: каждый кадр замера тот же (толпа, дым),
+##                               числа не скачут от кадра к кадру и вклад частей не шумит
 ##   --full                      рисовать всё (иначе объёмный туман, SSAO, свечение, MSAA и живописный
 ##                               фильтр выключены — на счёт вызовов и треугольников они не влияют,
 ##                               а программный Vulkan с ними считает кадр в разы дольше)
@@ -35,6 +37,7 @@ var _warm := 9.0
 var _frames := 1
 var _settle := 8
 var _breakdown := false
+var _freeze := false
 var _full := false
 var _out := ""
 var _results: Array = []
@@ -73,6 +76,8 @@ func _initialize() -> void:
 				_settle = maxi(0, int(v))
 			"breakdown":
 				_breakdown = true
+			"freeze":
+				_freeze = true
 			"full":
 				_full = true
 			"out":
@@ -114,6 +119,13 @@ func _run() -> void:
 	var ordo := root.get_node_or_null("Ordo")
 	print("[замер] видеокарта: %s, кадр %s" % [RenderingServer.get_video_adapter_name(), root.size])
 	_warm_up(slice)
+	if _freeze:
+		# бои на паузе (как P в срезе): толпа стоит, частицы эффектов замирают, но рисуются
+		for v: BattleView in _views(slice):
+			var sc := v.get("scenario") as SimDriver
+			if sc:
+				sc.paused = true
+		print("[замер] бои на паузе (--freeze)")
 	if _gpu_rounds > 0:
 		await _gpu_ab(slice, ordo)
 		quit()
