@@ -13,6 +13,9 @@ extends Node3D
 @export var field_haze_falloff := 0.16
 @export var field_haze_albedo := Color(0.95, 0.86, 0.76)
 
+var _mat: FogMaterial
+var _haze: FogMaterial
+
 
 func _ready() -> void:
 	var f := FileAccess.open("res://assets/world/scatter.json", FileAccess.READ)
@@ -20,6 +23,7 @@ func _ready() -> void:
 		return
 	var data: Dictionary = JSON.parse_string(f.get_as_text())
 	var mat := FogMaterial.new()
+	_mat = mat
 	mat.density = density
 	mat.albedo = albedo
 	mat.emission = emission
@@ -27,6 +31,7 @@ func _ready() -> void:
 	mat.edge_fade = 0.6
 	# дымка над долиной: слой у земли, кверху тает
 	var haze := FogMaterial.new()
+	_haze = haze
 	haze.density = field_haze_density
 	haze.albedo = field_haze_albedo
 	haze.height_falloff = field_haze_falloff
@@ -49,3 +54,19 @@ func _ready() -> void:
 		v.position = Vector3(float(it[0]), float(it[1]), float(it[2]))
 		v.material = mat
 		add_child(v)
+
+
+## Время суток (LightPresets fog_banks): днём туман в низинах тоньше, дымка над полем светлее и реже
+func apply_light(p: Dictionary) -> void:
+	density = float(p.get("density", density))
+	albedo = p.get("albedo", albedo)
+	emission = p.get("emission", emission)
+	field_haze_density = float(p.get("haze_density", field_haze_density))
+	field_haze_albedo = p.get("haze_albedo", field_haze_albedo)
+	if _mat:
+		_mat.density = density
+		_mat.albedo = albedo
+		_mat.emission = emission
+	if _haze:
+		_haze.density = field_haze_density
+		_haze.albedo = field_haze_albedo

@@ -170,19 +170,19 @@ ordo_key_tint={
 }
 ordo_shadow_tint={
 "type": "color",
-"value": Color(0.17, 0.27, 0.44, 1)
+"value": Color(0.24, 0.33, 0.5, 1)
 }
 ordo_terminator={
 "type": "color",
-"value": Color(0.95, 0.38, 0.2, 0.42)
+"value": Color(0.95, 0.42, 0.24, 0.24)
 }
 ordo_rim_color={
 "type": "color",
-"value": Color(1, 0.76, 0.48, 0.95)
+"value": Color(1, 0.8, 0.56, 0.28)
 }
 ordo_band_soft={
 "type": "float",
-"value": 0.13
+"value": 0.16
 }
 ordo_brush_amount={
 "type": "float",
@@ -206,5 +206,5 @@ ordo_sun_dir={
 }
 ordo_clouds={
 "type": "vec4",
-"value": Vector4(0.6, 0.011, 1.4, 0.6)
+"value": Vector4(0.42, 0.011, 1.4, 0.6)
 }

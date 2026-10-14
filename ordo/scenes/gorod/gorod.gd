@@ -34,12 +34,11 @@ signal series_done
 @onready var overlay: OverlayView = $HUD/Overlay
 @onready var camera: RtsCamera = $Cameras/CamRTS
 
-## Свет «Города» (читаемость ТЗ 11.2 при взгляде сверху): солнце выше заката среза (10°) — короче тени
-## построек и светлее лагерь кыпчаков у западных гор; тени облаков слабее (у среза 0,6 — пятна по 60–90 м
-## темнят половину вида стратегии). Мир ставит общие значения заново при каждом входе (срез, меню — свои).
-## Ключи для подбора: --sun_el=N, --clouds=K
-@export var sun_elevation := 16.0
-@export var cloud_shadow := 0.3
+## Свет «Города» (читаемость ТЗ 11.2 при взгляде сверху) — по времени суток игрока (Ordo.light_mode,
+## LightPresets): днём — как у мира; на закате солнце выше, чем в срезе (16° вместо 10°: короче тени
+## построек, светлее лагерь кыпчаков у западных гор), тени облаков слабее (пятна по 60–90 м темнили
+## половину вида стратегии) — поправки city в LightPresets, их ставит мир (world.city_light).
+## Ключи для подбора: --sun_el=N, --clouds=K (поверх режима)
 
 ## Выделение (до RtsInput из UI)
 var selection := SelectionModel.new()
@@ -62,13 +61,9 @@ var _log_t := 0.0
 
 func _ready() -> void:
 	_ordo = get_node_or_null("/root/Ordo")
-	var el := float(_ordo.arg("sun_el", str(sun_elevation))) if _ordo else sun_elevation
-	if not is_equal_approx(el, world.sun_elevation):
-		world.sun_elevation = el
-		world.place_sun()
-	var clouds: Vector4 = World.PAINT_GLOBALS["ordo_clouds"]
-	clouds.x = float(_ordo.arg("clouds", str(cloud_shadow))) if _ordo else cloud_shadow
-	RenderingServer.global_shader_parameter_set("ordo_clouds", clouds)
+	world.city_light = true
+	world.light_applied.connect(_tune_light)
+	world.apply_light()
 	# своя модель — только если RtsInput (UI, его _ready раньше) не поставил свою
 	if selection_view.selection == null:
 		selection_view.selection = selection
@@ -126,6 +121,19 @@ func _process(delta: float) -> void:
 	if _wait > 0:
 		return
 	_shoot(_series.pop_front())
+
+
+## Ключи подбора света поверх времени суток: --sun_el=N (высота солнца), --clouds=K (сила теней облаков)
+func _tune_light(mode: String) -> void:
+	if _ordo == null:
+		return
+	if _ordo.has_arg("sun_el"):
+		world.sun_elevation = float(_ordo.arg("sun_el"))
+		world.place_sun()
+	if _ordo.has_arg("clouds"):
+		var clouds := LightPresets.clouds(mode, true)
+		clouds.x = float(_ordo.arg("clouds"))
+		RenderingServer.global_shader_parameter_set("ordo_clouds", clouds)
 
 
 # ---------------------------------------------------------------- промотка при съёмке
