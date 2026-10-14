@@ -441,7 +441,7 @@ def poplar_feather(w, h, seed):
     field = _height_tongues(w, h, tongues)
     paint_clump(t, [], PAL["poplar"], 2300, (15, 24), (0.34, 0.46), light=(-0.35, 0.45, 0.82),
                 edge_bias=1.5, asym=0.45, bend=0.12, silver=PAL["poplar_silver"], silver_p=0.03,
-                top_light=0.22, k_lit=0.85, v0=-0.04, k_occ=0.9, axis=-math.pi / 2, glaze=0.0, tufts=16,
+                top_light=0.22, k_lit=0.85, v0=0.05, k_occ=0.8, axis=-math.pi / 2, glaze=0.0, tufts=16,
                 field=field, sparkle=0.0)
     # лессировки вдоль языков: светлый гребень слева-сверху
     P = _pal(PAL["poplar"])
@@ -455,12 +455,28 @@ def poplar_feather(w, h, seed):
 
 
 def willow_clump(w, h, seed):
-    """Тал, верх кроны: узкие свисающие листья, гроздь чуть вытянута вниз."""
+    """Тал, верх кроны: невысокая гроздь узких свисающих листьев в верхней половине, из-под
+    неё свисают короткие пряди — у купола рваный «бахромчатый» низ, который переходит в
+    каскады, а не круглые «облачка»."""
     t = Tile(w, h, seed)
     rs = t.rs
-    lobes = _lobes_cloud(w, h, rs, 5, w * 0.22, w * 0.22, squash=0.85, cy=0.46)
-    paint_clump(t, lobes, PAL["willow"], 3200, (28, 44), (0.15, 0.22), droop=1.1, edge_bias=1.8,
-                asym=0.15, bend=0.35, silver=PAL["willow_silver"], silver_p=0.05, tufts=16)
+    P = _pal(PAL["willow"])
+    S = _pal(PAL["willow_silver"])
+    lobes = _lobes_cloud(w, h * 0.55, rs, 5, w * 0.19, w * 0.21, squash=0.62, cy=0.5)
+    # пряди-бахрома: от низа гроздей вниз, дальние раньше (под гроздью — тёмные)
+    fr = []
+    for _ in range(int(rs.integers(15, 20))):
+        (cx, cy, rx, ry, z) = lobes[rs.integers(len(lobes))]
+        x0 = cx + rs.uniform(-0.85, 0.85) * rx
+        if not (w * 0.1 < x0 < w * 0.9):
+            continue
+        y0 = cy + ry * rs.uniform(0.0, 0.5)
+        fr.append((rs.uniform(0.5, 1.0), x0, y0, rs.normal(0, w * 0.03), h * rs.uniform(0.3, 0.6)))
+    fr.sort(key=lambda q: q[0])
+    for (layer, x0, y0, reach, L) in fr:
+        _strand(t, P, S, x0, y0, reach, min(L, h - y0 - 20), layer, vmax=0.85)
+    paint_clump(t, lobes, PAL["willow"], 2400, (28, 44), (0.15, 0.22), droop=1.1, edge_bias=1.8,
+                asym=0.15, bend=0.35, silver=PAL["willow_silver"], silver_p=0.05, tufts=22, sparkle=0.0)
     return t.finish(spread=12)
 
 
@@ -484,6 +500,55 @@ def juniper_pad(w, h, seed):
                 droop=0.0, upward=0.45, edge_bias=1.9, asym=0.15, bend=0.4, top_light=0.36, k_lit=0.55,
                 v0=0.22, k_occ=0.8, noise=0.05, tufts=40, sparkle=0.012)
     return t.finish(spread=10)
+
+
+def _strand(t: Tile, P, S, x0, y0, reach, L, layer, margin=14, vmax=0.9):
+    """Прядь ивы: тёмный прутик дугой (вынос reach к +x на первой трети длины, дальше почти
+    отвесно) и узкие листья по обе стороны, свисающие вниз-наружу. layer 0 — дальняя
+    (тёмная), 1 — ближняя; верх пряди в тени купола, низ и кончики светлее."""
+    rs = t.rs
+    w, h = t.w, t.h
+    n = max(int(L / 7), 8)
+    sway = rs.normal(0, w * 0.035)
+    ph = rs.uniform(0, 6.28)
+    pts = []
+    for i in range(n):
+        sl = i / (n - 1)
+        a = min(sl / 0.32, 1.0)
+        x = x0 + reach * (1.0 - (1.0 - a) ** 2) + sway * sl * sl + math.sin(sl * 5 + ph) * 2.5
+        y = y0 + L * sl - h * 0.03 * math.sin(math.pi * a)
+        # к краю карточки прядь не прижимается (иначе у каскада прямой вертикальный бок)
+        lim = w - margin - 18
+        if x > lim - 20:
+            x = lim - 20 * math.exp(-(x - lim + 20) / 20)
+        pts.append((max(float(x), margin + 18), y))
+    for i in range(n - 1):                             # тёмный прутик
+        (xa, ya), (xb, yb) = pts[i], pts[i + 1]
+        wd = 1.5 * (1 - 0.6 * i / n)
+        t.poly([(xa - wd, ya), (xa + wd, ya), (xb + wd * 0.9, yb), (xb - wd * 0.9, yb)],
+               _shade(P, 0.16 + 0.14 * layer))
+    for i in range(1, n):
+        sl = i / (n - 1)
+        x, y = pts[i]
+        (xp, yp) = pts[i - 1]
+        dir_a = math.atan2(y - yp, x - xp)              # направление пряди
+        for side in (-1, 1):
+            if rs.random() > 0.9:
+                continue
+            ang = dir_a + side * rs.uniform(0.25, 0.6)
+            out = (x - x0) / max(reach, 1.0)            # наружная часть дуги светлее
+            v = (0.24 + 0.3 * layer + 0.3 * sl ** 0.7 * (0.45 + 0.55 * layer) + 0.08 * (side > 0)
+                 + 0.06 * min(out, 1.0) + rs.normal(0, 0.05))
+            v = min(0.5 * v + 0.5 * round(v * 5) / 5, vmax)
+            col = _shade(P, v) * rs.uniform(0.97, 1.03)
+            if rs.random() < 0.06 * (0.5 + layer):
+                col = S[rs.integers(len(S))] * (0.6 + 0.3 * layer)
+            Ln = rs.uniform(22, 32) * (1 - 0.35 * sl)
+            lx = x + math.cos(ang) * Ln * 0.42
+            ly = y + math.sin(ang) * Ln * 0.42
+            if not (margin < lx < w - margin and ly < h - margin):
+                continue
+            t.leaf(lx, ly, Ln, Ln * rs.uniform(0.2, 0.27), ang, col, asym=0.1, bend=rs.normal(0, 0.3))
 
 
 def willow_strands(w, h, seed):
@@ -520,47 +585,7 @@ def willow_strands(w, h, seed):
         t.leaf(x, y, Ln, Ln * rs.uniform(0.22, 0.3), ang, _shade(P, rs.uniform(0.1, 0.32)), asym=0.1,
                bend=rs.normal(0, 0.3))
     for (layer, x0, y0, reach, L) in strands:
-        n = max(int(L / 7), 8)
-        sway = rs.normal(0, w * 0.035)
-        ph = rs.uniform(0, 6.28)
-        pts = []
-        for i in range(n):
-            sl = i / (n - 1)
-            a = min(sl / 0.32, 1.0)
-            x = x0 + reach * (1.0 - (1.0 - a) ** 2) + sway * sl * sl + math.sin(sl * 5 + ph) * 2.5
-            y = y0 + L * sl - h * 0.03 * math.sin(math.pi * a)
-            # к краю карточки прядь не прижимается (иначе у каскада прямой вертикальный бок)
-            lim = w - margin - 18
-            if x > lim - 20:
-                x = lim - 20 * math.exp(-(x - lim + 20) / 20)
-            pts.append((max(float(x), margin + 18), y))
-        for i in range(n - 1):                             # тёмный прутик
-            (xa, ya), (xb, yb) = pts[i], pts[i + 1]
-            wd = 1.5 * (1 - 0.6 * i / n)
-            t.poly([(xa - wd, ya), (xa + wd, ya), (xb + wd * 0.9, yb), (xb - wd * 0.9, yb)],
-                   _shade(P, 0.16 + 0.14 * layer))
-        for i in range(1, n):
-            sl = i / (n - 1)
-            x, y = pts[i]
-            (xp, yp) = pts[i - 1]
-            dir_a = math.atan2(y - yp, x - xp)              # направление пряди
-            for side in (-1, 1):
-                if rs.random() > 0.9:
-                    continue
-                ang = dir_a + side * rs.uniform(0.25, 0.6)
-                out = (x - x0) / max(reach, 1.0)            # наружная часть дуги светлее
-                v = (0.24 + 0.3 * layer + 0.3 * sl ** 0.7 * (0.45 + 0.55 * layer) + 0.08 * (side > 0)
-                     + 0.06 * min(out, 1.0) + rs.normal(0, 0.05))
-                v = 0.5 * v + 0.5 * round(v * 5) / 5
-                col = _shade(P, v) * rs.uniform(0.97, 1.03)
-                if rs.random() < 0.06 * (0.5 + layer):
-                    col = S[rs.integers(len(S))] * (0.6 + 0.3 * layer)
-                Ln = rs.uniform(22, 32) * (1 - 0.35 * sl)
-                lx = x + math.cos(ang) * Ln * 0.42
-                ly = y + math.sin(ang) * Ln * 0.42
-                if not (margin < lx < w - margin and ly < h - margin):
-                    continue
-                t.leaf(lx, ly, Ln, Ln * rs.uniform(0.2, 0.27), ang, col, asym=0.1, bend=rs.normal(0, 0.3))
+        _strand(t, P, S, x0, y0, reach, L, layer, margin)
     return t.finish(spread=10)
 
 
@@ -679,6 +704,7 @@ class Tree:
         self.H = height
         self.parts: list[Mesh] = []
         self.cards = 0
+        self.reach: list[tuple] = []                 # (низ, верх) рамки карточки — для рамки видимости
 
     def bend_w(self, y):
         """Сила изгиба на ветру по высоте (одна для ствола и листвы)."""
@@ -711,6 +737,13 @@ class Tree:
         m = Mesh(P, [[0, 1, 2], [0, 2, 3]], np.tile(n, (4, 1)), UVs, UV2, C)
         self.parts.append(m)
         self.cards += 1
+        # рамка карточки в любом развороте: грозди — шар радиусом в полудиагональ; прядь
+        # поворачивается только вокруг вертикали и висит от точки крепления на h вниз
+        if kind == 2:
+            self.reach.append((c - np.array([w / 2, h, w / 2]), c + np.array([w / 2, 0.0, w / 2])))
+        else:
+            r = float(np.hypot(w / 2, h / 2))
+            self.reach.append((c - r, c + r))
 
     def wood(self, path, radii, sides, reg, ao_base=0.6, ao_top=1.0, v_from=0.0, v_to=1.0, v_pow=1.0):
         """Ствол или ветвь: трубка, развёртка коры от комля (низ области) вверх."""
@@ -736,13 +769,10 @@ class Tree:
         # добавляем вырожденный (нулевой площади) треугольник по углам такой рамки, чтобы движок
         # не отсекал крону раньше времени
         lo, hi = m.P.min(axis=0), m.P.max(axis=0)
-        k = np.floor(m.UV2[:, 0] / 20.0 + 0.5)
-        o = m.UV2[:, 0] - 20.0 * k
-        half = np.where(k > 0.5, np.hypot(o, m.UV2[:, 1]), 0.0)
-        if half.max() > 0:
-            ctr = m.P.copy()
-            lo = np.minimum(lo, (ctr - half[:, None]).min(axis=0))
-            hi = np.maximum(hi, (ctr + half[:, None]).max(axis=0))
+        sway = 0.6                                       # запас на ветер, м
+        for (a, b) in self.reach:
+            lo = np.minimum(lo, a - sway)
+            hi = np.maximum(hi, b + sway)
         lo[1] = 0.0
         pad = Mesh(np.array([lo, hi, (lo + hi) * 0.5]), [[0, 1, 2]], np.tile([0.0, 1.0, 0.0], (3, 1)),
                    np.zeros((3, 2)), np.zeros((3, 2)), np.tile([1.0, 1.0, 1.0, 0.0], (3, 1)))
@@ -959,11 +989,11 @@ def willow(seed, lod=0):
         lobes.append((cc + d * cr * 0.5 + np.array([0, cr[1] * 0.15, 0]), np.array([2.0, 1.2, 2.0])))
     for (c, lr) in lobes:
         _mass(T, c, lr, 6 if lod == 0 else 3, (2.0, 2.6) if lod == 0 else (2.6, 3.3), REG["willow"], cc, cr,
-              k_lobe=0.5, out_bias=-0.2, up_bias=0.3, kind=3)
+              k_lobe=0.45, out_bias=-0.2, up_bias=0.1, kind=3)
     # каскады: наружный слой по всему краю купола и внутренний (темнее) ближе к стволу.
     # Длина каскада зависит от азимута плавно (низ «колокола» волной) и от случая (рваный край)
     ph = rs.uniform(0, 6.28, 2)
-    for layer, count, rr, ao, el in ((0, 40 if lod == 0 else 17, (0.86, 1.04), 1.0, (-12, 48)),
+    for layer, count, rr, ao, el in ((0, 40 if lod == 0 else 18, (0.86, 1.04), 1.0, (-8, 62)),
                                     (1, 12 if lod == 0 else 5, (0.42, 0.66), 0.5, (0, 35))):
         for j in range(count):
             a = a0 + (j + rs.uniform(-0.35, 0.35)) * 2 * np.pi / count
