@@ -8,14 +8,16 @@
 # Журнал — renders/skirmish/skirmish.log. Код выхода 1 — повтор разошёлся с матчем.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-GODOT="${GODOT:-$(command -v godot || echo /opt/godot/godot)}"
+# Godot ищет tools/godot.sh (Linux и Windows)
+GODOT="$("$ROOT/tools/godot.sh" --which)" || exit 1
 N="${1:-2}"
 if [[ "$N" =~ ^[0-9]+$ ]]; then shift || true; else N=2; fi
 OUT="$ROOT/renders/skirmish"
 mkdir -p "$OUT" && touch "$ROOT/renders/.gdignore"
 LOG="$OUT/skirmish.log"
+# tr: Godot на Windows кончает строки на CR LF, лишний CR убираем
 timeout "${SKIRMISH_TIMEOUT:-3600}" "$GODOT" --headless --path "$ROOT" --script res://tools/skirmish_headless.gd -- \
-  --n="$N" "$@" 2>&1 | grep -vE "^Godot Engine|^$" | tee "$LOG"
+  --n="$N" "$@" 2>&1 | tr -d '\r' | grep -vE "^Godot Engine|^$" | tee "$LOG"
 code=${PIPESTATUS[0]}
 grep -q "ИТОГ: ВСЁ ПРОШЛО" "$LOG" && [ "$code" -eq 0 ] && exit 0
 exit 1

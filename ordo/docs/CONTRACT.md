@@ -15,7 +15,9 @@
     (для среза: `… 25 --size=1280x720 --movie --battle_skip=0.5` — без подсказок, бой с 0,5 с).
   - Время сцены идёт ровно 1/30 с за кадр (`--fixed-fps 30`), кадры повторяемы.
 - Windows (ПК автора, видеокарта): кадр — `tools\shot.cmd` с теми же ключами, что у `shot.sh`
-  (PowerShell, Git Bash не нужен); в Git Bash работают и `tools/*.sh`. Godot — `GODOT`, `C:\Godot` или файл в `C:\`.
+  (PowerShell, Git Bash не нужен); в Git Bash работают и `tools/*.sh`, `tests/run_all.sh`. Godot — `GODOT`, `C:\Godot`
+  или файл в `C:\` (путь знает `tools/godot.sh --which`). `movie.sh` нужен ffmpeg, генераторам — Python; `build_windows.sh` — облако.
+  Отпечатки `test_combat_slice` сняты на Linux: на Windows 2 из 5 расходятся (другая математика Godot), ворота среза — облако.
   Кадр не больше экрана (больше — `shot.cmd` сообщает об ошибке); пыль и дым от запуска к запуску чуть разные.
 - Автозагрузка `Ordo` (`scripts/core/ordo.gd`): качество `Ordo.quality` (`high`/`low`),
   аргументы командной строки `Ordo.arg("имя")`, зерно `Ordo.seed`.

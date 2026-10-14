@@ -3,6 +3,8 @@
 #   tools/movie.sh res://scenes/slice.tscn out.mp4 [секунды=20] [--size=1280x720] [--cam=...]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# ffmpeg (с libx264) проверяем до съёмки, чтобы не ждать кадры зря
+command -v ffmpeg >/dev/null || { echo "Нет ffmpeg: поставьте его (Windows: winget install Gyan.FFmpeg) и откройте терминал заново" >&2; exit 1; }
 # кадры проверки не импортируются в проект
 mkdir -p "$ROOT/renders" && touch "$ROOT/renders/.gdignore"
 SCENE="$1"; OUT="$(realpath -m "$2")"; SECS="${3:-20}"; shift 3 || shift $#
@@ -14,6 +16,8 @@ for a in "$@"; do
   esac
 done
 TMP="$(mktemp -d)"
+# Windows (Git Bash): Godot и ffmpeg ждут путь вида C:/…, а не /c/…
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) TMP="$(cygpath -m "$TMP")"; OUT="$(cygpath -m "$OUT")" ;; esac
 FRAMES=$((SECS * 30))
 XVFB_SIZE="${SIZE}x24" "$ROOT/tools/godot.sh" --path "$ROOT" --resolution "$SIZE" --write-movie "$TMP/f.png" \
   --audio-driver Dummy --fixed-fps 30 --quit-after "$FRAMES" "$SCENE" -- "${EXTRA[@]}" 2>&1 | grep -vE "ALSA|audio|^\s*$" | tail -5 || true

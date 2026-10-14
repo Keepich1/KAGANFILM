@@ -8,7 +8,8 @@
 # Журналы — в renders/tests/<имя>.log (в git не идут).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-GODOT="${GODOT:-$(command -v godot || echo /opt/godot/godot)}"
+# Godot ищет tools/godot.sh (Linux и Windows)
+GODOT="$("$ROOT/tools/godot.sh" --which)" || exit 1
 LOGS="$ROOT/renders/tests"
 mkdir -p "$LOGS" && touch "$ROOT/renders/.gdignore"
 

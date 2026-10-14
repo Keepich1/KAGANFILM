@@ -6,6 +6,8 @@
 # Godot ищется в $GODOT, иначе самый новый по имени файла Godot*.exe из C:\Godot и C:\
 # (как C:\Godot_v4.7.2-stable_win64.exe); консольный …_console.exe — в первую очередь, как в shot.ps1.
 # Без Git Bash — tools\shot.cmd (PowerShell).
+#   tools/godot.sh --which — только напечатать путь к Godot (tests/run_all.sh, skirmish_headless.sh, build_windows.sh
+#   запускают его сами, без Xvfb: им хватает --headless)
 set -euo pipefail
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
@@ -18,10 +20,12 @@ case "$(uname -s)" in
       [ -n "$GODOT" ] || GODOT="$(pick '\.exe$')"
     fi
     [ -n "${GODOT:-}" ] || { echo "Godot не найден: положите его в C:\\Godot (или файлом прямо в C:\\) или задайте GODOT=путь" >&2; exit 1; }
+    if [ "${1:-}" = "--which" ]; then echo "$GODOT"; exit 0; fi
     exec "$GODOT" "$@"
     ;;
 esac
 GODOT="${GODOT:-$(command -v godot || echo /opt/godot/godot)}"
+if [ "${1:-}" = "--which" ]; then echo "$GODOT"; exit 0; fi
 if [ -f /usr/share/vulkan/icd.d/lvp_icd.json ] && [ -z "${VK_ICD_FILENAMES:-}" ]; then
   export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
 fi

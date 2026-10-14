@@ -6,7 +6,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VER="${1:-0.1.0}"
-GODOT="${GODOT:-$(command -v godot || echo /opt/godot/godot)}"
+# Godot ищет tools/godot.sh (Linux и Windows)
+GODOT="$("$ROOT/tools/godot.sh" --which)"
+# zip и makensis проверяем до долгого экспорта (в Git Bash на Windows их нет — установщик собирает GitHub)
+for t in zip makensis; do
+  command -v "$t" >/dev/null || { echo "Нет $t — поставьте его или возьмите готовую сборку на GitHub (Releases)" >&2; exit 1; }
+done
 OUT="$ROOT/../build/windows"
 rm -rf "$OUT/Ordo" && mkdir -p "$OUT/Ordo"
 
@@ -18,7 +23,7 @@ sed -i "s|^config/name=\(.*\)$|config/name=\1\nconfig/version=\"$VER\"|" "$ROOT/
 "$GODOT" --headless --path "$ROOT" --import >/dev/null 2>&1 || true
 "$GODOT" --headless --path "$ROOT" --export-release "Windows Desktop" "$OUT/Ordo/Ordo.exe" 2>&1 \
   | grep -vE "ALSA|audio|^\s*$" | grep -iE "error|warn|export" || true
-[ -f "$OUT/Ordo/Ordo.exe" ] && [ -f "$OUT/Ordo/Ordo.pck" ] || { echo "Экспорт не удался"; exit 1; }
+[ -f "$OUT/Ordo/Ordo.exe" ] && [ -f "$OUT/Ordo/Ordo.pck" ] || { echo "Экспорт не удался (есть ли шаблоны экспорта Godot 4.7.2?)"; exit 1; }
 
 # ПРОЧТИ.txt — UTF-8 с BOM и переводами строк Windows, чтобы Блокнот показал кириллицу
 printf '\xEF\xBB\xBF' > "$OUT/Ordo/ПРОЧТИ.txt"

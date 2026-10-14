@@ -133,11 +133,12 @@
   `tools/godot.sh --path . --resolution 1920x1080 --fixed-fps 30 res://scenes/gorod/gorod.tscn -- --quality=high --faction=kokand --playthrough=/abs/dir`.
 - Кадр без монитора: `tools/shot.sh res://scenes/slice.tscn out.png --cam=CamRTS --at=19`.
   На Windows — `tools\shot.cmd` с теми же ключами (PowerShell, без Git Bash); в Git Bash работают и `tools/shot.sh`,
-  `tools/import.sh`, `tools/godot.sh`. Godot ищется в `GODOT`, в `C:\Godot` или файлом прямо в `C:\`.
+  `tools/import.sh`, `tools/godot.sh`, `tests/run_all.sh`, `tools/skirmish_headless.sh`; `tools/movie.sh` — если поставлен
+  ffmpeg, генераторы — если поставлен Python. Godot ищется в `GODOT`, в `C:\Godot` или файлом прямо в `C:\`.
   Кадр снимается видеокартой ПК за секунды, на миг открывается окно игры. Окно не бывает больше экрана —
   кадр крупнее экрана `shot.cmd` считает ошибкой. Пыль и дым от запуска к запуску чуть разные, остальное повторяется точно.
 - Модели и текстуры генерируются кодом: `python3 tools/gen_camp.py`, `gen_units.py`, `gen_world.py`,
   `gen_fx.py`, `gen_kokand.py`, `gen_kipchak2.py`, `gen_ui.py` (Python 3 + numpy + Pillow).
   Бюджеты ТЗ 11.5: `python3 tools/check_budgets.py`.
 - Сборка для Windows: `tools/build_windows.sh 0.1.0` → `../build/windows/` (нужны шаблоны экспорта
-  Godot и NSIS). На GitHub то же делает `.github/workflows/ordo-windows.yml`.
+  Godot и NSIS). На GitHub то же делает `.github/workflows/ordo-windows.yml` — на ПК автора сборку берём оттуда.
