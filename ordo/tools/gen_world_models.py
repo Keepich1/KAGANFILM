@@ -88,8 +88,10 @@ PAL = {
     "elm": ["#13201a", "#1b2c20", "#263c26", "#35502d", "#4a6634", "#667c3d", "#8b9549", "#adb05c"],
     "poplar": ["#121c18", "#1a281f", "#253727", "#33492e", "#456036", "#5f7542", "#7f8b52", "#9fa266"],
     "poplar_silver": ["#7d8a80", "#94a096", "#aab3a4"],
-    "willow": ["#18231a", "#223121", "#304428", "#42582f", "#566e37", "#6c8442", "#869a50", "#9fad62"],
-    "willow_silver": ["#87917b", "#9ea78e"],
+    # тал холоднее и серебристее карагача: на закатном солнце светлые пряди — оливково-зелёные,
+    # а не лимонно-жёлтые
+    "willow": ["#16221b", "#1f3023", "#2b422d", "#3a5636", "#4b6a40", "#5e7d4b", "#76925a", "#8ea66d"],
+    "willow_silver": ["#8d998a", "#a5b0a0"],
     "juniper": ["#0b1513", "#111d19", "#182a23", "#21362d", "#2d473a", "#3f5a4b", "#58715f", "#748a77"],
 }
 
@@ -496,9 +498,11 @@ def juniper_pad(w, h, seed):
         rx = min(rx, x - 14, w - 14 - x)
         lobes.append((x, h * 0.62 - ry * 0.35 + rs.normal(0, h * 0.05), rx, ry, rs.uniform(0, 0.3) * ry))
     lobes.append((w * 0.5, h * 0.68, w * 0.32, h * 0.17, 0.0))
-    paint_clump(t, lobes, PAL["juniper"], 2000, (15, 25), (0.45, 0.7), light=(0.0, 0.9, 0.4),
-                droop=0.0, upward=0.45, edge_bias=1.9, asym=0.15, bend=0.4, top_light=0.36, k_lit=0.55,
-                v0=0.22, k_occ=0.8, noise=0.05, tufts=40, sparkle=0.012)
+    # хвоя — узкие заострённые мазки, торчат вверх-наружу пучками (чешуйчатые веточки арчи),
+    # а не круглые листочки «самшита»
+    paint_clump(t, lobes, PAL["juniper"], 2600, (14, 24), (0.28, 0.42), light=(0.0, 0.9, 0.4),
+                droop=0.0, upward=0.75, edge_bias=1.9, asym=0.4, bend=0.3, top_light=0.36, k_lit=0.55,
+                v0=0.22, k_occ=0.8, noise=0.05, tufts=64, sparkle=0.012)
     return t.finish(spread=10)
 
 
@@ -618,21 +622,22 @@ def bark(w, h, seed, kind):
         c.strokes(220, ["#2f2d28", "#3a3832", "#6a675c"], length=(30, 80), width=(3, 7), angle=90, angle_jitter=6,
                   alpha=(0.4, 0.8), bristles=2, region=(0, h * 0.8, w, h))
     elif kind == "juniper":
-        c = Canvas(w, h, base="#57372a", seed=seed, tile=True)
-        c.underpaint(["#4a2d22", "#5c3a2c", "#6a4534", "#533327"], cell=40, octaves=3)
-        # волокнистые ленты, закрученные по стволу (красно-бурые, не морковные: на закатном
-        # солнце кора и так теплеет)
-        c.strokes(900, ["#734d3b", "#825a45", "#553226", "#664031", "#8f6b56"], length=(50, 140), width=(3, 8),
+        # красно-бурая, но приглушённая (закатное солнце само греет кору — иначе «морковь»)
+        c = Canvas(w, h, base="#413029", seed=seed, tile=True)
+        c.underpaint(["#372822", "#44332b", "#4e3b31", "#3d2e27"], cell=40, octaves=3)
+        # волокнистые ленты, закрученные по стволу
+        c.strokes(900, ["#574236", "#634c3e", "#412e25", "#4d382e", "#6e584a"], length=(50, 140), width=(3, 8),
                   angle=78, angle_jitter=5, alpha=(0.35, 0.8), bristles=3, curve=0.15, taper=0.3)
-        c.strokes(260, ["#2a1710", "#331c13"], length=(60, 160), width=(1.5, 3), angle=78, angle_jitter=4,
+        c.strokes(260, ["#22160f", "#2a1b14"], length=(60, 160), width=(1.5, 3), angle=78, angle_jitter=4,
                   alpha=(0.5, 0.9), bristles=1, curve=0.12)
-        # серебристые выветренные полосы и сухой верх (верхняя четверть — сухие сучья)
-        c.strokes(140, ["#8c857a", "#9e978a", "#7a746a"], length=(40, 120), width=(3, 7), angle=78,
-                  angle_jitter=5, alpha=(0.3, 0.65), bristles=3, region=(0, h * 0.25, w, h))
+        # серые выветренные полосы и сухой верх (верхняя четверть — сухие сучья: серые, не белые —
+        # на солнце сук не горит белой чертой)
+        c.strokes(140, ["#76706a", "#857e75", "#6a645d"], length=(40, 120), width=(3, 7), angle=78,
+                  angle_jitter=5, alpha=(0.25, 0.55), bristles=3, region=(0, h * 0.25, w, h))
         m = np.zeros((h * SS, w * SS))
         m[: int(h * SS * 0.25)] = 1.0
-        c.underpaint(["#8a8478", "#9c968a", "#a9a395", "#7c766b"], cell=30, mask=m)
-        c.strokes(160, ["#6b665d", "#b4ae9f", "#5a554d"], length=(30, 90), width=(1.5, 4), angle=80, angle_jitter=5,
+        c.underpaint(["#615c55", "#6c665e", "#767067", "#58534d"], cell=30, mask=m)
+        c.strokes(160, ["#4c4842", "#857e72", "#403c37"], length=(30, 90), width=(1.5, 4), angle=80, angle_jitter=5,
                   alpha=(0.35, 0.7), bristles=2, region=(0, 0, w, h * 0.25))
     else:
         dark = kind == "elm"
@@ -990,8 +995,9 @@ def willow(seed, lod=0):
         d = np.array([math.cos(a), 0.0, math.sin(a)])
         lobes.append((cc + d * cr * 0.5 + np.array([0, cr[1] * 0.15, 0]), np.array([2.0, 1.2, 2.0])))
     for (c, lr) in lobes:
+        # купол чуть темнее прядей: не светится отдельной «шапкой» над каскадами
         _mass(T, c, lr, 6 if lod == 0 else 3, (2.0, 2.6) if lod == 0 else (2.6, 3.3), REG["willow"], cc, cr,
-              k_lobe=0.45, out_bias=-0.2, up_bias=0.1, kind=3)
+              k_lobe=0.45, ao_mul=0.85, out_bias=-0.2, up_bias=0.1, kind=3)
     # каскады: наружный слой по всему краю купола и внутренний (темнее) ближе к стволу.
     # Длина каскада зависит от азимута плавно (низ «колокола» волной) и от случая (рваный край)
     ph = rs.uniform(0, 6.28, 2)
@@ -1066,7 +1072,7 @@ def juniper(seed, lod=0):
     cc = np.mean([p for p, _ in clumps], axis=0)
     cr = np.array([2.4, H * 0.38, 2.4])
     for (c, r) in clumps:
-        _mass(T, c, r, 11 if lod == 0 else 7, (1.5, 2.0) if lod == 0 else (1.75, 2.3), REG["juniper"], cc, cr,
+        _mass(T, c, r, 11 if lod == 0 else 8, (1.5, 2.0) if lod == 0 else (1.75, 2.3), REG["juniper"], cc, cr,
               k_lobe=0.7, ao_mul=0.95, spread=(0.15, 0.8), out_bias=-0.2, roll=0.25, aspect=0.55, up_bias=0.0)
     return T.mesh()
 
