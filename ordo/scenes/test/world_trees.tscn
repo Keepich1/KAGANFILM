@@ -1,0 +1,28 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/test/world_trees.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/world.tscn" id="2"]
+
+[node name="WorldTrees" type="Node3D"]
+script = ExtResource("1")
+
+[node name="World" parent="." instance=ExtResource("2")]
+
+[node name="CamLineup" type="Camera3D" parent="."]
+current = true
+
+[node name="CamBacklit" type="Camera3D" parent="."]
+
+[node name="CamClose" type="Camera3D" parent="."]
+
+[node name="CamPoplar" type="Camera3D" parent="."]
+
+[node name="CamWillow" type="Camera3D" parent="."]
+
+[node name="CamJuniper" type="Camera3D" parent="."]
+
+[node name="CamTop" type="Camera3D" parent="."]
+
+[node name="CamRiver" type="Camera3D" parent="."]
+
+[node name="CamSlope" type="Camera3D" parent="."]
