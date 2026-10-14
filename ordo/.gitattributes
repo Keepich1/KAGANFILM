@@ -1,0 +1,6 @@
+# Концы строк — LF, как их пишет Godot (так же делает .gitattributes нового проекта Godot).
+# Без этого на Windows (git с core.autocrlf=true) после импорта сотни .import выглядят изменёнными.
+* text=auto eol=lf
+# cmd читает .cmd и .bat только с концами строк Windows
+*.cmd text eol=crlf
+*.bat text eol=crlf

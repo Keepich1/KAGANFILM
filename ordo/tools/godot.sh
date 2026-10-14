@@ -3,15 +3,21 @@
 #   tools/godot.sh --path . res://scenes/slice.tscn
 # Linux без монитора (сервер, облако, CI): виртуальный экран Xvfb и программный Vulkan (lavapipe).
 # Windows (Git Bash, как у Claude Code на ПК автора): обычный Godot с видеокартой, без Xvfb;
-# Godot ищется в $GODOT или в C:\Godot (лучше консольный Godot_v4.7.2-stable_win64_console.exe).
+# Godot ищется в $GODOT, иначе самый новый по имени файла Godot*.exe из C:\Godot и C:\
+# (как C:\Godot_v4.7.2-stable_win64.exe); консольный …_console.exe — в первую очередь, как в shot.ps1.
+# Без Git Bash — tools\shot.cmd (PowerShell).
 set -euo pipefail
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     if [ -z "${GODOT:-}" ]; then
-      GODOT="$(find /c/Godot -maxdepth 2 -iname 'Godot*_console.exe' 2>/dev/null | sort | tail -n1)"
-      [ -n "$GODOT" ] || GODOT="$(find /c/Godot -maxdepth 2 -iname 'Godot*.exe' 2>/dev/null | sort | tail -n1)"
+      # find без C:\Godot кончается ошибкой — «|| true», иначе set -e молча обрывает скрипт
+      CANDS="$( { find /c/Godot -maxdepth 2 -iname 'Godot*.exe'; find /c/ -maxdepth 1 -iname 'Godot*.exe'; } 2>/dev/null || true)"
+      # сортировка по имени файла, а не по пути: иначе любой Godot из C:\ обгонял бы более новый в C:\Godot
+      pick() { grep -i "$1" <<<"$CANDS" | awk -F/ '{print $NF "\t" $0}' | sort | tail -n1 | cut -f2- || true; }
+      GODOT="$(pick '_console\.exe$')"
+      [ -n "$GODOT" ] || GODOT="$(pick '\.exe$')"
     fi
-    [ -n "${GODOT:-}" ] || { echo "Godot не найден: положите его в C:\\Godot или задайте GODOT=путь" >&2; exit 1; }
+    [ -n "${GODOT:-}" ] || { echo "Godot не найден: положите его в C:\\Godot (или файлом прямо в C:\\) или задайте GODOT=путь" >&2; exit 1; }
     exec "$GODOT" "$@"
     ;;
 esac
