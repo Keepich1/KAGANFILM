@@ -289,9 +289,12 @@ def finish_cloth(c: Canvas, w, h, base, seed=0, light_mix=0.45, fold_n=34, verti
 
 # ---------------------------------------------------------------- халаты (развёртки — см. gen_units)
 
-def robe_torso(cloth, base, trimc, edge, lining=None, collar=None, seed=0, open_front=True, emb=None):
+def robe_torso(cloth, base, trimc, edge, lining=None, collar=None, seed=0, open_front=True, emb=None, placket=None,
+               placket_w=0.055, placket_orn=None):
     """Торс халата: u вокруг (0.5 — перёд), картинка вверх — плечи.
-    cloth(c, w, h) — узор ткани; base — его средний цвет (для складок и света)."""
+    cloth(c, w, h) — узор ткани; base — его средний цвет (для складок и света).
+    placket — широкая полоса цвета стороны по краю запаха и вороту (войлочная аппликация у кыпчаков,
+    вышитая планка-яқа у деҳқона): крупное пятно стороны на груди, видное спереди (ТЗ 11.2)."""
     def p(c: Canvas, w, h):
         cloth(c, w, h)
         xc = w * 0.5
@@ -316,6 +319,20 @@ def robe_torso(cloth, base, trimc, edge, lining=None, collar=None, seed=0, open_
             if lining:
                 c.polygon([(xc - w * 0.02, 0), (xc + w * 0.035, 0), (xc + w * 0.012, h), (xc - w * 0.01, h)],
                           lining, 0.95, wobble=0.4)
+            if placket:
+                pw = w * placket_w
+                for s, x0 in ((1, xc + w * 0.035), (-1, xc - w * 0.02)):
+                    pts = [(x0, -4), (x0 + s * pw * 1.15, -4), (x0 + s * pw, h + 4), (x0, h + 4)]
+                    c.polygon(pts, placket, 0.97, wobble=0.3, seed=seed + 70 + s)
+                    c.strokes(int(w * 0.12), [_shade(placket, 0.75), _mix(placket, "#ffffff", 0.22)],
+                              length=(h * 0.04, h * 0.1), width=(w * 0.004, w * 0.01), angle=90, angle_jitter=10,
+                              alpha=(0.2, 0.4), region=(min(x0, x0 + s * pw), 0, max(x0, x0 + s * pw), h))
+                    if placket_orn:
+                        for yy in np.arange(h * 0.16, h * 0.92, h * 0.19):
+                            ram_horn(c, x0 + s * pw * 0.52, yy, pw * 0.42, placket_orn, max(1.2, w * 0.004), 0.85,
+                                     seed=int(yy) + s)
+                    c.line([(x0 + s * pw * 1.15, -4), (x0 + s * pw, h + 4)], max(1.2, w * 0.005), edge, 0.7,
+                           wobble=0.3, seed=seed + 74 + s)
             for s, k in ((1, 1.0), (-1, 0.55)):
                 vtrim(c, xc + s * w * 0.035 * k, h, trimc, max(2.0, w * 0.026), edge, seed=seed + s)
             # тень от наложенной полы
@@ -326,7 +343,8 @@ def robe_torso(cloth, base, trimc, edge, lining=None, collar=None, seed=0, open_
                 for s in (-1, 1):
                     c.ellipse(xc + s * w * 0.075, yy, w * 0.012, w * 0.012, emb, 0.9)
         # ворот-стойка
-        trim(c, [(-4, h * 0.035), (w + 4, h * 0.035)], collar or trimc, max(3.0, h * 0.06), edge, seed=seed + 5)
+        trim(c, [(-4, h * 0.035), (w + 4, h * 0.035)], collar or placket or trimc, max(3.0, h * (0.085 if placket else 0.06)),
+             edge, seed=seed + 5)
         c.grain(0.03)
     return p
 
@@ -410,6 +428,12 @@ def robe_skirt(cloth, base, trimc, edge, seed=0, hem_w=0.05, dust="#8a7458", orn
             L = c.rs.uniform(0.5, 1.0) * h
             c._stroke(x, h - L * 0.5 + c.rs.uniform(0, h * 0.1), math.radians(90 + c.rs.normal(0, 3)), L,
                       c.rs.uniform(0.03, 0.06) * w, _arr(col), c.rs.uniform(0.25, 0.48), c.rs.normal(0, 0.1), 1, -0.6)
+        # широкие мягкие тени глубоких складок поверх узора: икат «ломается» в складках и не выглядит обоями
+        for i in range(12):
+            x = (i + 0.5 + c.rs.uniform(-0.25, 0.25)) / 12 * w
+            L = c.rs.uniform(0.55, 1.0) * h
+            c._stroke(x, h - L * 0.5, math.radians(90 + c.rs.normal(0, 2)), L, c.rs.uniform(0.05, 0.085) * w,
+                      _arr(_shade(base, 0.42)), c.rs.uniform(0.16, 0.28), c.rs.normal(0, 0.08), 1, -0.4)
         temperature(c, w, h, split=0.4, n=int(w * 0.6))
         vgrad(c, 1.08, 0.62)
         c.strokes(int(w * 0.7), [dust, _shade(dust, 0.85)], length=(w * 0.04, w * 0.12), width=(w * 0.02, w * 0.045),
@@ -900,19 +924,24 @@ def banner_kipchak(seed=0):
     return p
 
 
-def caparison(main, light, dark, orn, trimc, seed=0, kind="kipchak", field=None):
+def caparison(main, light, dark, orn, trimc, seed=0, kind="kipchak", field=None, field_w=0.16):
     """Попона: u — от левого подола через спину к правому, v — от хвоста к груди.
-    field — цвет середины (у кыпчаков — некрашеный войлок под седлом), края — цвет стороны."""
+    field — цвет полосы вдоль хребта (у кыпчаков — некрашеный войлок под седлом, доля field_w
+    ширины), бока — цвет стороны: сверху, с камеры RTS, конь читается киноварью (ТЗ 11.2)."""
     def p(c: Canvas, w, h):
         c.underpaint([_shade(main, 0.85), main, _mix(main, light, 0.15)], cell=44, seed=seed)
         c.strokes(500, [_mix(main, light, 0.25), _shade(main, 0.75), main], length=(16, 40), width=(4, 10),
                   angle=0, angle_jitter=20, alpha=(0.15, 0.35))
         if field:
-            c.rect(w * 0.3, 0, w * 0.7, h, field, 0.95)
-            c.strokes(200, [_mix(field, "#ffffff", 0.2), _shade(field, 0.85)], length=(8, 20), width=(3, 6), angle=0,
-                      angle_jitter=80, alpha=(0.15, 0.35), region=(w * 0.3, 0, w * 0.7, h))
-            for s in (0.3, 0.7):
+            f0, f1 = 0.5 - field_w / 2, 0.5 + field_w / 2
+            c.rect(w * f0, 0, w * f1, h, field, 0.95)
+            c.strokes(120, [_mix(field, "#ffffff", 0.2), _shade(field, 0.85)], length=(8, 20), width=(3, 6), angle=0,
+                      angle_jitter=80, alpha=(0.15, 0.35), region=(w * f0, 0, w * f1, h))
+            for s in (f0, f1):
                 c.line([(w * s, -4), (w * s, h + 4)], 5, trimc, 0.95, wobble=0.6, seed=int(s * 10))
+            for yy in np.arange(30, h, 60):     # белые «кочкор мүйүз» по бокам полосы — аппликация войлоком
+                for s in (f0 - 0.07, f1 + 0.07):
+                    ram_horn(c, w * s, yy, 22, orn, 3.5, 0.85, seed=int(yy * 3 + s * 100))
         x = np.linspace(0, 1, c.w * c.ss)
         k = 0.72 + 0.4 * np.exp(-((x - 0.5) / 0.22) ** 2)
         arr = np.asarray(c.img, dtype=np.float64)
@@ -963,13 +992,13 @@ def shield_kipchak(seed=0):
                     (cx + (r + dr) * math.cos(a + 0.02), cy + (r + dr) * math.sin(a + 0.02))],
                    max(1.0, w * 0.006), _shade(cane_d, 0.8), 0.35, wobble=0.2)
         # полосы крашеной нити
-        for r0, r1, col in ((0.8, 0.92, KIPCHAK["main"]), (0.3, 0.4, KIPCHAK["carmine"])):
+        for r0, r1, col in ((0.64, 0.93, KIPCHAK["main"]), (0.3, 0.4, KIPCHAK["carmine"])):
             for r in np.linspace(r0 * R, r1 * R, 4):
                 pts = [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 72)]
                 c.line(pts, (r1 - r0) * R / 3.2, col, 0.92, wobble=0.5, seed=int(r))
-        for a in np.linspace(0, 2 * math.pi, 10, endpoint=False):
-            ram_horn(c, cx + R * 0.86 * math.cos(a), cy + R * 0.86 * math.sin(a), w * 0.045, "#efe2c4",
-                     max(1.5, w * 0.007), 0.85, seed=int(a * 10))
+        for a in np.linspace(0, 2 * math.pi, 9, endpoint=False):
+            ram_horn(c, cx + R * 0.785 * math.cos(a), cy + R * 0.785 * math.sin(a), w * 0.07, "#efe2c4",
+                     max(2.0, w * 0.011), 0.9, seed=int(a * 10))
         # кожаный обод и умбон с заклёпками
         c.line([(cx + R * math.cos(a), cy + R * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 72)],
                max(3.0, w * 0.03), "#3a2418", 0.95, seed=seed)
@@ -1341,19 +1370,23 @@ def kipchak_robes():
     R.append(dict(base="#9a7a52",
                   cloth=lambda c, w, h: felt_ground(c, w, h, "#9a7a52", "#7a5e3c", "#e6d2a8", seed=401),
                   cuff=main, trim=main, edge="#3a2a1e", lining="#e6dcc4", band=main, band_trim=felt,
+                  placket=main, placket_orn=felt,
                   trousers=("#3a2a22", "#6a5040", None), sash=(main, "#ffa597", [(felt, 0.3, 0.06), (felt, 0.7, 0.06)])))
     R.append(dict(base="#4e3828",
                   cloth=lambda c, w, h: plain_weave(c, w, h, "#4e3828", "#8a6a50", "#2e2018", seed=402),
                   cuff=cinn, trim=felt, edge="#2a1e16", lining="#d8ccb0", band=cinn, band_trim=felt,
+                  placket=cinn, placket_orn=felt,
                   trousers=("#2a2420", "#5a4a40", None), sash=(carmine, "#d05060", [("#1a1614", 0.5, 0.1)])))
     R.append(dict(base="#7c766a",
                   cloth=lambda c, w, h: felt_ground(c, w, h, "#7c766a", "#5a564c", "#d8d2c4", seed=403),
                   cuff=carmine, trim=main, edge="#2a2622", lining="#e6dcc4", band=carmine, band_trim=felt,
+                  placket=cinn, placket_orn=felt,
                   trousers=("#3a2a22", "#6a5040", None), sash=(main, "#ffa597", [("#1a1614", 0.25, 0.05),
                                                                                ("#1a1614", 0.75, 0.05)])))
     R.append(dict(base="#b0905e",
                   cloth=lambda c, w, h: felt_ground(c, w, h, "#b0905e", "#8a6a40", "#efdcb4", seed=404),
                   cuff=main, trim=carmine, edge="#7a5a38", lining="#efe6d2", band=main, band_trim=felt,
+                  placket=main, placket_orn=felt,
                   trousers=("#4a3626", "#7a5e44", None), sash=(main, "#ffa597", [(felt, 0.5, 0.08)])))
     return R
 
@@ -1365,7 +1398,8 @@ def paint_robes(img, A, robes, seed0):
             region(img, A, f"torso{k}", vest_torso(cloth, base, R["vest"], R.get("braid", KOKAND["gold"]), R["edge"],
                                                    R["lining"], seed=seed0 + k), seed=seed0 + k)
         else:
-            region(img, A, f"torso{k}", robe_torso(cloth, base, R["trim"], R["edge"], R["lining"], seed=seed0 + k),
+            region(img, A, f"torso{k}", robe_torso(cloth, base, R["trim"], R["edge"], R["lining"], seed=seed0 + k,
+                                                   placket=R.get("placket"), placket_orn=R.get("placket_orn")),
                    seed=seed0 + k)
         region(img, A, f"skirt{k}", robe_skirt(cloth, base, R["trim"], R["edge"], seed=seed0 + 10 + k, band=R.get("band"),
                                                band_trim=R.get("band_trim", KOKAND["gold"])), seed=seed0 + 10 + k)
@@ -1460,7 +1494,7 @@ def build_kipchak(path):
     region(img, A, "hatx", helmet("#8a9098", "#b58a3c", main, seed=147), seed=147)
     region(img, A, "banner", banner_kipchak(149), seed=149)
     region(img, A, "caparison", caparison(main, light, dark, "#efe6d2", "#e6dcc4", seed=150, kind="kipchak",
-                                          field="#d8ccb0"), seed=150)
+                                          field="#d8ccb0", field_w=0.16), seed=150)
     region(img, A, "saddlecloth", caparison("#8e1f2f", "#d0505a", "#4a0f18", "#c9a24a", "#c9a24a", seed=154,
                                             kind="kipchak"), seed=154)
     region(img, A, "cloak", cape(main, light, dark, felt, seed=151), seed=151)

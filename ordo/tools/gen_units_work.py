@@ -97,23 +97,24 @@ def log_bark(seed=0):
 
 def dehqon_robes():
     """Рубахи деҳқонов: некрашеный хлопок, синяя полоска, выцветшее индиго, короткий бурый чапан;
-    штаны из алачи; цвет стороны (ТЗ 11.2) — дўппи, кушак, обшлага и кайма подола: бирюза и изумруд."""
+    штаны из алачи; цвет стороны (ТЗ 11.2) — дўппи, кушак, вышитая планка-яқа по запаху, обшлага и
+    кайма подола: бирюза и изумруд."""
     gold, turq, emer = KOKAND["gold"], TURQ, KOKAND["main"]
     return [
         dict(base="#e2d8c2", cloth=lambda c, w, h: T.plain_weave(c, w, h, "#e2d8c2", "#ffffff", "#a59a84", seed=501),
-             cuff=turq, trim=turq, edge="#145f63", lining="#e9e0c8", band=turq,
+             cuff=turq, trim=turq, edge="#145f63", lining="#e9e0c8", band=turq, placket=turq,
              trousers=("#34345a", "#6a6a98", "#8e3a3a"), sash=(turq, "#7fe8c8", [(gold, 0.3, 0.05), (gold, 0.8, 0.05)])),
         dict(base="#d6d2c4", cloth=lambda c, w, h: T.stripes_alacha(c, w, h, "#ddd6c4", [("#4a5a8a", 0.2, 2.5),
                                                                                      ("#4a5a8a", 0.6, 2.5)], seed=502),
-             cuff=emer, trim=emer, edge="#2a3050", lining="#e9e0c8", band=emer,
+             cuff=emer, trim=emer, edge="#2a3050", lining="#e9e0c8", band=emer, placket=emer,
              trousers=("#3a2c22", "#6a5444", "#c49a4a"), sash=(emer, "#7fe8c8", [("#e9e0c8", 0.5, 0.08)])),
         dict(base="#5a6a8e", cloth=lambda c, w, h: T.plain_weave(c, w, h, "#5a6a8e", "#9aa8c8", "#3a4460", seed=503),
-             cuff=turq, trim="#e2d8c2", edge="#2a3050", lining="#e2d8c2", band=turq,
+             cuff=turq, trim="#e2d8c2", edge="#2a3050", lining="#e2d8c2", band=turq, placket=turq,
              trousers=("#2a2a3e", "#565878", None), sash=(turq, "#7fe8c8", [("#145f63", 0.5, 0.12)])),
         dict(base="#7a5a3c", cloth=lambda c, w, h: T.stripes_alacha(c, w, h, "#7a5a3c", [("#a8844a", 0.15, 3),
                                                                                      ("#3a2a1e", 0.4, 2),
                                                                                      ("#a8844a", 0.7, 3)], seed=504),
-             cuff=emer, trim=emer, edge="#17463a", lining="#e2d8c2", band=emer,
+             cuff=emer, trim=emer, edge="#17463a", lining="#e2d8c2", band=emer, placket=emer,
              trousers=("#34345a", "#6a6a98", "#d8d0c0"), sash=(turq, "#7fe8c8", [(gold, 0.5, 0.06)])),
     ]
 

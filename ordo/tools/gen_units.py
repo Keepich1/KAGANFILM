@@ -76,30 +76,35 @@ def _head_uv(m, c, rect):
 
 
 def head_mesh(A, part, c, d, hat, var=True):
-    """Голова: челюсть, скулы, лоб; нос гребнем и клином. Лицо — рисованное (ячейка face)."""
+    """Голова: подбородок вперёд, узкая челюсть, скулы, надбровье, затылок круглее лба; нос — гребень
+    из вершин переднего столбца (без отдельного клина: он давал чёрный треугольник снизу).
+    Лицо — рисованное (ячейка face, развёртка head_u)."""
     cx, cy, cz = c
     lo = d < 0.8
     k = 6 if lo else 8
     # (dy, полуширина, глубина вперёд, глубина назад, сдвиг z)
-    rings = [(-0.074, 0.074, 0.098, 0.074, 0.006), (-0.018, 0.094, 0.104, 0.098, 0.0),
-             (0.04, 0.097, 0.098, 0.108, -0.004)]
+    rings = [(-0.102, 0.06, 0.08, 0.052, 0.006),     # подбородок и низ челюсти
+             (-0.06, 0.083, 0.098, 0.076, 0.002),    # угол челюсти, рот
+             (-0.012, 0.094, 0.106, 0.098, 0.0),     # скулы, глаза
+             (0.042, 0.095, 0.094, 0.112, -0.006)]   # надбровье, виски, затылок
     if not hat:
-        rings.append((0.088, 0.082, 0.07, 0.098, -0.012))
+        rings.append((0.092, 0.08, 0.066, 0.1, -0.014))
     if lo:
-        rings = [rings[0], rings[2]] + rings[3:]
-    secs = [np.tile([cx, cy - 0.128, cz + 0.045], (k, 1))]
+        rings = [rings[1], rings[3]] + rings[4:]
+    secs = [np.tile([cx, cy - 0.128, cz + 0.042], (k, 1))]
     for dy, rx, rf, rb, dz in rings:
         a = np.radians(180.0) + np.linspace(0, 2 * np.pi, k, endpoint=False)
         rz = np.where(np.cos(a) > 0, rf, rb)
         pts = np.column_stack([cx + rx * np.sin(a), np.full(k, cy + dy), cz + dz + rz * np.cos(a)])
         secs.append(pts)
-    top_y = cy + (0.07 if hat else 0.122)
-    secs.append(np.tile([cx, top_y, cz - 0.01], (k, 1)))
+    # макушка: без шапки — купол, под шапкой — низкая крышка (шапка сзади выше лба, щели быть не должно)
+    secs.append(np.tile([cx, cy + (0.122 if not hat else 0.07), cz - 0.01], (k, 1)))
     h = loft(secs)
     drop_degenerate(h)
-    # нос: гребень от надбровья, кончик вперёд
+    # нос и подбородок: передний столбец вперёд (кончик носа — у скул, ямка под губой — у челюсти)
     front = (np.abs(h.P[:, 0] - cx) < 1e-6) & (h.P[:, 2] > cz + 0.05)
-    h.P[front & (np.abs(h.P[:, 1] - (cy - 0.018)) < 1e-6), 2] += 0.02
+    h.P[front & (np.abs(h.P[:, 1] - (cy - 0.012)) < 1e-6), 2] += 0.026
+    h.P[front & (np.abs(h.P[:, 1] - (cy + 0.042)) < 1e-6), 2] += 0.008
     h.smooth()
     rect = A.rect("face0")
     _head_uv(h, c, (0, 0, 1, 1))
@@ -108,18 +113,7 @@ def head_mesh(A, part, c, d, hat, var=True):
     ucol = head_u(-180.0 + 360.0 * np.arange(cols) / k)
     for i in range(len(secs)):
         h.UV[i * cols:(i + 1) * cols, 0] = ucol
-    out = [tag(h, part, rect, coat=VAR_HEAD if var else 0.0)]
-    if not lo:
-        rz = 0.104
-        nose = Mesh([(cx, cy + 0.006, cz + rz + 0.006), (cx - 0.017, cy - 0.044, cz + rz - 0.004),
-                     (cx, cy - 0.04, cz + rz + 0.03), (cx + 0.017, cy - 0.044, cz + rz - 0.004)],
-                    [(0, 1, 2), (0, 2, 3), (1, 3, 2)])
-        nose = nose.flat()
-        _head_uv(nose, c, (0, 0, 1, 1))
-        # клин носа берёт цвет спинки носа, а не тени под ним (иначе нижняя грань — чёрный треугольник)
-        nose.UV[:, 1] = np.maximum(nose.UV[:, 1], (-0.03 - HEAD_Y[0]) / (HEAD_Y[1] - HEAD_Y[0]))
-        out.append(tag(nose, part, rect, coat=VAR_HEAD if var else 0.0))
-    return out
+    return [tag(h, part, rect, coat=VAR_HEAD if var else 0.0)]
 
 
 HEAD_SCALE = 1.06    # голова чуть крупнее натуры: лицо и шапка читаются с камеры боя (ТЗ 11.1)
@@ -160,7 +154,7 @@ def hat_mesh(A, part, c, d, kind, var=True, region="hat0"):
         out.append(tag(k_, part, _hat_rect(A, region, 0.0, HAT_SPLIT), coat=b, side=1.0))   # кулах — цвет стороны
     elif kind == "kalpak":
         n = 6
-        brim = lathe([(0.1, 0.022), (0.128, 0.098)], n, start=0.0).translate(cx, cy, cz)
+        brim = lathe([(0.1, 0.02), (0.132, 0.118)], n, start=0.0).translate(cx, cy, cz)   # высокий отворот
         # раздвоенный отворот: спереди выше и шире расходится
         fr = np.clip((brim.P[:, 2] - cz) / 0.13, 0, None)
         brim.P[:, 1] += 0.02 * fr * (brim.P[:, 1] > cy + 0.05)
@@ -299,7 +293,7 @@ def human_upper(A, spec, d, P, ids):
     out += hd_parts
     # кушак: закрывает шов торса и подола; концы свисают спереди сбоку
     if spec.get("sash") and not (lo and not spec.get("sash_lod1", True)):
-        sash = lathe([(0.17, 0.945 + dy), (0.176, 1.07 + dy)], 6 if lo else 8)
+        sash = lathe([(0.168, 0.932 + dy), (0.178, 1.088 + dy)], 6 if lo else 8)   # широкий кушак-шаль
         sash.transform(np.diag([bulk, 1, bulk * 0.9]))
         sash.translate(0, 0, dz + 0.004)
         out.append(tag(sash, ids["PELVIS"], A.rect(spec["sash"]), side=spec.get("side_sash", 1.0),
@@ -384,7 +378,8 @@ def human_legs(A, spec, d):
         if lo:
             b = limb([kn + (0, 0.02, 0.005), an + (0, 0.01, 0)], [0.066, 0.048], sides=4)
         else:
-            b = limb([kn + (0, 0.03, 0.008), kn + bd * 0.08, an + (0, 0.012, 0)], [0.07, 0.065, 0.046], sides=5)
+            # голенище одной трубкой (сгиб у колена смешивает шейдер): треугольники ушли в голову
+            b = limb([kn + (0, 0.03, 0.008), an + (0, 0.012, 0)], [0.07, 0.046], sides=5)
         b = tag(b, HP[sh], S(A, "leather", LEATHER_SUB["boot"]), flip=False)
         joint_weight(b, kn, bd, 0.1, 0.5)
         out.append(b)
@@ -644,6 +639,8 @@ def horse_body(A, d, coat_cell="coat0", coat_mask=1.0, mane=True, ridden=False):
     sec = HORSE_BODY
     if lo:
         sec = [sec[0], sec[2], sec[4], sec[5], sec[6], sec[7]]
+    elif ridden:   # середину корпуса закрывают попона и седло: кольцо под ними не видно
+        sec = sec[:3] + sec[4:]
     spine = lambda a: 1.0 - 0.1 * max(math.cos(a), 0.0) ** 3 + 0.04 * max(-math.cos(a), 0.0)  # noqa: E731
     rings = [ring_z((0, y, 0.62 + (z - 0.62) * 0.9), rx, ry, k, squash=spine) for z, y, rx, ry in sec]
     body = loft(rings, cap_start=True, cap_end=True)
@@ -942,7 +939,7 @@ UNITS = {
     "kok_yuzboshi": ("rider", KOK, dict(ROBE, torso="torsoX", skirt="skirtX", sleeve="sleeveX", robe_var=True,
                                          hat="turban", hat_region="hatx", hat_variant=False, weapon="saber",
                                          coat="coat0", cuff_side=True,
-                                         caparison=dict(region="saddlecloth", z0=-0.5, z1=0.38, hem=1.0))),
+                                         caparison=dict(region="saddlecloth", z0=-0.66, z1=0.46, hem=0.92))),
     "kip_sayisker": ("rider", KIP, dict(ROBE, torso="torsoX", skirt="skirtX", hat="helmet", weapon="lance",
                                         item="shield", caparison=dict(region="caparison", hem=0.86))),
     "kip_sayisker_banner": ("rider", KIP, dict(ROBE, torso="torsoX", skirt="skirtX", hat="helmet",

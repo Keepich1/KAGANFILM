@@ -52,8 +52,23 @@ def _tex_sample(tex, uv):
     return a * (1 - fy) + b * fy
 
 
-def render(m, tex, yaw_deg, pitch_deg, size=320, extent=None, variant=(0, 0), du=0.25, bg=(46, 44, 52), center=None):
-    """Ортографический кадр меша в позе покоя. Возвращает (RGB uint8, маска силуэта, маска стороны)."""
+def side_hue(alb, faction):
+    """Доля «краски стороны» по цвету (а не по маске COLOR.g): бирюза и изумруд у Коканда,
+    киноварь и кармин у кыпчаков — то, что глаз видит как цвет стороны (ТЗ 11.2)."""
+    mx, mn = alb.max(1), alb.min(1)
+    sat = (mx - mn) / np.maximum(mx, 1e-6)
+    r, g, b = alb[:, 0], alb[:, 1], alb[:, 2]
+    if faction == "kokand":
+        return (g > r * 1.25) & (b > r * 1.05) & (sat > 0.3) & (mx > 0.2)
+    if faction == "kipchak":
+        return (r > g * 1.7) & (r > b * 1.5) & (sat > 0.45) & (mx > 0.25)
+    return np.zeros(len(alb), bool)
+
+
+def render(m, tex, yaw_deg, pitch_deg, size=320, extent=None, variant=(0, 0), du=0.25, bg=(46, 44, 52), center=None,
+           faction=None):
+    """Ортографический кадр меша в позе покоя. Возвращает (RGB uint8, маска силуэта, маска стороны,
+    маска краски стороны по цвету)."""
     yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
     # направление от цели к камере
     to_cam = np.array([math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch)])
@@ -78,6 +93,7 @@ def render(m, tex, yaw_deg, pitch_deg, size=320, extent=None, variant=(0, 0), du
     zb = np.full((size, size), -1e9)
     sil = np.zeros((size, size), bool)
     side = np.zeros((size, size))
+    hue = np.zeros((size, size), bool)
     N = m.N
     for f in m.F:
         a, b, cc = f
@@ -111,7 +127,8 @@ def render(m, tex, yaw_deg, pitch_deg, size=320, extent=None, variant=(0, 0), du
         nrm = W @ np.stack([N[a], N[b], N[cc]])
         nrm /= np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-9)
         col = W @ np.stack([m.C[a], m.C[b], m.C[cc]])
-        alb = _tex_sample(tex, uv) * col[:, :1]
+        raw = _tex_sample(tex, uv)
+        alb = raw * col[:, :1]
         # как crowd.gdshader: насыщенность +22 %, подъём яркости +20 %
         l = alb @ np.array([0.299, 0.587, 0.114])
         alb = (l[:, None] + (alb - l[:, None]) * 1.22) * 1.2
@@ -128,8 +145,9 @@ def render(m, tex, yaw_deg, pitch_deg, size=320, extent=None, variant=(0, 0), du
         sub[iy, ix] = z[ok]
         sil[y0 + iy, x0 + ix] = True
         side[y0 + iy, x0 + ix] = np.clip(col[:, 1], 0, 1)
+        hue[y0 + iy, x0 + ix] = side_hue(raw, faction)
     out = (np.clip(img, 0, 1) ** (1 / 1.25) * 255).astype(np.uint8)
-    return out, sil, side
+    return out, sil, side, hue
 
 
 def coverage(sil, side):
@@ -187,18 +205,21 @@ def main(argv):
         ext = float(max(hi[1] - lo[1], hi[2] - lo[2], hi[0] - lo[0])) * 1.06
         center = None
         if a.zoom == "head":
-            ext = 0.75
-            hy = 2.25 if kind == "rider" else 1.62
-            center = np.array([0.0, hy - 0.25, 0.0])
+            ext = 0.62
+            hy = 2.28 if kind == "rider" else 1.64
+            center = np.array([0.0, hy + 0.02, 0.0])
+        faction = "kokand" if A.name.startswith("kokand") else ("kipchak" if A.name.startswith("kipchak") else None)
         for v in var:
-            tiles, covs = [], []
+            tiles, covs, hues = [], [], []
             for vn in views:
                 yaw, pitch = VIEWS[vn]
-                im, sil, side = render(m, tex, yaw, pitch, a.size, ext, (v, v), center=center)
+                im, sil, side, hue = render(m, tex, yaw, pitch, a.size, ext, (v, v), center=center, faction=faction)
                 tiles.append(im)
                 covs.append(coverage(sil, side))
+                hues.append(coverage(sil, hue))
             row = np.concatenate(tiles, 1)
-            label = f"{uid}  v{v}  {m.tris} tris  side: " + "  ".join(f"{vn} {c:.0%}" for vn, c in zip(views, covs))
+            label = (f"{uid}  v{v}  {m.tris} tris  side mask: " + "  ".join(f"{vn} {c:.0%}" for vn, c in zip(views, covs))
+                     + "  | side paint: " + "  ".join(f"{vn} {c:.0%}" for vn, c in zip(views, hues)))
             rows.append((row, label, part_counts(m, names)))
             print(label)
     W = max(r[0].shape[1] for r in rows)
