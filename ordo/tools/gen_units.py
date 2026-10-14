@@ -153,15 +153,13 @@ def hat_mesh(A, part, c, d, kind, var=True, region="hat0"):
         k_.P[:, 2] -= 0.05 * np.clip(k_.P[:, 1] - cy - 0.3, 0, None)   # макушка кулаха чуть назад
         out.append(tag(k_, part, _hat_rect(A, region, 0.0, HAT_SPLIT), coat=b, side=1.0))   # кулах — цвет стороны
     elif kind == "kalpak":
-        n = 6
+        n = 6 if lo else 8   # восемь граней: шестигранный калпак крупным планом выглядел коробкой
         brim = lathe([(0.1, 0.02), (0.132, 0.118)], n, start=0.0).translate(cx, cy, cz)   # высокий отворот
         # раздвоенный отворот: спереди выше и шире расходится
         fr = np.clip((brim.P[:, 2] - cz) / 0.13, 0, None)
         brim.P[:, 1] += 0.02 * fr * (brim.P[:, 1] > cy + 0.05)
         out.append(tag(brim, part, _hat_rect(A, region, 0.74, 1.0), coat=b, side=1.0))   # отворот киноварью
-        cp = [(0.106, 0.07), (0.1, 0.2), (0.06, 0.34), (0.0, 0.44)]
-        if lo:
-            cp = [cp[0], cp[2], cp[3]]
+        cp = [(0.106, 0.07), (0.088, 0.27), (0.0, 0.44)]   # тулья: гладкий конус (нормали скругляют грани)
         crown = lathe(cp, n, start=0.0).translate(cx, cy, cz - 0.004)
         crown.P[:, 2] -= 0.06 * np.clip(crown.P[:, 1] - cy - 0.2, 0, None)
         out.append(tag(crown, part, _hat_rect(A, region, 0.0, 0.74), coat=b))
@@ -846,9 +844,13 @@ EXCLUDE_AO_R = (RP["R_WEAPON"], RP["R_ITEM"], RP["R_CLOTH"], RP["TAIL"])
 
 def build_rider(A, spec, d):
     parts = horse_body(A, d, spec.get("coat", "coat0"), spec.get("coat_mask", 1.0), ridden=True)
+    cap = (0, 0)
     if spec.get("caparison"):
         cz = spec["caparison"]
-        parts.append(caparison_mesh(A, cz["region"], d, cz.get("z0", -0.8), cz.get("z1", 0.62), cz.get("hem", 0.8)))
+        n0 = sum(len(p.P) for p in parts)
+        cm = caparison_mesh(A, cz["region"], d, cz.get("z0", -0.8), cz.get("z1", 0.62), cz.get("hem", 0.8))
+        parts.append(cm)
+        cap = (n0, n0 + len(cm.P))
     parts += saddle(A, d)
     ids = {"PELVIS": RP["R_PELVIS"], "CHEST": RP["R_TORSO"], "HEAD": RP["R_HEAD"], "UARM_L": RP["R_UARM_L"],
            "FARM_L": RP["R_FARM_L"], "UARM_R": RP["R_UARM_R"], "FARM_R": RP["R_FARM_R"]}
@@ -870,7 +872,10 @@ def build_rider(A, spec, d):
         parts += shield(A, RP["R_ITEM"], (el + hd) / 2 + (0.0, 0.0, 0.075), d, r=0.25)
     m = Mesh.merge(parts)
     bake_shade(m, 0.0, 2.3, low=0.6, down=0.8)
+    before = m.C[cap[0]:cap[1], 0].copy()
     bake_ao(m, EXCLUDE_AO_R, rays=24 if d > 0.8 else 12)
+    # попона — крупные треугольники: полная тень от ноги всадника ложилась на них треугольными пятнами
+    m.C[cap[0]:cap[1], 0] = before + (m.C[cap[0]:cap[1], 0] - before) * 0.35
     return m
 
 
