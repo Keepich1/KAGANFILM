@@ -170,7 +170,7 @@ def hat_mesh(A, part, c, d, kind, var=True, region="hat0"):
     elif kind == "doppi":
         prof = [(0.108, 0.03), (0.112, 0.085), (0.075, 0.135), (0.0, 0.15)] if not lo else \
             [(0.108, 0.03), (0.105, 0.09), (0.0, 0.15)]
-        m = lathe(prof, 8, start=22.5)
+        m = lathe(prof, 6 if lo else 8, start=30.0 if lo else 22.5)
         th = np.arctan2(m.P[:, 0], m.P[:, 2])
         sq = 1.0 / np.maximum(np.abs(np.cos(th)), np.abs(np.sin(th))) ** 0.55
         m.P[:, 0] *= sq * 0.94
