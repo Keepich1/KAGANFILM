@@ -33,6 +33,7 @@ uniform float sway = 0.35;               // качание кроны, м
 uniform float flutter = 0.05;            // дрожь гроздей, м
 uniform float strand_swing = 0.08;       // маятник прядей ивы, доля длины
 uniform float translucency = 0.55;
+uniform float edge_glow = 2.0;           // ореол освещённого края грозди против солнца
 uniform vec4 trans_color : source_color = vec4(1.0, 0.78, 0.42, 1.0);
 uniform float rim_strength = 0.45;
 uniform float variation = 0.14;          // разброс тона между деревьями
@@ -174,8 +175,11 @@ void light() {
 		float edge = 1.0 - abs(dot(NORMAL, VIEW));
 		float thin = clamp(0.2 + 0.8 * v_thin + 0.5 * edge + (strand ? 0.45 : 0.0), 0.0, 1.0);
 		vec3 glow = mix(trans_color.rgb, trans_color.rgb * ALBEDO * 4.0, 0.5);
-		DIFFUSE_LIGHT += LIGHT_COLOR * glow * pow(back, 3.0) * translucency * thin
-			* mix(0.3, 1.0, PAINT_ATTEN) / PI;
+		// ореол: рваный край грозди, на который падает солнце, горит ярче — у кроны против
+		// заката светящаяся кромка, как у листвы на просвет (внутри кроны края в тени — не горят)
+		float halo = v_thin * v_thin * PAINT_ATTEN * edge_glow;
+		DIFFUSE_LIGHT += LIGHT_COLOR * glow * pow(back, 3.0) * translucency
+			* (thin * mix(0.3, 1.0, PAINT_ATTEN) + halo) / PI;
 		// холодное заполнение неба там, куда солнце не достаёт (теневая сторона и глубина кроны):
 		// тени листвы цветные, сине-бирюзовые, а не чёрные (ТЗ 11.1)
 		if (LIGHT_IS_DIRECTIONAL) {
