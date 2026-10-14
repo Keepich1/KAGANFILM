@@ -11,8 +11,8 @@
 
 | | |
 |---|---|
-| ![Город Коканда: поле у арыка](docs/shots/11_gorod_kokand.jpg) | ![Стены, ворота и башня](docs/shots/12_gorod_walls.jpg) |
-| ![Лагерь кыпчаков: көч](docs/shots/13_gorod_koch.jpg) | ![Набег](docs/shots/14_gorod_raid.jpg) |
+| ![Город Коканда: ставка, хумдон и поле у арыка](docs/shots/11_gorod_kokand.jpg) | ![Кыпчаки: частокол, дарбаза и мунара](docs/shots/12_gorod_walls.jpg) |
+| ![Лагерь кыпчаков после көча](docs/shots/13_gorod_koch.jpg) | ![Отряд сарбозов у казармы перед набегом](docs/shots/14_gorod_squad.jpg) |
 | ![Долина на закате](docs/shots/01_establish.jpg) | ![Натиск сайыскеров](docs/shots/05_charge.jpg) |
 
 ## Как поиграть
