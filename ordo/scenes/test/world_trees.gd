@@ -12,6 +12,8 @@ extends Node3D
 ## --studio — облегчённый мир для быстрых проверок на слабой машине: без земли, воды, травы,
 ##            тумана-пятен и деревьев мира; под рядом — простой кусок земли по высотам мира.
 ## --settle=N — сколько кадров ждать после смены камеры (по умолчанию 8).
+## --felled=elm,willow — эти виды в ближнем ряду «срублены» как в WorldScatter.hide_tree (экземпляр
+##            сжат в точку, масштаб 0): на их месте не должно быть ни листвы, ни полос, ни вспышек.
 
 const KINDS := ["juniper", "willow", "elm", "poplar"]
 ## Ряд: x, z (у южного края луга, за ним — река с рощами тополей и ив)
@@ -153,6 +155,7 @@ func _mesh_of(path: String) -> Mesh:
 
 func _build_rows() -> void:
 	var force_lod := int(_ordo.arg("trees_lod", "-1")) if _ordo else -1
+	var felled := String(_ordo.arg("felled", "")).split(",", false) if _ordo else PackedStringArray()
 	var root := Node3D.new()
 	root.name = "TreeRows"
 	add_child(root)
@@ -176,6 +179,8 @@ func _build_rows() -> void:
 			var rot := 0.6 if kind != "willow" else PI * 0.5      # ива клонится к реке (на север)
 			var s := 1.0
 			var b := Basis(Vector3.UP, rot).scaled(Vector3(s, s, s))
+			if row == ROW and kind in felled:
+				b = Basis.from_scale(Vector3.ZERO)
 			mm.set_instance_transform(0, Transform3D(b, Vector3(p.x, Terrain.height_at(p.x, p.y) - 0.15, p.y)))
 			mm.set_instance_custom_data(0, Color(0.5, 0.5, 0.5, 1.0))
 			var mi := MultiMeshInstance3D.new()
