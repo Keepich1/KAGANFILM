@@ -78,8 +78,11 @@ func _check_presets() -> void:
 		_check(st.b > st.r + 0.15, "%s: тень холодная, цветная" % mode)
 		var amb := (e.ambient_light_color as Color).get_luminance() * float(e.ambient_light_energy)
 		_check(amb > Color(0.29, 0.47, 0.6).get_luminance() * 0.75, "%s: заполнение неба ярче (%.2f)" % [mode, amb])
-	_check((day.globals.ordo_rim_color as Color).a < (dusk.globals.ordo_rim_color as Color).a,
-		"днём контровой свет слабее, чем на закате")
+	# контровой свет — не больше 0,4 (было 0,95): против солнца юниты без горящих оранжевых граней
+	for mode: String in LightPresets.MODES:
+		_check((LightPresets.preset(mode).globals.ordo_rim_color as Color).a <= 0.4, "%s: контровой свет ≤ 0,4" % mode)
+	# днём ключевой свет почти белый, на закате — тёплый
+	_check((day.globals.ordo_key_tint as Color).b > (dusk.globals.ordo_key_tint as Color).b, "днём свет белее, чем на закате")
 	print("[«Город»: поправки вида сверху]")
 	_check(is_equal_approx(LightPresets.sun_elevation(LightPresets.SUNSET, true), 16.0), "закат в «Городе»: солнце 16°")
 	_check(LightPresets.clouds(LightPresets.SUNSET, true).x < LightPresets.clouds(LightPresets.SUNSET).x,
