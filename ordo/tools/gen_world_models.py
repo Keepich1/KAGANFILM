@@ -996,14 +996,15 @@ def willow(seed, lod=0):
     # Длина каскада зависит от азимута плавно (низ «колокола» волной) и от случая (рваный край)
     ph = rs.uniform(0, 6.28, 2)
     for layer, count, rr, ao, el in ((0, 40 if lod == 0 else 18, (0.86, 1.04), 1.0, (-8, 62)),
-                                    (1, 12 if lod == 0 else 5, (0.42, 0.66), 0.5, (0, 35))):
+                                    (1, 12 if lod == 0 else 7, (0.42, 0.66), 0.5, (0, 35))):
         for j in range(count):
             a = a0 + (j + rs.uniform(-0.35, 0.35)) * 2 * np.pi / count
             e = math.radians(rs.uniform(*el))
             d = np.array([math.cos(a) * math.cos(e), math.sin(e), math.sin(a) * math.cos(e)])
             p = cc + d * cr * rs.uniform(*rr)
-            hem = 1.3 + 0.8 * math.sin(2 * a + ph[0]) + 0.5 * math.sin(3 * a + ph[1]) + rs.uniform(-0.5, 0.9)
-            h = float(np.clip(p[1] + 0.3 - hem, 2.4, 7.0))
+            # низ каскада почти у земли (ствол под кроной почти не виден — не «пальма»), волной
+            hem = 0.75 + 0.6 * math.sin(2 * a + ph[0]) + 0.4 * math.sin(3 * a + ph[1]) + rs.uniform(-0.4, 0.8)
+            h = float(np.clip(p[1] + 0.3 - hem, 2.4, 7.8))
             w = rs.uniform(2.0, 2.7) * (1.15 if lod else 1.0)
             T.card(p + np.array([0, 0.3, 0]), [d[0], 0, d[2]], w, h, REG["strand"][rs.integers(4)],
                    ao * rs.uniform(0.9, 1.05) * (0.85 + 0.15 * math.sin(e + 0.4)), kind=2, mirror=False)
