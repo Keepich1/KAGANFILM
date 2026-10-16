@@ -5,7 +5,14 @@ extends SimDriver
 ## и окно чтения query (GameQueryImpl) для вида и интерфейса — так же, как FakeCityDriver до I4.
 ##
 ## Аргументы запуска (Ordo.arg): --seed=N, --faction=kokand|kipchak, --difficulty=0..2, --ai_vs_ai,
-## --replay=путь (смотреть повтор), --save_replay=путь (записать повтор при выходе).
+## --replay=путь (смотреть повтор), --save_replay=путь (записать повтор при выходе),
+## --net_demo=состояние (кадры записок игры по сети без сети: NetMatch.demo).
+##
+## Игра по сети (ТЗ §16): лобби оставляет партию в /root/NetSession (NetMatch), драйвер забирает её при запуске
+## сцены (start_net_game): оба игрока — люди (0 — хозяин, 1 — друг; местный — local_player), ИИ и набегов нет.
+## Приказы игрока не идут в очередь сразу: NetMatch собирает их в пакет такта (take_inbox) и шлёт другу; шаг —
+## только когда есть приказы обоих на этот такт (can_step → NetMatch.prepare, барьер такта). Пауза и скорость —
+## общие, приказом (request_pause / request_speed). Начать заново партию по сети нельзя (restart молчит).
 ##
 ## Потоки. Шаги может вести вид (SimStepper), у большого боя — в фоне (WorkerThreadPool). Поэтому:
 ##   • issue() только кладёт приказ во входящие (под замком); в очередь игры (CommandQueue) их переносит
@@ -29,6 +36,8 @@ var query: GameQuery
 var local_player := 0
 var replay_path := ""
 var save_path := ""
+## Партия по сети (NetMatch) или null — одиночная игра
+var net: NetMatch
 
 ## Реализации для GameSim.impl (тесты, автобои: GameSim.impl_for); {} — настоящие, если они в проекте
 var game_impl := {}
@@ -45,6 +54,11 @@ var _inbox_mx := Mutex.new()
 func _ready() -> void:
 	if Engine.is_editor_hint() or not autostart:
 		return
+	# партия по сети из лобби (NetSession в /root)
+	var ns := get_node_or_null("/root/NetSession")
+	if ns != null and bool(ns.call("has_match_waiting")):
+		start_net_game(ns.call("take_match") as NetMatch)
+		return
 	var s := 1
 	var ordo := get_node_or_null("/root/Ordo")
 	if ordo:
@@ -57,6 +71,9 @@ func _ready() -> void:
 		ai_vs_ai = ai_vs_ai or ordo.has_arg("ai_vs_ai")
 		replay_path = ordo.arg("replay", "")
 		save_path = ordo.arg("save_replay", "")
+		if ordo.has_arg("net_demo"):
+			start_net_game(NetMatch.demo(String(ordo.arg("net_demo")), s, player_faction))
+			return
 	if replay_path != "":
 		start_replay(replay_path)
 	else:
@@ -69,6 +86,7 @@ func start(p_seed: int) -> void:
 
 ## Новая игра: местный игрок (0) — player_faction, ИИ (1) — другая сторона
 func start_game(p_seed: int, p_faction: StringName, p_difficulty: int) -> void:
+	net = null
 	current_seed = p_seed
 	player_faction = p_faction
 	difficulty = p_difficulty
@@ -83,8 +101,26 @@ func start_game(p_seed: int, p_faction: StringName, p_difficulty: int) -> void:
 	_attach()
 
 
+## Партия по сети (NetMatch из лобби): игроки 0 — хозяин, 1 — друг, оба люди; местный — m.local. Та же карта,
+## правила и зерно у обоих — одинаковые GameSim
+func start_net_game(m: NetMatch) -> void:
+	net = m
+	current_seed = m.seed
+	player_faction = m.faction_of(m.local)
+	difficulty = 0
+	ai_vs_ai = false
+	game = GameSim.new()
+	game.impl = game_impl.duplicate()
+	game.setup(MapValley.MAP, m.players(), m.seed)
+	_attach(m.local)
+	var ordo := get_node_or_null("/root/Ordo") if is_inside_tree() else null
+	m.log_checks = ordo != null and bool(ordo.call("has_arg", "net_log"))
+	m.bind(self)
+
+
 ## Смотреть повтор (приказы — из записи; свои приказы игнорируются)
 func start_replay(path: String) -> bool:
+	net = null
 	_replay = Replay.load_file(path)
 	var g: GameSim = null
 	if not _replay.is_empty():
@@ -98,6 +134,13 @@ func start_replay(path: String) -> bool:
 	current_seed = game.seed
 	_attach()
 	return true
+
+
+## Начать заново (меню «Начать заново», «Ещё раз»); партию по сети — нельзя: она одна на двоих
+func restart() -> void:
+	if net != null:
+		return
+	start(current_seed)
 
 
 ## Приказ местного игрока (интерфейс): во входящие; в очередь игры — в начале следующего шага.
@@ -118,6 +161,15 @@ func inbox_count() -> int:
 	return n
 
 
+## Забрать все входящие (игра по сети: NetMatch кладёт их в свой пакет такта)
+func take_inbox() -> Array[PackedInt32Array]:
+	_inbox_mx.lock()
+	var cmds := _inbox
+	_inbox = []
+	_inbox_mx.unlock()
+	return cmds
+
+
 ## Дождаться фонового шага (если он идёт): звать перед чтением query / таблиц экономики при background_steps
 func sync() -> void:
 	var st := stepper if stepper != null else _find_stepper()
@@ -130,17 +182,63 @@ func restarts_next() -> bool:
 	return not background_steps
 
 
+## Игра по сети: шаг только по барьеру такта (есть приказы друга на этот такт, NetMatch.prepare)
+func can_step() -> bool:
+	if net == null:
+		return true
+	return game != null and net.prepare(game.tick)
+
+
+## Пауза: в игре по сети — общая, приказом (NetMatch), в одиночной — сразу
+func request_pause(on: bool) -> void:
+	if net != null:
+		net.request_pause(on)
+	else:
+		paused = on
+
+
+## Скорость: в игре по сети — общая, приказом (с ближайшего такта у обоих)
+func request_speed(s: float) -> void:
+	if net != null:
+		net.request_speed(s)
+	else:
+		time_scale = s
+
+
+func pause_wanted() -> bool:
+	return net.pause_wanted() if net != null else paused
+
+
+func speed_wanted() -> float:
+	return net.speed_wanted() if net != null else time_scale
+
+
+## Меню игры открыто / закрыто (CityMenu): в игре по сети друг видит «Друг открыл меню», а не просто паузу
+func set_menu_open(on: bool) -> void:
+	if net != null:
+		net.set_menu(on)
+
+
 func step() -> void:
 	if game == null:
 		return
 	if not _replay.is_empty() and game.tick >= int(_replay.get("end_tick", 0)):
 		paused = true
 		return
-	_drain_inbox()
+	if net != null:
+		if not net.prepare(game.tick):
+			return
+	else:
+		_drain_inbox()
 	var was_over := game.over
 	game.step()
+	if net != null:
+		net.after_step()
 	ticked.emit(game.tick)
 	if game.over and not was_over:
+		if net != null:
+			net.over = true
+			net.save_last()
 		battle_over.emit(game.winner)
 		finished.emit()
 
@@ -155,6 +253,9 @@ func _process(delta: float) -> void:
 	_acc += delta * time_scale
 	var guard := 0
 	while _acc >= DT and guard < 12:
+		if not can_step():
+			_acc = minf(_acc, DT)
+			break
 		_acc -= DT
 		step()
 		guard += 1
@@ -193,16 +294,17 @@ func _find_stepper() -> SimStepper:
 	return null
 
 
-func _attach() -> void:
+func _attach(p_local := 0) -> void:
 	_inbox_mx.lock()
 	_inbox.clear()        # приказы прошлой игры не переходят в новую
 	_inbox_mx.unlock()
 	query = game.query
-	local_player = 0
+	local_player = p_local
 	sim = game.port.battle()
 	_acc = 0.0
 	alpha = 0.0
 	paused = false
+	time_scale = 1.0 if net != null else time_scale
 	if sim:
 		wire_sim(sim)
 	started.emit(current_seed)

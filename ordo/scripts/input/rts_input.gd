@@ -424,17 +424,18 @@ func _key(k: InputEventKey) -> bool:
 	if _is(k, "ordo_idle_worker", KEY_PERIOD):
 		next_idle_worker()
 		return true
+	# пауза и скорость — через драйвер: в игре по сети они общие (приказом для обоих, GameDriver)
 	if _is(k, "ordo_pause", KEY_P):
 		if driver:
-			driver.paused = not driver.paused
+			driver.request_pause(not driver.pause_wanted())
 		return true
 	if _is(k, "ordo_speed_up", KEY_EQUAL) or code == KEY_KP_ADD:
 		if driver:
-			driver.time_scale = minf(driver.time_scale * 2.0, 4.0)
+			driver.request_speed(minf(driver.speed_wanted() * 2.0, 4.0))
 		return true
 	if _is(k, "ordo_speed_down", KEY_MINUS) or code == KEY_KP_SUBTRACT:
 		if driver:
-			driver.time_scale = maxf(driver.time_scale * 0.5, 0.25)
+			driver.request_speed(maxf(driver.speed_wanted() * 0.5, 0.25))
 		return true
 	if _is(k, "ordo_mute", KEY_M):
 		toggle_mute()

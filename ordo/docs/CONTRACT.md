@@ -26,6 +26,9 @@
   Множитель холста окна (`Window.content_scale_factor`) ставит только `Ordo`; сцене для мелких окон —
   `Ordo.set_ui_boost(func(окно, раскладка) -> float)` (так делает `CityHud`). Холст бывает от 1280×720 (150 %)
   до 2560×1440 (75 %): интерфейс раскладывается по `get_viewport_rect()`, а не по 1920×1080.
+- Игра по сети — `scripts/net/` (владелец NET, §8; ТЗ §16): `NetSession` живёт в `/root/NetSession` (не автозагрузка,
+  создаётся лобби), партию отдаёт `GameDriver`. Две игры на одном ПК: ключи `--net_bind=127.0.0.1` (только свой
+  компьютер — Windows не спрашивает про сеть) и `--net_port=N`; проверка — `tests/test_net_two.gd`.
 
 ## 2. Единицы и оси
 
@@ -136,6 +139,7 @@ GuardPost_*), толпу — из `scripts/units/crowd_layer.gd`. Свои не�
 | GAME (игра) | `scripts/game/*`, `scripts/game/ai/*`; значения `scripts/data/{ai_defs,map_valley}.gd` и остальных ключей `game_rules.gd`; `tests/test_game_*.gd`, `tests/test_orders.gd`, `tests/test_raid.gd`, `tests/test_replay.gd`, `tests/test_perf_city.gd`, `tools/skirmish_headless.sh` |
 | VIEW (вид) | `scripts/view/*`, `shaders/view/*`, `scenes/gorod/*`, `scenes/test/gorod_*`, `tests/test_unit_view.gd`, `tests/test_building_view.gd`; согласованные правки (подпись ведущего): `scripts/world/world_scatter.gd` (`hide_tree`, карта деревьев), `scripts/world/grass_field.gd` + `shaders/grass.gdshader` (`set_mask`) |
 | UI (интерфейс) | `scripts/ui/city/*`, `scripts/input/*`, `assets/ui/*` (кроме `assets/ui/fonts/`), `tools/gen_ui*.py`, `tests/test_input.gd`, `tests/test_ui_bind.gd`; согласованная правка: `scripts/camera/rts_camera.gd` (`presets_enabled`, край экрана над HUD) |
+| NET (игра по сети) | `scripts/net/*` (NetProto — порт и первый пакет, NetVersion, NetAddr, NetSession — ENet и лобби, NetMatch — шаг в ногу, NetUpnp, NetHud — записки партии), `scripts/menu/friend_game.gd` (лобби «Игра с другом»), `tests/test_net*.gd`, `tests/net_peer.gd`, `tests/net_bot.gd`; согласованные правки: `GameDriver` (`start_net_game`, `can_step`, `take_inbox`, пауза и скорость приказом, `set_menu_open`), `SimDriver.can_step / request_pause / request_speed` и `SimStepper` (барьер такта), пауза и скорость в `rts_input.gd`, `city_hud.gd`, `menu.gd` — через драйвер (меню: снимает только свою паузу, «Выйти из партии?»), `top_bar.gd` (до первого такта население без предела; в партии по сети подсказки паузы и скорости — «у обоих») |
 
 `scripts/world/scatter_data.gd` лежит в папке Мира, но это файл договора (ведущий).
 
@@ -179,11 +183,18 @@ GuardPost_*), толпу — из `scripts/units/crowd_layer.gd`. Свои не�
    HP построек — санти (× 100), таймеры — такты, потоки «в минуту» — через остатки (`rate_acc`).
    Расстояния сравнивать по квадратам; `sin/cos/atan2/exp/pow` — только в ядре.
 6. **Приказы — единственный вход.** Интерфейс и ИИ делают `SimCmd`; приказ исполняется на такте
-   `tick + input_delay` (1 в одиночной игре). Пауза и скорость — локальны.
+   `tick + input_delay` (1 в одиночной игре). Пауза и скорость — локальны; интерфейс меняет их только через
+   `SimDriver.request_pause / request_speed` (кнопка и клавиши переключают от `pause_wanted / speed_wanted`).
+   **Игра по сети** (`NetMatch`, ТЗ §16): задержка приказов 4–6 тактов (`NetMatch.delay_for` по ответу друга,
+   решает хозяин; на скорости выше ×1 — больше во столько же раз, `NetMatch.lead`), приказы игрока — пакетом такта
+   (и пустым), такт T делается, только когда есть пакеты обоих на T (`GameDriver.can_step`); пауза и скорость —
+   общие, флагом в пакете такта, по игрокам (обе игры на одном такте решают одинаково).
 7. **Контрольная сумма** раз в 30 тактов: `battle.checksum()`, `econ.checksum()`, `nav.checksum()`,
    Σ `ai.checksum()`, состояния генераторов.
-8. **Детерминизм сейчас — «тот же исполняемый файл»** (повторы, тесты, баланс). Межплатформенный —
-   с `BattleCore`/`NavCore` (этап мультиплеера).
+8. **Детерминизм сейчас — «тот же исполняемый файл»** (повторы, тесты, баланс, игра по сети: Windows ↔ Windows
+   одной сборки — сверка `NetVersion` пускает только тот же код). Межплатформенный — с `BattleCore`/`NavCore`:
+   до них Windows ↔ Linux в партии по сети могут разойтись (ядро считает тригонометрию движка), сверка сумм
+   раз в 30 тактов остановит такую партию.
 9. **Владение данными:** массивы ядра пишет только `sim.gd` (снаружи — только через `CombatPort`);
    четыре таблицы (`PlayerTable`, `BuildingTable`, `NodeTable`, `HerdTable`) пишет только ECON.
    Читатели берут массивы **в локальные переменные в начале функции и никогда не хранят их в полях**

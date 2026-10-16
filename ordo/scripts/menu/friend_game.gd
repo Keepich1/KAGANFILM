@@ -1,8 +1,13 @@
 extends Control
-## «Игра с другом» — МАКЕТ лобби игры по сети (Город один на один по адресу: один создаёт игру, другой
-## подключается). Только для согласования с автором: сети нет — ни сокетов, ни IP.get_local_*, ни запросов
-## в интернет (иначе Windows спросит про доступ к сети прямо во время съёмки, а в кадр попадут настоящие
-## адреса). Все адреса и числа выдуманные; 203.0.113.x — диапазон для примеров, никому не принадлежит.
+## «Игра с другом» — лобби игры по сети (Город один на один по адресу: один создаёт игру, другой подключается;
+## ТЗ §16). Настоящая сеть — NetSession (scripts/net/: ENet по UDP 7777, сверка версий, сторона и номер партии
+## хозяина у друга сразу, «Начать игру» — партия у обоих: NetMatch, сцена «Города»). Экраны и тексты — ровно
+## одобренного макета (кадры renders/online/r6); что показать, решают события сети (_on_net), а не часы макета.
+##
+## МАКЕТ (--online_mock=1; кадры состояний --menu_online=… — тоже он): сети нет — ни сокетов, ни IP.get_local_*,
+## ни запросов в интернет (иначе Windows спросит про доступ к сети прямо во время съёмки, а в кадр попадут
+## настоящие адреса). Все адреса и числа выдуманные; 203.0.113.x — диапазон для примеров, никому не принадлежит.
+## Под листом макета — строка «Макет экрана»; у настоящего лобби её нет.
 ##
 ## Способы связи (решение 2026-10-15): рядом — один Wi-Fi («Дома»), далеко — Radmin VPN; для знатоков — порт
 ## на роутере, только в справке (в лобби строки «Через интернет» нет: для новичка это ловушка).
@@ -24,6 +29,8 @@ extends Control
 ## состояние (только с ключом --menu_online, для кадров).
 ## Макет можно прощёлкать: «Создать игру» — друг «входит» через 6 с; «Подключиться» к 26.115.40.12 — через
 ## 3 с вы в игре у друга, к любому другому адресу — «Не получилось подключиться».
+## Настоящее лобби для кадров двух окон: --net_auto=host | join:адрес (сразу «Создать игру» / «Подключиться»),
+## --net_show_addr=mock — в строках адресов выдуманные адреса макета (настоящие в кадр не попадут).
 
 const STATES := ["choose", "host_wait", "host_ready", "join", "join_connecting", "join_fail", "join_wait",
 	"version", "help"]
@@ -79,6 +86,8 @@ const FRIEND_COMES := 6.0
 const MOCK_FLASH := "Это макет: игра по сети ещё не подключена."
 ## Строка под листом: что это макет (не «связи нет» — так она читалась как состояние связи)
 const MOCK_NOTE := "Макет экрана: игра по сети пока не работает"
+## Записка хозяина о вопросе Windows про сеть (окно Windows может открыться за игрой во весь экран — Alt+Tab)
+const FIREWALL_NOTE := "Windows спросит про сеть — отметьте обе галочки и нажмите «Разрешить доступ». Не видно окна — нажмите Alt+Tab."
 ## Неразрывный пробел (U+00A0): тире не начинает строку, предлог не висит в конце строки. На глаз его не
 ## отличить от обычного пробела — правка файла его легко теряет; тест test_ui_scale проверяет код знака
 const NBSP := " "
@@ -153,8 +162,24 @@ var _body: VBoxContainer
 var _left: Button
 var _main: Button
 var _build: Label
-## Строка «это макет» под листом
-var _mock: Label
+## Строка «это макет» под листом (только у макета)
+var _mock_note: Label
+## Макет (MainMenu._online_mock: --online_mock=1, кадры состояний) или настоящая сеть (NetSession)
+var _mock := true
+var _net: NetSession
+## Настоящая сеть: свои адреса (NetAddr.scan; у хозяина), версия друга из его первого пакета (отказ «Разные
+## версии»), с какого мига хозяин ждёт друга и подключающийся стучится (мс), адрес в интернете из справки,
+## друг вошёл, а сторона и номер партии хозяина ещё не пришли
+var _addrs := {"radmin": "", "home": PackedStringArray()}
+var _their := {}
+var _host_t0 := 0
+var _conn_t0 := 0
+var _net_addr := ""
+var _lobby_wait := false
+## Кадры: хозяин сам жмёт «Начать игру», когда друг вошёл (--net_auto=host:start)
+var _net_auto_start := false
+## Подключившийся: сторона на табличке «Вы» сейчас (хозяин сменил сторону — записка «теперь вы за …»)
+var _guest_shown := ""
 ## Записка листа: сама, печать, текст, отступ под ней; какая сейчас ("red" / "green" / "gold", "" — нет),
 ## какая у состояния по умолчанию [печать, текст, подсказка], сколько строк держит всегда
 var _msg: MsgNote
@@ -337,13 +362,13 @@ func setup(m: MainMenu) -> void:
 	_build.name = "Build"
 	_build.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_col.add_child(_build)
-	# под листом — только «это макет», мелко (сообщения — в записке на листе)
-	_mock = menu._label(tr(MOCK_NOTE), _italic(500), 20, PARCH_DIM)
-	_mock.name = "MockNote"
-	_mock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_mock.add_theme_constant_override("outline_size", 6)
-	_mock.add_theme_color_override("font_outline_color", SHADOW)
-	sheet.add_child(_mock)
+	# под листом макета — только «это макет», мелко (сообщения — в записке на листе); у настоящего лобби — ничего
+	_mock_note = menu._label(tr(MOCK_NOTE), _italic(500), 20, PARCH_DIM)
+	_mock_note.name = "MockNote"
+	_mock_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mock_note.add_theme_constant_override("outline_size", 6)
+	_mock_note.add_theme_color_override("font_outline_color", SHADOW)
+	sheet.add_child(_mock_note)
 	layout()
 	# высота листа — по содержимому: тело сменилось или строки досчитали перенос — меню ставит лист заново
 	_col.minimum_size_changed.connect(_queue_fit)
@@ -378,12 +403,23 @@ func _build_msg() -> void:
 	_msg.visible = false
 
 
-## Открыть лист в состоянии state (вариант alt); неизвестное состояние — выбор роли. Макет — с чистого листа
+## Открыть лист в состоянии state (вариант alt); неизвестное состояние — выбор роли. Макет — с чистого листа.
+## Настоящее лобби открывается на выборе (или «Адрес друга», справка): дальше состояния ведут события сети
 func open(state := "choose", alt := 0) -> void:
 	visible = true
 	_live = false
+	_mock = menu._online_mock()
+	_mock_note.visible = _mock
 	_reset_mock()
+	if not _mock:
+		if not (state in ["choose", "join", "help"]):
+			state = "choose"
+		alt = 0
 	_show(state, alt)
+	if not _mock and menu._ordo != null and menu._ordo.has_arg("net_auto"):
+		var spec := String(menu._ordo.arg("net_auto"))
+		menu._ordo.clear_arg("net_auto")
+		_auto.call_deferred(spec)
 
 
 ## Высота листа (точки раскладки): содержимое столбца с полями, не ниже ONLINE_MIN_H (у «Адреса друга» и
@@ -393,16 +429,20 @@ func sheet_height() -> float:
 	return maxf(lo, _col.get_combined_minimum_size().y + PAD.y * 2.0)
 
 
-## Высота, по которой меню считает масштаб листа: своя у каждого хода лобби (FLOW_H) — масштаб один на весь ход
+## Высота, по которой меню считает масштаб листа: своя у каждого хода лобби (FLOW_H) — масштаб один на весь ход.
+## Настоящий хозяин с двумя домашними адресами (строк адресов три) выше макета — масштаб по нему
 func top_h() -> float:
-	return float(FLOW_H[FLOWS.get(_state, "choose")])
+	var h := float(FLOW_H[FLOWS.get(_state, "choose")])
+	if not _mock and FLOWS.get(_state, "") == "host":
+		h = maxf(h, sheet_height())
+	return h
 
 
 ## Меню поставило лист (место, масштаб, высоту): строка «макет» — под его нижним краем; лист на экране стал
 ## мельче SMALL_K (или интерфейс крупный, от BIG_UI) — мелкие строки курсивом плотнее, иначе как были (_boost_all)
 func layout() -> void:
-	_mock.position = Vector2(-60.0, sheet.size.y + 6.0)
-	_mock.size = Vector2(sheet.size.x + 120.0, 34.0)
+	_mock_note.position = Vector2(-60.0, sheet.size.y + 6.0)
+	_mock_note.size = Vector2(sheet.size.x + 120.0, 34.0)
 	var small := screen_k() < SMALL_K or _ui_scale() >= BIG_UI - 0.001
 	if small != _small:
 		_small = small
@@ -484,7 +524,8 @@ func _put_msg(kind: String, text: String, tip := "") -> void:
 	if kind == "":
 		return
 	_msg_seal.texture = menu._tex("seal_" + kind)
-	_msg_text.text = _nb(tr(text))
+	# версия рабочей сборки кончается сокращением («от 16 окт.») — в конце предложения не две точки подряд
+	_msg_text.text = _nb(tr(text)).replace("..", ".")
 	_msg_text.add_theme_color_override("font_color", RED_INK if kind == "red" else INK)
 	# строки — как у самой надписи: высота строки и межстрочный зазор (иначе две строки текста выше запаса)
 	var lh := _text(600).get_height(21)
@@ -499,12 +540,16 @@ func _put_msg(kind: String, text: String, tip := "") -> void:
 
 func _close() -> void:
 	_live = false
+	_stop_net()
+	# порт, открытый из справки без «Создать игру», — закрыть, поиск адреса — бросить (ТЗ §16: «Отмена» и выход)
+	if not _mock and _net != null:
+		_net.forget_external()
 	_reset_mock()
 	menu._close_online()
 
 
-## Макет с начала: «Отмена» у хозяина и закрытый лист забывают номер партии, узнанный адрес в интернете и адрес
-## друга (настоящая игра тоже начинает новую игру с чистого листа)
+## Лобби с начала: «Отмена» у хозяина и закрытый лист забывают номер партии, узнанный адрес в интернете и адрес
+## друга (новая игра — с чистого листа)
 func _reset_mock() -> void:
 	_seed = SEED_MOCK
 	_net_found = false
@@ -515,6 +560,10 @@ func _reset_mock() -> void:
 	_help_from = "choose"
 	_help_alt = 0
 	_help_live = false
+	_their = {}
+	_net_addr = ""
+	_lobby_wait = false
+	_guest_shown = ""
 
 
 func _notification(what: int) -> void:
@@ -588,6 +637,13 @@ func _process(delta: float) -> void:
 	if _state == "host_ready":
 		var g := 1.1 if _shot else 1.0 + 0.15 * (0.5 - 0.5 * cos(TAU * _t / 1.6))
 		_main.self_modulate = Color(g, g, g)
+	# настоящая сеть: сколько хозяин ждёт друга, сколько ещё ждать ответа (что дальше — решают события сети)
+	if not _mock:
+		if _state == "host_wait" and is_instance_valid(_wait_lbl):
+			_wait_lbl.text = _wait_text(_host_sec())
+		elif _state == "join_connecting" and not _checking:
+			_tick_connect(minf((Time.get_ticks_msec() - _conn_t0) / 1000.0, CONNECT_LIMIT))
+		return
 	# макет: хозяин ушёл в справку, пока ждал друга, — игра не закрыта: время ожидания идёт дальше, друг всё равно
 	# «входит», справка закрывается сама
 	if _state == "help" and _help_live and _help_from == "host_wait":
@@ -678,8 +734,11 @@ func _show(state: String, alt := 0, keep_clock := false) -> void:
 	# своя версия — внизу листа, просто как есть; в «разных версиях» и в справке её нет (там свои строки).
 	# Хозяин, вариант 5, — у него старая версия
 	var old_mine := _state == "host_wait" and _alt == 5
-	_build.text = "" if _state in ["version", "help"] else tr("Ваша версия игры: %s от %s") % [
-		VER_OLD if old_mine else VER_MINE, DATE_OLD if old_mine else DATE_MINE]
+	if not _mock:
+		_build.text = "" if _state in ["version", "help"] else tr("Ваша версия игры: %s") % NetVersion.label(_me())
+	else:
+		_build.text = "" if _state in ["version", "help"] else tr("Ваша версия игры: %s от %s") % [
+			VER_OLD if old_mine else VER_MINE, DATE_OLD if old_mine else DATE_MINE]
 	_build.visible = _build.text != ""
 	var focus: Control = _main
 	match _state:
@@ -715,7 +774,7 @@ func _show(state: String, alt := 0, keep_clock := false) -> void:
 					1:
 						_set_step("Пусть друг обновит игру и подключится снова.")
 						_set_msg("red", tr("Друг не смог войти: у него старая версия игры (%s), у вас — %s. Пусть скачает новую там же, откуда ставил игру.") % [
-							VER_OLD, VER_MINE], 2)
+							_ver_theirs(), _ver_mine()], 2)
 					2:
 						_set_msg("red", "Друг вышел. Адрес тот же — он может войти снова.", 2)
 					4:
@@ -724,7 +783,7 @@ func _show(state: String, alt := 0, keep_clock := false) -> void:
 					5:
 						_set_step("Друг не смог войти — обновите игру.")
 						_set_msg("red", tr("У вас старая версия (%s), у друга — %s: скачайте новую там же, откуда ставили, и снова нажмите «Создать игру».") % [
-							VER_OLD, VER_MINE], 2)
+							VER_OLD if _mock else _ver_mine(), VER_MINE if _mock else _ver_theirs()], 2)
 					6:
 						# друг пропал без «пока» (ENet: peer_disconnected без прощания) — не «вышел»
 						_set_msg("red", "Связь с другом пропала. Адрес тот же — он может войти снова.", 2)
@@ -733,7 +792,7 @@ func _show(state: String, alt := 0, keep_clock := false) -> void:
 						_set_msg("red", "Друг не смог войти: номер версии тот же, а игры собраны по-разному.", 2)
 					_:
 						# окно Windows может открыться за игрой во весь экран — отсюда Alt+Tab
-						_set_msg("gold", "Windows спросит про сеть — отметьте обе галочки и нажмите «Разрешить доступ». Не видно окна — нажмите Alt+Tab.", 2)
+						_set_msg("gold", FIREWALL_NOTE, 2)
 			_body_host(joined)
 			if joined:
 				focus = _main
@@ -799,7 +858,7 @@ func _show(state: String, alt := 0, keep_clock := false) -> void:
 				_body_join_wait()
 				# фокус — пустой, не на «Выйти»: Enter по привычке не выведет из игры друга (Esc — выведет)
 				focus = _rest
-				if _alt == 1:
+				if _alt == 1 and _mock:
 					flash(tr("Друг сменил сторону: теперь вы за Коканд."), 4.0, "gold")
 		"version":
 			# обновляет игру тот, у кого версия старая: 0 — старая у вас, 2 — у друга; 1 — номер тот же, код разный
@@ -879,7 +938,7 @@ func _main_on(on: bool) -> void:
 	_main.add_theme_constant_override("outline_size", 4 if on else 0)
 
 
-## Левая кнопка ряда — по состоянию
+## Левая кнопка ряда — по состоянию (настоящая сеть: хозяин закрывает игру, друг отключается — оба шлют «пока»)
 func _on_left() -> void:
 	_live = false
 	match _state:
@@ -887,11 +946,14 @@ func _on_left() -> void:
 			_close()
 		"host_wait", "host_ready":
 			# хозяин закрыл игру — номер партии и узнанный адрес забыты
+			_stop_net()
 			_reset_mock()
 			_show("choose")
 		"join", "join_wait":
+			_stop_net()
 			_show("choose")
 		"join_connecting", "join_fail":
+			_stop_net()
 			_show("join")
 
 
@@ -899,18 +961,21 @@ func _on_left() -> void:
 func _on_main() -> void:
 	match _state:
 		"host_ready":
-			flash(tr(MOCK_FLASH))
+			if _mock:
+				flash(tr(MOCK_FLASH))
+			else:
+				_start_match()
 		"join":
 			if _field and _addr_ok(_field.text):
 				_addr = _field.text
-				_go_live("join_connecting")
+				_connect()
 			elif _field:
 				_field_error(_field.text)
 		"join_fail":
-			_go_live("join_connecting")
+			_connect()
 		"join_wait":
 			if _alt in [2, 3]:
-				_go_live("join_connecting")
+				_connect()
 		"version":
 			_show("join")
 		"help":
@@ -926,6 +991,212 @@ func _on_main() -> void:
 func _go_live(state: String) -> void:
 	_live = true
 	_show(state, 0)
+
+
+# ================================================================= настоящая сеть (NetSession)
+
+## «Создать игру»: макет — «друг войдёт» через 6 с; настоящая — сервер на 7777 (занят — выбор, вариант 1),
+## свои адреса, номер партии; сторона и номер — другу сразу, как войдёт
+func _on_host_pressed() -> void:
+	if _mock:
+		_go_live("host_wait")
+		return
+	_session()
+	if _net.host() != OK:
+		_show("choose", 1)
+		return
+	_seed = randi_range(100000, 999999)
+	_their = {}
+	_addrs = _scan_addrs()
+	_host_t0 = Time.get_ticks_msec()
+	_live = true
+	_net.send_lobby(_side_index(), _seed)
+	var no_radmin := String(_addrs.get("radmin", "")) == ""
+	_show("host_wait", 4 if no_radmin else 0)
+	# Radmin VPN не найден — записка о нём; но сперва — о вопросе Windows про сеть (он сейчас и откроется)
+	if no_radmin:
+		flash(tr(FIREWALL_NOTE), 12.0, "gold")
+
+
+## «Подключиться» (и «Попробовать снова», «Подключиться снова»): макет — часы; настоящая — к адресу (порт после «:»)
+func _connect() -> void:
+	if _mock:
+		_go_live("join_connecting")
+		return
+	_session()
+	_their = {}
+	_lobby_wait = false
+	var host := _addr.get_slice(":", 0)
+	var port := int(_addr.get_slice(":", 1)) if _addr.contains(":") else -1
+	_conn_t0 = Time.get_ticks_msec()
+	_live = true
+	if _net.join(host, port) != OK:
+		_show("join_fail", 0)
+		return
+	_show("join_connecting", 0)
+
+
+## «Начать игру»: партия у обоих (NetMatch) — и в «Город»; друг пропал в этот миг — снова ждём его
+func _start_match() -> void:
+	if _net == null or _net.start_match(_side_index(), _seed) == null:
+		_show("host_wait", 6)
+		return
+	_go_game()
+
+
+func _go_game() -> void:
+	_live = false
+	menu._go(MainMenu.GOROD, tr("Игра с другом"))
+
+
+## Закрыть сеть лобби (хозяин закрыл игру, друг вышел): «пока» другу — у него не «связь пропала»
+func _stop_net() -> void:
+	if not _mock and _net != null and _net.active():
+		_net.leave()
+
+
+func _session() -> void:
+	if _net == null:
+		_net = NetSession.get_or_create(get_tree())
+	if not _net.event.is_connected(_on_net):
+		_net.event.connect(_on_net)
+
+
+## Сторона хозяина для сети: 0 — Коканд, 1 — кыпчаки
+func _side_index() -> int:
+	return 0 if _side == "kokand" else 1
+
+
+## Хозяин сменил сторону или номер партии — друг видит сразу
+func _lobby_changed() -> void:
+	if not _mock and _net != null and _net.role == NetSession.Role.HOST:
+		_net.send_lobby(_side_index(), _seed)
+
+
+## Свои адреса для строк «Radmin VPN» и «Дома» (--net_show_addr=mock — выдуманные, для кадров)
+func _scan_addrs() -> Dictionary:
+	if menu._ordo != null and String(menu._ordo.arg("net_show_addr", "")) == "mock":
+		return {"radmin": ADDR_RADMIN, "home": PackedStringArray([ADDR_HOME])}
+	return NetAddr.scan()
+
+
+## Сколько секунд хозяин ждёт друга (с «Создать игру»; справка часы не сбрасывает)
+func _host_sec() -> int:
+	return (Time.get_ticks_msec() - _host_t0) / 1000
+
+
+## Своя версия (макет — выдуманная), версии для текстов: номер, у рабочей сборки — «рабочая сборка от …»
+func _me() -> Dictionary:
+	if _mock:
+		return {"number": VER_MINE, "date": 20261015, "code": CODE_MINE.hex_decode()}
+	return _net.mine() if _net != null else NetVersion.info()
+
+
+func _ver_mine() -> String:
+	return VER_MINE if _mock else _ver_short(_me())
+
+
+func _ver_theirs() -> String:
+	return VER_OLD if _mock else _ver_short(_their)
+
+
+static func _ver_short(v: Dictionary) -> String:
+	if v.is_empty():
+		return "неизвестная"
+	var n := String(v.get("number", ""))
+	return n if n != "" else NetVersion.label(v)
+
+
+## События сети → состояния лобби (ТЗ §16). Справку хозяина закрывают сами: друг вошёл — «Друг подключился»
+func _on_net(kind: StringName, info: Dictionary) -> void:
+	if _mock or not is_inside_tree() or not visible:
+		return
+	match kind:
+		&"friend_joined":
+			_show("host_ready", 1 if _net.slow else 0, true)
+			if _net_auto_start:
+				get_tree().create_timer(1.5).timeout.connect(func() -> void:
+					if _state == "host_ready":
+						_on_main())
+		&"friend_refused":
+			# друг уже здесь, а не впустили чужого — у хозяина ничего не меняется
+			if _net.connected():
+				return
+			_their = info.get("their", {})
+			var v := String(info.get("verdict", "odd"))
+			_show("host_wait", 1 if v == "theirs_old" else (5 if v == "mine_old" else 7), true)
+		&"friend_left":
+			_show("host_wait", 2, true)
+		&"friend_lost":
+			_show("host_wait", 6, true)
+		&"ping":
+			var slow := bool(info.get("slow", false))
+			if _state == "host_ready":
+				_show("host_ready", 1 if slow else 0, true)
+			elif _state == "join_wait" and _alt in [0, 4]:
+				_show("join_wait", 4 if slow else 0)
+		&"reached":
+			if _state == "join_connecting":
+				_set_checking()
+		&"joined":
+			# сторона и номер партии хозяина идут следом (LOBBY) — ждём их, но не дольше секунды
+			if _net.lobby_seed != 0:
+				_seed = _net.lobby_seed
+				_show("join_wait", 4 if _net.slow else 0)
+			else:
+				_lobby_wait = true
+				get_tree().create_timer(1.0).timeout.connect(func() -> void:
+					if _lobby_wait and _state == "join_connecting" and _net.connected():
+						_lobby_wait = false
+						_show("join_wait", 4 if _net.slow else 0))
+		&"lobby":
+			# сторона, что сейчас на экране (в сессии уже новая)
+			var before := _guest_shown
+			_seed = int(info.get("seed", _seed))
+			if _lobby_wait or (_state == "join_wait" and _alt in [0, 4]):
+				_lobby_wait = false
+				_show("join_wait", 4 if _net.slow else 0)
+				var now := _guest_side()
+				if before != "" and now != before and _state == "join_wait":
+					flash(tr("Друг сменил сторону: теперь вы за %s.") % (tr("Коканд") if now == "kokand" else tr("кыпчаков")), 4.0, "gold")
+		&"refused":
+			var why := String(info.get("why", ""))
+			if why == "version":
+				_their = info.get("their", {})
+				var v := String(info.get("verdict", "odd"))
+				_show("version", 0 if v == "mine_old" else (2 if v == "theirs_old" else 1))
+			else:
+				_show("join_fail", 1 if why == "busy" else 0)
+		&"connect_failed":
+			_show("join_fail", 0)
+		&"host_left":
+			_show("join_wait", 2)
+		&"host_lost":
+			_show("join_wait", 3)
+		&"start":
+			_go_game()
+
+
+## Сторона подключившегося (у настоящей сети — по стороне хозяина из LOBBY); «» — ещё не знаем
+func _guest_side() -> String:
+	if _mock:
+		return "kokand" if _alt == 1 else "kipchak"
+	if _net == null or _net.lobby_seed == 0:
+		return ""
+	return "kipchak" if _net.lobby_side == 0 else "kokand"
+
+
+## Кадры двух настоящих окон (--net_auto): «host» — сразу «Создать игру» («host:start» — и «Начать игру», как только
+## друг вошёл); «join:адрес» — вписать и «Подключиться»
+func _auto(spec: String) -> void:
+	if spec.begins_with("host"):
+		if spec == "host:start":
+			_net_auto_start = true
+		_on_host_pressed()
+	elif spec.begins_with("join:"):
+		_show("join", 0)
+		_on_field_changed(spec.substr(5), true)
+		_on_main()
 
 
 ## В справку: состояние, вариант, шли ли счётчики и время ожидания — запомнить, чтобы вернуться в то же место;
@@ -947,8 +1218,8 @@ func _to_help(fw := false) -> void:
 
 func _body_choose() -> Control:
 	var host := _plate("Online_host", "icons/bld_kurultai", "Создать игру", "Вы выбираете сторону и ждёте друга")
-	# макет: друг «входит» сам через FRIEND_COMES секунд ожидания
-	host.pressed.connect(_go_live.bind("host_wait"))
+	# макет: друг «входит» сам через FRIEND_COMES секунд ожидания; настоящая сеть — сервер (_on_host_pressed)
+	host.pressed.connect(_on_host_pressed)
 	_body.add_child(host)
 	var join := _plate("Online_join", "icons/unit_cavalry", "Подключиться", "Друг уже создал игру — нужен его адрес")
 	join.pressed.connect(_show.bind("join", 0))
@@ -971,14 +1242,27 @@ func _body_host(joined: bool) -> void:
 	_body.add_child(_section("Адрес для друга"))
 	# адреса: каждая строка со своей кнопкой; метка — где друг. Radmin VPN не найден (вариант 4) — в строке
 	# «не найден» и ссылка «Как поставить» (справка, способ 2)
-	var copied := _alt == 3 and not joined
+	var copied := _alt == 3 and not joined and _mock
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 6)
-	if _alt == 4 and not joined:
-		rows.add_child(_addr_row("Radmin VPN", "не найден", "", "Radmin_how"))
+	if _mock:
+		if _alt == 4 and not joined:
+			rows.add_child(_addr_row("Radmin VPN", "не найден", "", "Radmin_how"))
+		else:
+			rows.add_child(_addr_row("Radmin VPN", "друг далеко, у обоих Radmin", ADDR_RADMIN, "Copy_0", copied))
+		rows.add_child(_addr_row("Дома", "друг рядом, в том же Wi-Fi", ADDR_HOME, "Copy_1"))
 	else:
-		rows.add_child(_addr_row("Radmin VPN", "друг далеко, у обоих Radmin", ADDR_RADMIN, "Copy_0", copied))
-	rows.add_child(_addr_row("Дома", "друг рядом, в том же Wi-Fi", ADDR_HOME, "Copy_1"))
+		# свои адреса (NetAddr): Radmin VPN — или «не найден»; дома — один или два (оба), нет — «не найден»
+		var radmin := String(_addrs.get("radmin", ""))
+		if radmin == "":
+			rows.add_child(_addr_row("Radmin VPN", "не найден", "", "Radmin_how"))
+		else:
+			rows.add_child(_addr_row("Radmin VPN", "друг далеко, у обоих Radmin", radmin, "Copy_0"))
+		var home: PackedStringArray = _addrs.get("home", PackedStringArray())
+		if home.is_empty():
+			rows.add_child(_addr_row("Дома", "не найден", "", "", false, "нет Wi-Fi и провода к роутеру"))
+		for i in home.size():
+			rows.add_child(_addr_row("Дома", "друг рядом, в том же Wi-Fi", home[i], "Copy_%d" % (i + 1)))
 	_body.add_child(_card(rows))
 	_body.add_child(_friend_slot(joined))
 	# строка под местом друга и номер партии — ровно одной высоты в обоих состояниях (друг вошёл — ряд кнопок и
@@ -1086,7 +1370,8 @@ func _side_switch() -> Control:
 			lit.call()
 			if on:
 				_side = side
-				_sync_side())
+				_sync_side()
+				_lobby_changed())
 		lit.call()
 		row.add_child(b)
 	return row
@@ -1137,6 +1422,7 @@ func _seed_row() -> Control:
 func _new_seed() -> void:
 	_seed = randi_range(100000, 999999)
 	_sync_side()
+	_lobby_changed()
 
 
 ## Подписи, зависящие от стороны хозяина и номера партии
@@ -1168,9 +1454,10 @@ static func _wait_text(sec: int) -> String:
 
 
 ## Строка адреса: [сеть / где друг] [адрес] [кнопка]. Адреса нет (Radmin VPN не найден) — название тише, под ним
-## «не найден» красными чернилами, на месте адреса — почему («не установлен или выключен»), вместо «Копировать» —
-## ссылка «Как поставить» в справку
-func _addr_row(net: String, tag: String, addr: String, btn: String, copied := false) -> Control:
+## «не найден» красными чернилами, на месте адреса — почему (why: «не установлен или выключен»), вместо
+## «Копировать» — ссылка «Как поставить» в справку (btn пусто — без ссылки: «Дома» не найден)
+func _addr_row(net: String, tag: String, addr: String, btn: String, copied := false,
+		why := "не установлен или выключен") -> Control:
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(0, 54)
 	row.add_theme_constant_override("separation", 12)
@@ -1186,12 +1473,18 @@ func _addr_row(net: String, tag: String, addr: String, btn: String, copied := fa
 	# почему адреса нет — в две плотные строки: строка не шире столбца листа и не выше строки с адресом (54 —
 	# ряд кнопок у хозяина не сдвигается)
 	var a := menu._label(addr, _addr_font(), 34, INK) if addr != "" \
-		else _para("не установлен или выключен", _italic(480), 20, INK_SOFT)
+		else _para(why, _italic(480), 20, INK_SOFT)
 	if addr == "":
 		a.add_theme_constant_override("line_spacing", -8)
 	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	a.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(a)
+	if addr == "" and btn == "":
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(190, 44)
+		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(gap)
+		return row
 	if addr == "":
 		var how := _flat(btn, tr("Как поставить"), _text(600), 22, INK)
 		how.custom_minimum_size = Vector2(190, 44)
@@ -1200,7 +1493,7 @@ func _addr_row(net: String, tag: String, addr: String, btn: String, copied := fa
 		how.pressed.connect(_to_help.bind(false))
 		row.add_child(how)
 		return row
-	var b := _button(btn, "Скопировано" if copied else "Копировать", btn, Vector2(190, 44), 24)
+	var b := _button(btn, "Скопировано" if copied else "Копировать", "Copy_1" if btn == "Copy_2" else btn, Vector2(190, 44), 24)
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.pressed.connect(_on_copy.bind(b, addr))
 	row.add_child(b)
@@ -1246,8 +1539,9 @@ func _friend_slot(joined: bool) -> Control:
 		texts.add_child(wait)
 		_dots.append(wait)
 		_dots_base.append(tr("Ждём друга"))
-		# после справки время ожидания идёт дальше (_clock не сброшен)
-		_wait_lbl = menu._label(tr(_wait_text(int(_clock) if _live else WAIT_MOCK)), _italic(480), 21, INK_SOFT)
+		# после справки время ожидания идёт дальше (_clock не сброшен; у настоящей сети — с «Создать игру»)
+		var sec := (int(_clock) if _live else WAIT_MOCK) if _mock else _host_sec()
+		_wait_lbl = menu._label(tr(_wait_text(sec)), _italic(480), 21, INK_SOFT)
 		texts.add_child(_wait_lbl)
 	_friend_disc = _disc("kipchak", 44.0)
 	_friend_disc.modulate.a = 1.0 if joined else 0.55
@@ -1268,7 +1562,7 @@ func _body_join() -> Control:
 	_field = _line_edit()
 	_field_deco = _field.get_node("Deco") as SlipDeco
 	# вписанное раньше (и до похода в справку) — на месте, курсор там же, где был
-	_field.text = ADDR_PART if _alt == 1 else (ADDR_RADMIN if _alt == 2 else _addr)
+	_field.text = ADDR_PART if _alt == 1 and _mock else (ADDR_RADMIN if _alt == 2 and _mock else _addr)
 	_field.caret_column = _field.text.length() if _addr_caret < 0 or _alt != 0 else mini(_addr_caret, _field.text.length())
 	_addr = _field.text
 	_field.text_changed.connect(_on_field_changed)
@@ -1281,10 +1575,13 @@ func _body_join() -> Control:
 	paste.pressed.connect(_on_paste)
 	row.add_child(paste)
 	_body.add_child(row)
-	var recent := _flat("Join_recent", tr("В прошлый раз: %s") % ADDR_RADMIN, _text(600), 22, INK)
-	_lit_link(recent)
-	recent.pressed.connect(_on_recent)
-	_body.add_child(recent)
+	# адрес, к которому подключались в прошлый раз (у настоящей сети — из настроек; первый раз — ссылки нет)
+	var last := ADDR_RADMIN if _mock else NetSession.last_addr()
+	if last != "":
+		var recent := _flat("Join_recent", tr("В прошлый раз: %s") % last, _text(600), 22, INK)
+		_lit_link(recent)
+		recent.pressed.connect(_on_recent.bind(last))
+		_body.add_child(recent)
 	# над советом — чуть воздуха: запас высоты «Адреса друга» (JOIN_H, как у «Подключаемся») не копится одной
 	# пустой полосой над кнопками
 	_body.add_child(menu._gap(8))
@@ -1293,9 +1590,9 @@ func _body_join() -> Control:
 		"Пусть пришлёт его в Telegram или WhatsApp — скопируйте его сообщение целиком и нажмите «Вставить».",
 	]))
 	_body.add_child(_link("Как играть по сети?"))
-	if _alt == 1:
+	if _alt == 1 and _mock:
 		_field_error(ADDR_PART)
-	elif _alt == 2:
+	elif _alt == 2 and _mock:
 		_field_found(ADDR_RADMIN)
 	_sync_join()
 	return _field
@@ -1309,10 +1606,10 @@ func _on_paste() -> void:
 	_on_field_changed(DisplayServer.clipboard_get(), true)
 
 
-func _on_recent() -> void:
+func _on_recent(addr: String) -> void:
 	if _field == null:
 		return
-	_field.text = ADDR_RADMIN
+	_field.text = addr
 	_field.caret_column = _field.text.length()
 	_field.grab_focus()
 	_on_field_changed(_field.text)
@@ -1578,7 +1875,13 @@ func _body_fail() -> void:
 
 
 func _body_join_wait() -> void:
-	var me := "kokand" if _alt == 1 else "kipchak"
+	# сторона — другая, чем у хозяина (настоящая сеть: из его LOBBY), номер партии — его
+	var me := _guest_side()
+	if me == "":
+		me = "kipchak"
+	_guest_shown = me
+	if not _mock and _net != null and _net.lobby_seed != 0:
+		_seed = _net.lobby_seed
 	var friend := "kipchak" if me == "kokand" else "kokand"
 	var row := HBoxContainer.new()
 	row.name = "Tablets"
@@ -1655,20 +1958,32 @@ func _side_card(side: String, who: String) -> Control:
 ## номером не бывает (в версию пишется номер попытки сборки, ТЗ §16) — остаются игра не с того сайта, местная
 ## сборка или испорченные файлы: «поставлена не оттуда же»
 func _body_version() -> void:
+	# макет: «новая» и «старая» выдуманные; настоящая сеть — своя версия и версия друга из его первого пакета
 	var mine := tr("%s от %s") % [VER_MINE, DATE_MINE]
 	var old := tr("%s от %s") % [VER_OLD, DATE_OLD]
+	var me_txt := old if _alt == 0 else mine
+	var friend_txt := mine if _alt == 0 else old
+	var code_me := CODE_MINE
+	var code_friend := CODE_ODD
+	var newer_num := VER_MINE
+	if not _mock:
+		me_txt = NetVersion.label(_me())
+		friend_txt = NetVersion.label(_their) if not _their.is_empty() else tr("неизвестная версия")
+		code_me = NetVersion.code_text(_me().get("code", PackedByteArray()))
+		code_friend = NetVersion.code_text(_their.get("code", PackedByteArray())) if not _their.is_empty() else "—"
+		newer_num = _ver_theirs() if _alt == 0 else _ver_mine()
 	var grid := VBoxContainer.new()
 	grid.add_theme_constant_override("separation", 2)
 	match _alt:
 		1:
-			grid.add_child(_build_row("У вас:", "%s · код %s" % [mine, CODE_MINE], ""))
-			grid.add_child(_build_row("У друга:", "%s · код %s" % [mine, CODE_ODD], ""))
+			grid.add_child(_build_row("У вас:", "%s · код %s" % [me_txt if not _mock else mine, code_me], ""))
+			grid.add_child(_build_row("У друга:", "%s · код %s" % [friend_txt if not _mock else mine, code_friend], ""))
 		2:
-			grid.add_child(_build_row("У вас:", mine, "новее"))
-			grid.add_child(_build_row("У друга:", old, ""))
+			grid.add_child(_build_row("У вас:", me_txt, "новее"))
+			grid.add_child(_build_row("У друга:", friend_txt, ""))
 		_:
-			grid.add_child(_build_row("У вас:", old, ""))
-			grid.add_child(_build_row("У друга:", mine, "новее"))
+			grid.add_child(_build_row("У вас:", me_txt, ""))
+			grid.add_child(_build_row("У друга:", friend_txt, "новее"))
 	_body.add_child(grid)
 	if _alt == 1:
 		_body.add_child(_para("Так бывает, если одна из игр поставлена не оттуда же, откуда другая.", _italic(480), 21, INK))
@@ -1683,12 +1998,12 @@ func _body_version() -> void:
 	_body.add_child(_section("Что сделать"))
 	if _alt == 2:
 		_body.add_child(_numbered([
-			tr("У друга старая версия — пусть скачает новую, %s, там же, откуда ставил игру.") % VER_MINE,
+			tr("У друга старая версия — пусть скачает новую, %s, там же, откуда ставил игру.") % newer_num,
 			"Потом друг снова нажмёт «Создать игру» — подключитесь по тому же адресу.",
 		]))
 	else:
 		_body.add_child(_numbered([
-			tr("У вас старая версия — скачайте новую, %s, там же, откуда ставили игру, и установите.") % VER_MINE,
+			tr("У вас старая версия — скачайте новую, %s, там же, откуда ставили игру, и установите.") % newer_num,
 			"Потом подключитесь снова.",
 		]))
 
@@ -1776,12 +2091,13 @@ func _fill_net_row(row: HBoxContainer) -> void:
 		row.remove_child(c)
 		c.queue_free()
 	if _net_found:
-		var a := menu._label(ADDR_NET, _addr_font(), 30, INK)
+		var shown := ADDR_NET if _mock else _net_addr
+		var a := menu._label(shown, _addr_font(), 30, INK)
 		a.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(a)
 		var b := _button("Copy_net", "Копировать", "Copy_net", Vector2(190, 44), 24)
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		b.pressed.connect(_on_copy_net.bind(b))
+		b.pressed.connect(_on_copy_net.bind(b, shown))
 		row.add_child(b)
 		return
 	var f := _button("Net_find", "Узнать мой адрес в интернете", "Net_find", Vector2(400, 46), 24)
@@ -1790,10 +2106,39 @@ func _fill_net_row(row: HBoxContainer) -> void:
 	row.add_child(f)
 
 
+## «Узнать мой адрес в интернете»: макет — через 1 с выдуманный; настоящая сеть — роутер (UPnP, порт с арендой) или
+## сайт ipify, в отдельном потоке (NetSession.find_external → NetUpnp)
 func _on_net_find(b: Button, row: HBoxContainer) -> void:
 	b.disabled = true
 	b.text = tr("Узнаём…")
-	get_tree().create_timer(1.0).timeout.connect(_net_done.bind(row))
+	if _mock:
+		get_tree().create_timer(1.0).timeout.connect(_net_done.bind(row))
+		return
+	_session()
+	var u := _net.find_external()
+	u.finished.connect(_net_result.bind(row), CONNECT_ONE_SHOT)
+
+
+## Что вышло с адресом в интернете (настоящая сеть): зелёная — адрес и порт открыт; золотая — адрес есть, порт
+## роутер не открыл; красная — у провайдера так не выйдет (или не узнать совсем)
+func _net_result(res: Dictionary, row: HBoxContainer) -> void:
+	if not is_instance_valid(row) or not row.is_inside_tree() or _state != "help":
+		return
+	var kind := String(res.get("kind", "none"))
+	_net_addr = String(res.get("addr", ""))
+	_net_found = kind in ["green", "gold"] and _net_addr != ""
+	if _net_found:
+		_net_kind = kind
+		_set_msg(kind, _net_text(), 2)
+	elif kind == "red":
+		_set_msg("red", "У вашего провайдера так не выйдет — берите Radmin VPN.", 2)
+	else:
+		_set_msg("red", "Не получилось узнать адрес: нет ответа ни от роутера, ни из интернета. Берите Radmin VPN.", 2)
+	_fill_net_row(row)
+	_boost_all()
+	var b := row.get_node_or_null("Copy_net") as Control
+	if b:
+		_focus_later.call_deferred(b)
 
 
 ## Адрес «узнан» (макет — всегда удачно, порт открыт) — только если справка ещё открыта (ушли раньше — макет его не
@@ -1812,8 +2157,8 @@ func _net_done(row: HBoxContainer) -> void:
 
 
 ## Копировать адрес в интернете: «Скопировано» на самой кнопке (записка уже говорит, что делать с адресом)
-func _on_copy_net(b: Button) -> void:
-	DisplayServer.clipboard_set(ADDR_NET)
+func _on_copy_net(b: Button, addr: String) -> void:
+	DisplayServer.clipboard_set(addr)
 	b.text = tr("Скопировано")
 	get_tree().create_timer(2.0).timeout.connect(_copy_back.bind(b))
 

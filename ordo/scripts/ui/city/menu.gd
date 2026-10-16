@@ -2,7 +2,12 @@ class_name CityMenu
 extends Control
 ## Меню игры (кнопка ≡ на балке, F10, Esc при пустом выделении): лист «самаркандской бумаги» поверх
 ## затемнённого мира — «Продолжить», «Управление» (памятка клавиш ТЗ §10), «Начать заново», «В главное меню».
-## Пока меню открыто, симуляция стоит (SimDriver.paused) и ввод в мир выключен; закрытие возвращает как было.
+## Пока меню открыто, симуляция стоит (SimDriver.request_pause) и ввод в мир выключен; закрытие снимает паузу,
+## только если её поставило само меню (пауза уже стояла — так и стоит).
+## В игре по сети пауза общая — встаёт игра и у друга (приказом, GameDriver; друг видит «Друг открыл меню»), снять
+## её может и друг, пока меню открыто — тогда закрытие меню паузу снова не ставит; «Начать заново» там нет (партия
+## одна на двоих), «В главное меню» — сперва «Выйти из партии?» (друг увидит «Друг вышел из игры», продолжить
+## партию будет нельзя): «Остаться» или «Выйти».
 ## «Начать заново» и «В главное меню» — сигналы CityHud (restart_requested / quit_requested); если их никто не
 ## слушает, сцена перезагружается / игра закрывается.
 
@@ -14,6 +19,10 @@ const HELP_W := 1240.0
 const HELP_H := 690.0
 const ROW := 40.0
 const KEY_W := 214.0
+## Ряд кнопки листа меню (56) с зазором (12): без «Начать заново» лист короче на него
+const ROW_STEP := 68.0
+## Лист «Выйти из партии?» (игра по сети)
+const CONFIRM_H := 340.0
 
 ## Памятка: [клавиши, что делают] по двум столбцам (ТЗ §10, ARCHITECTURE §14, ECONOMY §1.7, §2.6, §4.1)
 const HELP_LEFT := [
@@ -47,7 +56,11 @@ const HELP_RIGHT := [
 var hud: CityHud
 var _sheet: NinePatchRect
 var _help: NinePatchRect
-var _was_paused := false
+## «Выйти из партии?» (только в игре по сети) и его строка
+var _confirm: NinePatchRect
+var _confirm_text: Label
+## Паузу поставило само меню (её и снять при закрытии)
+var _menu_paused := false
 var _input_was := true
 
 
@@ -62,10 +75,13 @@ func setup(p_hud: CityHud) -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
-	_sheet = _paper(W, H)
+	# игра по сети: без «Начать заново» — лист на ряд короче
+	var net := hud.net_game()
+	var h := H - (ROW_STEP if net else 0.0)
+	_sheet = _paper(W, h)
 	_sheet.name = "Sheet"
 	# посреди экрана, но не на балке и нижней панели (масштаб интерфейса — CityHud.fit_dialog)
-	hud.add_dialog(_sheet, Vector2(W, H))
+	hud.add_dialog(_sheet, Vector2(W, h))
 	var title := UiTheme.label(tr("Меню"), UiTheme.head_bold(), 40, true)
 	title.position = Vector2(0, 26)
 	title.size = Vector2(W, 48)
@@ -73,12 +89,17 @@ func setup(p_hud: CityHud) -> void:
 	_sheet.add_child(title)
 	var box := VBoxContainer.new()
 	box.position = Vector2(80, 98)
-	box.size = Vector2(W - 160, H - 130)
+	box.size = Vector2(W - 160, h - 130)
 	box.add_theme_constant_override("separation", 12)
 	_sheet.add_child(box)
-	for it in [["Продолжить", close, "Вернуться в игру (Esc)"], ["Управление", show_help, "Все клавиши и мышь — на одном листе"],
+	var items := [["Продолжить", close, "Вернуться в игру (Esc)"], ["Управление", show_help, "Все клавиши и мышь — на одном листе"],
 			["Начать заново", _restart, "Новая партия: те же стороны, всё с начала"],
-			["В главное меню", _quit, "Выйти из партии в главное меню"]]:
+			["В главное меню", _quit, "Выйти из партии в главное меню"]]
+	if net:
+		items.remove_at(2)
+		items[0][2] = "Вернуться в игру (Esc). Пауза общая: у друга игра тоже стоит, пока открыто меню"
+		items[2][2] = "Выйти из партии в главное меню. Друг увидит, что вы вышли; продолжить эту партию будет нельзя"
+	for it in items:
 		var b := CityTips.TipButton.new()
 		b.text = tr(it[0])
 		b.tooltip_text = "%s\n%s" % [tr(it[0]), tr(it[2])]
@@ -108,6 +129,45 @@ func setup(p_hud: CityHud) -> void:
 	back.add_theme_font_size_override("font_size", 22)
 	back.pressed.connect(func() -> void: _show_sheet())
 	_help.add_child(back)
+	if net:
+		_build_confirm()
+
+
+## «Выйти из партии?» — игра по сети: выйти можно только насовсем, лист спрашивает ещё раз («Остаться» — первой)
+func _build_confirm() -> void:
+	_confirm = _paper(W, CONFIRM_H)
+	_confirm.name = "Confirm"
+	_confirm.visible = false
+	hud.add_dialog(_confirm, Vector2(W, CONFIRM_H))
+	var title := UiTheme.label(tr("Выйти из партии?"), UiTheme.head_bold(), 36, true)
+	title.position = Vector2(0, 28)
+	title.size = Vector2(W, 46)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_confirm.add_child(title)
+	_confirm_text = UiTheme.label("", UiTheme.text(560), 20, true)
+	_confirm_text.position = Vector2(44, 84)
+	_confirm_text.size = Vector2(W - 88, 84)
+	_confirm_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_confirm_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_confirm_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_confirm.add_child(_confirm_text)
+	var box := VBoxContainer.new()
+	box.position = Vector2(80, 184)
+	box.size = Vector2(W - 160, CONFIRM_H - 212)
+	box.add_theme_constant_override("separation", 12)
+	_confirm.add_child(box)
+	for it in [["Остаться", _show_sheet, "Вернуться в меню — партия продолжится"],
+			["Выйти", _quit_now, "Выйти из партии в главное меню насовсем"]]:
+		var b := CityTips.TipButton.new()
+		b.name = "Confirm_" + String(it[0])
+		b.text = tr(it[0])
+		b.tooltip_text = "%s\n%s" % [tr(it[0]), tr(it[2])]
+		b.custom_minimum_size = Vector2(0, 56)
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_override("font", UiTheme.head_bold())
+		b.add_theme_font_size_override("font_size", 24)
+		b.pressed.connect(it[1])
+		box.add_child(b)
 
 
 func _paper(w: float, h: float) -> NinePatchRect:
@@ -170,20 +230,29 @@ func open() -> void:
 	visible = true
 	_show_sheet()
 	if hud.driver:
-		_was_paused = hud.driver.paused
-		hud.driver.paused = true
+		# пауза уже стояла (P, или в игре по сети её поставил друг) — меню её и не снимет
+		_menu_paused = not hud.driver.pause_wanted()
+		hud.driver.request_pause(true)
+		if hud.driver.has_method("set_menu_open"):
+			hud.driver.call("set_menu_open", true)
 	if hud.input:
 		_input_was = hud.input.enabled
 		hud.input.enabled = false
 	CityCursor.apply(CityCursor.Kind.DEFAULT)
 
 
+## Закрыть: паузу — снять, если её поставило меню. Паузу никогда не ставит снова: в игре по сети друг мог снять её,
+## пока меню было открыто, — игра у обоих уже идёт
 func close() -> void:
 	if not visible:
 		return
 	visible = false
 	if hud.driver:
-		hud.driver.paused = _was_paused
+		if hud.driver.has_method("set_menu_open"):
+			hud.driver.call("set_menu_open", false)
+		if _menu_paused:
+			hud.driver.request_pause(false)
+		_menu_paused = false
 	if hud.input:
 		hud.input.enabled = _input_was
 	closed.emit()
@@ -192,15 +261,24 @@ func close() -> void:
 func show_help() -> void:
 	_sheet.visible = false
 	_help.visible = true
+	if _confirm:
+		_confirm.visible = false
 
 
 func help_open() -> bool:
 	return visible and _help.visible
 
 
+## Открыт лист «Выйти из партии?»
+func confirm_open() -> bool:
+	return visible and _confirm != null and _confirm.visible
+
+
 func _show_sheet() -> void:
 	_sheet.visible = true
 	_help.visible = false
+	if _confirm:
+		_confirm.visible = false
 
 
 func _restart() -> void:
@@ -208,7 +286,21 @@ func _restart() -> void:
 	hud.request_restart()
 
 
+## «В главное меню»: в игре по сети — сперва «Выйти из партии?» (друг увидит, что вы вышли; партию не продолжить)
 func _quit() -> void:
+	if _confirm == null:
+		_quit_now()
+		return
+	var m: Variant = hud.driver.get("net") if hud.driver else null
+	var link := String(m.get("link")) if m is Object else "ok"
+	_confirm_text.text = tr("Друг увидит, что вы вышли. Продолжить эту партию будет нельзя.") if link == "ok" \
+		else tr("Продолжить эту партию потом будет нельзя.")
+	_sheet.visible = false
+	_help.visible = false
+	_confirm.visible = true
+
+
+func _quit_now() -> void:
 	close()
 	hud.request_quit()
 
@@ -221,7 +313,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not k.pressed or k.echo:
 		return
 	if k.physical_keycode == KEY_ESCAPE or k.physical_keycode == KEY_F10:
-		if _help.visible:
+		if _help.visible or confirm_open():
 			_show_sheet()
 		else:
 			close()

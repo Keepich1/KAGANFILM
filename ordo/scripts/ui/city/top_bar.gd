@@ -132,14 +132,18 @@ func setup(p_hud: CityHud) -> void:
 	_clock.tooltip_text = tr("Время игры")
 	_clock.mouse_filter = Control.MOUSE_FILTER_PASS
 	right.add_child(_clock)
-	_speed = _sys_button("", tr("Скорость игры\nЩелчок — по кругу; + и − — быстрее или медленнее"))
+	# игра по сети: пауза и скорость общие — подсказка говорит, что и у друга
+	var net := hud.net_game()
+	_speed = _sys_button("", tr("Скорость игры — у обоих\nЩелчок — по кругу; + и − — быстрее или медленнее, у вас и у друга") if net
+		else tr("Скорость игры\nЩелчок — по кругу; + и − — быстрее или медленнее"))
 	_speed.text = "×1"
 	_speed.custom_minimum_size = Vector2(58, 42)
 	_speed.add_theme_font_override("font", UiTheme.text(700))
 	_speed.add_theme_font_size_override("font_size", 19)
 	_speed.pressed.connect(func() -> void: hud.cycle_speed())
 	right.add_child(_speed)
-	_pause = _sys_button("pause", tr("Пауза (P)\nОстановить игру и продолжить"))
+	_pause = _sys_button("pause", tr("Пауза (P) — у обоих\nОстановить игру у вас и у друга и продолжить; снять может любой") if net
+		else tr("Пауза (P)\nОстановить игру и продолжить"))
 	_pause.pressed.connect(func() -> void: hud.toggle_pause())
 	right.add_child(_pause)
 	var menu := _sys_button("menu", tr("Меню (F10, Esc)\nПродолжить, управление, начать заново, выйти"))
@@ -268,9 +272,12 @@ func refresh(heavy := true) -> void:
 		(c["box"] as Control).tooltip_text = tip
 	var used := pt.pop_used[p]
 	var cap := pt.pop_cap[p]
-	_pop.text = "%d / %d" % [used, cap]
-	_pop.add_theme_color_override("font_color", UiTheme.RED_LIGHT if used >= cap else UiTheme.PARCH)
-	_pop_box.tooltip_text = tr("Население: %d из %d (предел 500)") % [used, cap]
+	# до первого такта предел ещё не посчитан (0): не пугать красным «6 / 0» — только сколько людей (игра по сети
+	# стоит на такте 0, пока у друга грузится игра)
+	var early := cap == 0 and q.tick() == 0
+	_pop.text = str(used) if early else "%d / %d" % [used, cap]
+	_pop.add_theme_color_override("font_color", UiTheme.RED_LIGHT if used >= cap and not early else UiTheme.PARCH)
+	_pop_box.tooltip_text = tr("Население: %d") % used if early else tr("Население: %d из %d (предел 500)") % [used, cap]
 	# набег: > 0 — отсчёт; 0 — набег идёт (GameQueryImpl: RaidDirector.eta_for в сборе, походе, ударе,
 	# отходе); −1 — набега нет (FakeCity даёт −1 и во время набега — тогда по событию RAID_STARTED)
 	var eta := q.raid_eta_ticks(p)

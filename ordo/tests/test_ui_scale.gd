@@ -18,7 +18,9 @@ extends SceneTree
 ## Esc в поле адреса — сразу назад; поле адреса чистит ввод (русская раскладка, сообщение целиком, порт
 ## 1–65535), ошибки и находки — в записке листа; макет прощёлкивается (26.115.40.12 — в игре у друга, другой
 ## адрес — «Не получилось»), «Отмена» у хозяина начинает с начала.
-## Доска без пункта «Игра с другом» (как в установщике, ключ --online_mock=0): черта, фокус, не ужата.
+## Состояния и варианты листа проверяются на макете (--online_mock=1: выдуманные адреса, без сети). Настоящее лобби
+## (--online_mock=0): пункт «Игра с другом» на доске и в установщике, лист открывается на выборе, без строки «Макет
+## экрана», под кнопками — своя версия игры (сети тест не открывает: Windows не спросит про доступ к сети).
 ## Раскладка «Города» — test_ui_bind.
 ## Свои экземпляры Ordo пишут во временный файл настроек — настройки игрока не трогаются.
 
@@ -147,6 +149,8 @@ func _check_menu() -> void:
 	# ползунок меню запоминает выбор — во временный файл, не в настройки игрока
 	var old_path := String(ordo.get("settings_path"))
 	ordo.set("settings_path", _tmp)
+	# состояния листа «Игра с другом» — на макете (выдуманные адреса, сети нет)
+	ordo.call("set_arg", "online_mock", "1")
 	var w := root
 	var old_size := w.size
 	var old_mode := w.content_scale_mode
@@ -209,7 +213,8 @@ func _check_menu() -> void:
 	menu.free()
 	w.size = Vector2i(1920, 1080)
 	ordo.call("set_ui_scale", 1.0, false)
-	await _check_no_online(ordo)
+	await _check_real_lobby(ordo)
+	ordo.call("clear_arg", "online_mock")
 	ordo.set("settings_path", old_path)
 	w.size = old_size
 	w.content_scale_size = old_css
@@ -609,40 +614,34 @@ func _check_online_flow(menu: Node) -> void:
 	await process_frame
 
 
-## Доска без «Игры с другом» — как в установщике (экспорт release; здесь — ключ --online_mock=0): пунктов 5,
-## латунная черта под «Городом: за кыпчаков», фокус по кругу без дыры, доска при 1920×1080 / 100 % не ужата,
-## лист макета (если его всё же открыть ключом) закрывается без пункта — фокус на первом пункте
-func _check_no_online(ordo: Node) -> void:
-	print("[доска без «Игры с другом» — как в установщике]")
+## Настоящее лобби (--online_mock=0; так — в установщике): пункт «Игра с другом» на доске (6 пунктов, доска при
+## 1920×1080 / 100 % не ужата), лист открывается на выборе (даже если просили другое состояние — его ведёт сеть),
+## без строки «Макет экрана»; под кнопками — своя версия игры (NetVersion: номер или «рабочая сборка от …»).
+## Кнопки сети тест не жмёт: сервер на 7777 открыл бы окно Windows про доступ к сети
+func _check_real_lobby(ordo: Node) -> void:
+	print("[настоящее лобби — как в установщике]")
 	ordo.call("set_arg", "online_mock", "0")
 	var menu: Node = (load(MENU) as PackedScene).instantiate()
 	root.add_child(menu)
 	await process_frame
 	await process_frame
 	var board := menu.get("_board") as Control
-	var col := menu.get("_board_col") as Control
 	var buttons: Array = menu.get("_buttons")
-	var kip := menu.call("_item", "kipchak") as Button
-	var settings := menu.call("_item", "settings") as Button
-	_check(menu.call("_item", "online") == null and buttons.size() == 5,
-		"пункта «Игра с другом» нет, пунктов на доске %d" % buttons.size())
+	_check(menu.call("_item", "online") != null and buttons.size() == 6,
+		"пункт «Игра с другом» на доске, пунктов %d" % buttons.size())
 	_check(is_equal_approx(board.scale.x, 1.0), "доска при 1920×1080 / 100 %% не ужата (×%.3f)" % board.scale.x)
-	var i := kip.get_index()
-	_check(col.get_child(i + 2) is ColorRect, "латунная черта — сразу под «Городом: за кыпчаков»")
-	_check(settings.get_node_or_null(settings.focus_neighbor_top) == kip and kip.get_node_or_null(kip.focus_neighbor_bottom) == settings,
-		"фокус: «Настройки» ↑ — «Город: за кыпчаков», и обратно ↓")
-	var vp := menu.get_viewport()
-	kip.grab_focus()
+	menu.call("_open_online", "host_ready", 0)
 	await process_frame
-	_key(vp, KEY_DOWN)
-	await process_frame
-	var f := vp.gui_get_focus_owner()
-	_check(f == settings, "↓ с «Города: за кыпчаков» — «Настройки» (%s)" % (f.name if f else "нет"))
-	menu.call("_open_online", "choose", 0)
-	await process_frame
+	var online := menu.get("_online") as Control
+	var note := online.find_child("MockNote", true, false) as Label
+	var build := online.find_child("Build", true, false) as Label
+	_check(String(online.get("_state")) == "choose" and not bool(online.get("_mock")),
+		"лист открылся на выборе, это не макет (%s)" % online.get("_state"))
+	_check(note != null and not note.visible, "строки «Макет экрана» под листом нет")
+	var want := "Ваша версия игры: " + NetVersion.label(NetVersion.info())
+	_check(build != null and build.text == want, "своя версия под кнопками: «%s»" % (build.text if build else ""))
 	menu.call("_close_online")
 	await process_frame
-	f = vp.gui_get_focus_owner()
-	_check(f != null and f == buttons[0], "лист закрыт без пункта на доске — фокус на «Сражении» (%s)" % (f.name if f else "нет"))
+	var f := menu.get_viewport().gui_get_focus_owner()
+	_check(f != null and f.name == "Item_online", "лист закрыт — фокус на «Игре с другом» (%s)" % (f.name if f else "нет"))
 	menu.free()
-	ordo.call("clear_arg", "online_mock")

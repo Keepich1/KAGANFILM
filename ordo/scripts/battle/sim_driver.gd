@@ -78,12 +78,41 @@ func restarts_next() -> bool:
 	return false
 
 
+## Можно ли сделать следующий шаг сейчас. Всегда да; GameDriver в игре по сети — только когда пришли приказы
+## друга на этот такт (барьер такта, NetMatch). Нельзя — время не копится: после ожидания игра идёт дальше
+## обычным ходом, без рывка вперёд
+func can_step() -> bool:
+	return true
+
+
+## Пауза и скорость от игрока (интерфейс, клавиши): здесь — сразу; GameDriver в игре по сети — для обоих
+## игроков приказом (общая пауза и скорость, NetMatch)
+func request_pause(on: bool) -> void:
+	paused = on
+
+
+func request_speed(s: float) -> void:
+	time_scale = s
+
+
+## Пауза стоит или уже отдана приказом (кнопка «пауза» и клавиша P переключают от неё); скорость — так же
+func pause_wanted() -> bool:
+	return paused
+
+
+func speed_wanted() -> float:
+	return time_scale
+
+
 func _process(delta: float) -> void:
 	if sim == null or paused:
 		return
 	_acc += delta * time_scale
 	var guard := 0
 	while _acc >= DT and guard < 12:
+		if not can_step():
+			_acc = minf(_acc, DT)
+			break
 		_acc -= DT
 		step()
 		guard += 1

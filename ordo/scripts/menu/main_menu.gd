@@ -10,11 +10,10 @@ extends Node3D
 ##   «Сражение»            — срез стиля (scenes/slice.tscn) ровно как одобрен; Esc там — назад сюда;
 ##   «Город: за Коканд»    — scenes/gorod/gorod.tscn, местный игрок — Коканд, ИИ — кыпчаки;
 ##   «Город: за кыпчаков»  — то же за кыпчаков;
-##   «Игра с другом»       — МАКЕТ лобби игры по сети (scripts/menu/friend_game.gd): сети ещё нет, адреса
-##                           и числа выдуманные, кнопки только листают состояния листа. Пункт есть только
-##                           при запуске из Godot (F5, тесты, кадры) и с ключом --online_mock: в установщике
-##                           (экспорт release) его нет — друг автора не примет макет за рабочий режим
-##                           (--online_mock=0 — доска как в установщике, для теста);
+##   «Игра с другом»       — «Город» один на один по сети (scripts/menu/friend_game.gd, ТЗ §16): лобби — один
+##                           «Создать игру», другой «Подключиться» по адресу; партия — NetSession / NetMatch
+##                           (scripts/net/). Макет лобби с выдуманными адресами — ключ --online_mock=1 (и кадры
+##                           состояний --menu_online=…); --online_mock=0 — настоящая сеть и с --menu_online;
 ##   «Настройки» | «Выход» — в одну строку. «Настройки»: качество (как F2: «Высокое» / «Среднее» /
 ##                           «Низкое»), время суток, масштаб интерфейса (75–150 %, Ordo.set_ui_scale),
 ##                           громкость, во весь экран.
@@ -30,7 +29,9 @@ extends Node3D
 ## --menu_online[=состояние] — открыть макет «Игра с другом» (choose, host_wait, host_ready, join,
 ## join_connecting, join_fail, join_wait, version, help), --menu_online_alt=N — вариант состояния,
 ## --menu_online_side=kipchak — хозяин за кыпчаков; F8 / Shift+F8 — следующее / предыдущее состояние (только
-## с --menu_online). Подсказки — записки CityTips (заголовок и строка), как в «Городе».
+## с --menu_online). --net_auto=host | join:адрес — открыть настоящее лобби и сразу «Создать игру» /
+## «Подключиться» (кадры двух окон; вместе с --net_bind=127.0.0.1 и --net_show_addr=mock — без настоящих адресов
+## в кадре). Подсказки — записки CityTips (заголовок и строка), как в «Городе».
 ## Пока открыт лист («Настройки» или «Игра с другом»), доска за затемнением не берёт фокус с клавиатуры.
 
 const SLICE := "res://scenes/slice.tscn"
@@ -141,6 +142,11 @@ func _ready() -> void:
 		if _ordo.has_arg("menu_online"):
 			# ключ без значения — «1»: первое состояние
 			_open_online(String(_ordo.arg("menu_online")), int(_ordo.arg("menu_online_alt", "0")))
+		elif _ordo.has_arg("net_auto"):
+			# кадр двух настоящих окон: сеть живёт настоящим временем — время сцены (--fixed-fps 30) идёт с ним вровень
+			if _ordo.has_arg("shot"):
+				Engine.max_fps = 30
+			_open_online()
 		if _ordo.has_arg("menu_press_light"):
 			var lb := _light_board.get(String(_ordo.arg("menu_press_light")), null) as Button
 			if lb:
@@ -156,8 +162,11 @@ func _ready() -> void:
 		if start != "":
 			_ordo.clear_arg("start")
 			_choose.call_deferred(start)
-	if not (_ordo and (_ordo.has_arg("menu_settings") or _ordo.has_arg("menu_hover") or _ordo.has_arg("menu_online"))):
+	if not (_ordo and (_ordo.has_arg("menu_settings") or _ordo.has_arg("menu_hover") or _ordo.has_arg("menu_online")
+			or _ordo.has_arg("net_auto"))):
 		_buttons[0].grab_focus.call_deferred()
+	# код версии для сверки по сети считается с запуска меню, в отдельном потоке (к «Игре с другом» он готов)
+	NetVersion.start()
 	# кадр без монитора (tools/shot.sh): до кадра — дешёвая отрисовка, как у среза и «Города»
 	if _ordo and _ordo.has_arg("shot"):
 		_shot_at = float(_ordo.arg("at", "1.0"))
@@ -344,8 +353,7 @@ func _build_ui() -> void:
 	# время суток — до выбора режима: действует в «Сражении» и обоих «Городах»
 	col.add_child(_light_switch())
 	col.add_child(_gap(20))
-	# пункты: большие столбцом, под латунной чертой — «Настройки» и «Выход» одной строкой (3 : 2);
-	# «Игра с другом» (макет) — только при запуске из Godot или с ключом --online_mock
+	# пункты: большие столбцом, под латунной чертой — «Настройки» и «Выход» одной строкой (3 : 2)
 	var small_row: HBoxContainer = null
 	var last_big := "online" if _online_on() else "kipchak"
 	for it: Array in ITEMS:
@@ -945,12 +953,20 @@ func _board_focus(on: bool) -> void:
 	_board.focus_behavior_recursive = Control.FOCUS_BEHAVIOR_INHERITED if on else Control.FOCUS_BEHAVIOR_DISABLED
 
 
-## «Игра с другом» на доске: при запуске из Godot (F5, тесты, кадры) и с ключом --online_mock; в установщике
-## (экспорт release) — нет, пока это макет. --online_mock=0 — как в установщике (тест доски без пункта)
+## «Игра с другом» на доске — всегда (и в установщике: игра по сети работает, решение 2026-10-16)
 func _online_on() -> bool:
-	if _ordo != null and _ordo.has_arg("online_mock"):
+	return true
+
+
+## Лист «Игра с другом» — макет (выдуманные адреса, кнопки листают состояния, сети нет): ключ --online_mock=1;
+## без ключа — только кадры состояний (--menu_online=…): в кадр не попадают настоящие адреса, Windows не спросит
+## про сеть. --online_mock=0 — настоящая сеть всегда
+func _online_mock() -> bool:
+	if _ordo == null:
+		return false
+	if _ordo.has_arg("online_mock"):
 		return String(_ordo.arg("online_mock")) != "0"
-	return OS.is_debug_build()
+	return _ordo.has_arg("menu_online")
 
 
 func _set_quality(lv: String) -> void:

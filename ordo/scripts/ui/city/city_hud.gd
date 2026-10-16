@@ -431,18 +431,24 @@ func trade(b_h: int, give: int, take: int, amount_milli: int) -> void:
 		input.issue_cmd(SimCmd.trade(b_h, give, take, amount_milli))
 
 
+## Скорость и пауза — через драйвер: в игре по сети они общие (приказом для обоих, GameDriver)
 func cycle_speed() -> void:
 	if driver:
 		var speeds := [1.0, 2.0, 3.0, 0.5]
-		var i := speeds.find(driver.time_scale)
-		driver.time_scale = speeds[(i + 1) % speeds.size()]
+		var i := speeds.find(driver.speed_wanted())
+		driver.request_speed(speeds[(i + 1) % speeds.size()])
 		refresh_now()
 
 
 func toggle_pause() -> void:
 	if driver:
-		driver.paused = not driver.paused
+		driver.request_pause(not driver.pause_wanted())
 		refresh_now()
+
+
+## Игра по сети (у драйвера есть партия NetMatch): меню без «Начать заново», записки связи (NetHud)
+func net_game() -> bool:
+	return driver != null and driver.get("net") != null
 
 
 func open_menu() -> void:

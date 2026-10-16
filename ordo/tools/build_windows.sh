@@ -15,10 +15,12 @@ done
 OUT="$ROOT/../build/windows"
 rm -rf "$OUT/Ordo" && mkdir -p "$OUT/Ordo"
 
-# номер сборки — в project.godot (application/config/version: подпись внизу главного меню) на время экспорта
+# номер сборки — в project.godot (application/config/version: подпись внизу главного меню) на время экспорта;
+# дата сборки — ordo/build/date (игра по сети: «0.1.57 от 15 окт.», «новее» — по дате, ТЗ §16)
 cp "$ROOT/project.godot" "$OUT/.project.godot.bak"
 trap 'cp "$OUT/.project.godot.bak" "$ROOT/project.godot"; rm -f "$OUT/.project.godot.bak"' EXIT
 sed -i "s|^config/name=\(.*\)$|config/name=\1\nconfig/version=\"$VER\"|" "$ROOT/project.godot"
+printf '\n[ordo]\n\nbuild/date="%s"\n' "$(date -u +%Y-%m-%d)" >> "$ROOT/project.godot"
 
 "$GODOT" --headless --path "$ROOT" --import >/dev/null 2>&1 || true
 "$GODOT" --headless --path "$ROOT" --export-release "Windows Desktop" "$OUT/Ordo/Ordo.exe" 2>&1 \

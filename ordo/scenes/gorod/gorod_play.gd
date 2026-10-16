@@ -4,6 +4,9 @@ extends Node
 ## управление (RtsInput) поверх видов сцены gorod.tscn. Местный игрок — сторона из меню (--faction или
 ## Ordo.set_arg("faction")), ИИ — другая. Esc / ≡ / F10 — меню паузы («Продолжить», «Управление»,
 ## «Начать заново», «В главное меню»); конец партии — экран победы или поражения.
+## Игра по сети (у драйвера партия NetMatch, ТЗ §16): поверх интерфейса — записки связи (NetHud); в меню и на
+## экране конца партии нет «Начать заново» / «Ещё раз»; «В главное меню» — выйти из партии (друг увидит «Друг
+## вышел»), запись партии — user://net/last_match.ordorep.
 ## Ставит сцена (GorodScene._ready), если её драйвер — GameDriver.
 
 const END_FADE := 0.6
@@ -15,6 +18,8 @@ var driver: GameDriver
 var camera: RtsCamera
 var input: RtsInput
 var hud: CityHud
+## Записки игры по сети (только в партии по сети)
+var net_hud: NetHud
 var _end: Control
 
 
@@ -50,6 +55,8 @@ func _wire(ghost: Object, selection: SelectionModel, overlay: Node) -> void:
 	hud.quit_requested.connect(_to_menu)
 	driver.battle_over.connect(_on_over)
 	driver.started.connect(func(_s: int) -> void: _on_started())
+	if driver.net != null:
+		net_hud = NetHud.attach(hud, driver)
 	_on_started()
 
 
@@ -74,11 +81,17 @@ func _on_started() -> void:
 
 
 func _restart() -> void:
+	if driver.net != null:
+		return          # партию по сети заново не начать
 	driver.paused = false
 	driver.restart()
 
 
+## В главное меню; из партии по сети — уйти самому (друг получит «пока» и увидит «Друг вышел из игры»)
 func _to_menu() -> void:
+	var ns := NetSession.current(get_tree())
+	if driver.net != null and ns != null:
+		ns.leave()
 	var o := get_node_or_null("/root/Ordo")
 	if o == null or not o.call("to_menu"):
 		get_tree().quit()
@@ -170,7 +183,11 @@ func _build_end(won: bool) -> Control:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 24)
 	sheet.add_child(row)
-	for it in [[tr("Ещё раз"), _restart], [tr("В главное меню"), _to_menu]]:
+	# партия по сети одна на двоих: «Ещё раз» — только против ИИ
+	var buttons := [[tr("Ещё раз"), _restart], [tr("В главное меню"), _to_menu]]
+	if driver.net != null:
+		buttons.remove_at(0)
+	for it in buttons:
 		var b := Button.new()
 		b.text = it[0]
 		b.custom_minimum_size = Vector2(230, 58)

@@ -89,6 +89,10 @@ func advance(delta: float) -> void:
 	while sc._acc >= DT and guard < MAX_STEPS:
 		if _task >= 0:
 			_collect()
+		elif not sc.can_step():
+			# игра по сети ждёт приказы друга (барьер такта): время не копится — потом без рывка вперёд
+			sc._acc = minf(sc._acc, DT)
+			break
 		elif _pending_sim != null:
 			_pending_sim = null  # шаг уже посчитан (sync) — только принять
 			sc._acc -= DT
