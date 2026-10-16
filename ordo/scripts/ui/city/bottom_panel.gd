@@ -8,6 +8,10 @@ const H := 256.0
 const BELT := 34.0
 const MAP := 216.0
 const RIGHT_W := 362.0
+## Самая узкая раскладка панели (проверена при окне 1280×720): холст уже (масштаб интерфейса больше
+## 120 %) — панель раскладывается на MIN_W и ужимается целиком (fit), а не теснит карточки и найм;
+## так же — верхняя балка и записки (одна мера на все полосы «Города»: bar_scale)
+const MIN_W := 1600.0
 
 var hud: CityHud
 var minimap: CityMinimap
@@ -27,8 +31,7 @@ func setup(p_hud: CityHud) -> void:
 	hud = p_hud
 	name = "BottomPanel"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	offset_top = -H
+	fit(hud.view_size())
 	var faction := String(hud.query.defs().f_ids[hud.query.players().faction[hud.player]])
 	# ореховое тело
 	var body := NinePatchRect.new()
@@ -158,6 +161,26 @@ func setup(p_hud: CityHud) -> void:
 	grid.size = Vector2(RIGHT_W, 172)
 	right.add_child(grid)
 	grid.setup(hud)
+
+
+## Во всю ширину холста view у нижнего края; холст уже MIN_W — раскладка на MIN_W, панель ужата до ширины
+## холста (щелчки по ней — в своих координатах, миникарта и кнопки попадают как прежде)
+func fit(view: Vector2) -> void:
+	var s := bar_scale(view)
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	scale = Vector2(s, s)
+	position = Vector2(0.0, view.y - H * s)
+	size = Vector2(view.x / s, H)
+
+
+## Ужатие полос «Города» (балка, панель, записки) на холсте view: уже MIN_W — меньше 1
+static func bar_scale(view: Vector2) -> float:
+	return clampf(view.x / MIN_W, 0.1, 1.0) if view.x > 0.0 else 1.0
+
+
+## Высота на холсте (ужатая панель ниже H)
+func screen_h() -> float:
+	return H * scale.y
 
 
 ## heavy — спросить сетку приказов заново (смена выделения, вкладки; раз в секунду)

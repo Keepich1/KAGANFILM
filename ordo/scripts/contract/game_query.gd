@@ -16,7 +16,7 @@ extends RefCounted
 ##   orders_for      [{op: SimCmd.Op, label, key, enabled}]
 ##   minimap         {units: PackedVector3Array(x, z, team), buildings: PackedVector3Array(x, z, team),
 ##                    nodes: PackedVector3Array(x, z, res)}
-## why — причина недоступности по-русски («Нужно: 40 дерева»), "" — доступно.
+## why — причина недоступности по-русски («Не хватает: дерево 40»), "" — доступно.
 ##
 ## Только ведущий меняет этот файл.
 

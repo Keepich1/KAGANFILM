@@ -1014,8 +1014,8 @@ func _why_cost(p: int, cost: PackedInt32Array) -> String:
 	for r in cost.size():
 		var lack := cost[r] - _players.res[p * _defs.R + r]
 		if lack > 0:
-			miss.append("%d %s" % [ceili(lack / 1000.0), tr(_defs.r_name[r]).to_lower()])
-	return "" if miss.is_empty() else tr("Нужно: %s") % ", ".join(miss)
+			miss.append("%s %d" % [tr(_defs.r_name[r]).to_lower(), ceili(lack / 1000.0)])
+	return "" if miss.is_empty() else tr("Не хватает: %s") % " · ".join(miss)
 
 
 func _order(op: int, label: String, key: String, enabled: bool) -> Dictionary:

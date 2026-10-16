@@ -316,7 +316,9 @@ static func pixel_summary(vp: Viewport, post: PainterlyPost) -> String:
 		aa = "SMAA"
 	elif vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA:
 		aa = "FXAA"
-	var internal := Vector2i((Vector2(vp.get_visible_rect().size) * vp.scaling_3d_scale).round())
+	# кадр 3D — в пикселях окна (холст интерфейса бывает другим: canvas_items, масштаб интерфейса)
+	var px := Vector2((vp as Window).size) if vp is Window else vp.get_visible_rect().size
+	var internal := Vector2i((px * vp.scaling_3d_scale).round())
 	var paint := "фильтр выкл."
 	if post and post.enabled and internal.y > 0:
 		var k := post.work_scale(internal.y)

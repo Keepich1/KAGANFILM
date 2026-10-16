@@ -17,7 +17,7 @@ extends Node3D
 ## через те же эффекты (BattleFx.add_driver), что и основной. --perf — экран без нагрузки,
 ## --perf_log — те же числа раз в секунду в консоль.
 ##
-## Кадры героев — камеры Cam* в узле Cameras (tools/shot.sh … --cam=CamRTS --at=19).
+## Кадры героев — камеры Cam* в узле Cameras (tools/shot.sh … --cam=CamRTS --at=19); --show_help — с подсказкой.
 ## Серия кадров за один прогон:  -- --hero=9.6@CamVolley,14@CamImpact --hero_out=/abs/dir [--hero_prefix=p_]
 ## При съёмке (--shot / --hero) время до кадра проматывается в облегчённом режиме
 ## (низкое разрешение 3D, без теней и фильтра), за 1,5 с до кадра всё включается обратно.
@@ -171,7 +171,8 @@ func _build_hud() -> void:
 	l.add_theme_color_override("font_color", Color(0.95, 0.89, 0.76))
 	_help.add_child(l)
 	layer.add_child(_help)
-	_help.visible = not _quiet
+	# кадр проверки интерфейса (масштаб): --show_help — подсказка видна и при съёмке
+	_help.visible = not _quiet or (_ordo != null and _ordo.has_arg("show_help"))
 	# экран скорости (F9): тёмная подложка — читается на любом фоне
 	_stats_panel = PanelContainer.new()
 	var ps := StyleBoxFlat.new()

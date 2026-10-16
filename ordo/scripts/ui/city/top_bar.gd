@@ -7,7 +7,9 @@ extends Control
 
 const H := 54.0
 const CHIP_W := 128.0
-## Узкий холст (1600 при окне 1280×720): ячейки сужаются до CHIP_MIN, чтобы не заходить под герб
+## Узкий холст (1600 при окне 1280×720): ячейки сужаются до CHIP_MIN, чтобы не заходить под герб.
+## Холст уже 1600 (масштаб интерфейса больше 120 %) — балка, как нижняя панель, раскладывается на
+## CityBottomPanel.MIN_W и ужимается целиком (fit): обе полосы интерфейса одного размера
 const CHIP_MIN := 104.0
 ## Ячейки слева кончаются не ближе CREST_GAP к середине балки (герб — 80 в ширину)
 const CREST_GAP := 54.0
@@ -37,8 +39,7 @@ func setup(p_hud: CityHud) -> void:
 	hud = p_hud
 	name = "TopBar"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	offset_bottom = H + 46.0
+	fit(hud.view_size())
 	var beam := TextureRect.new()
 	beam.name = "Beam"
 	beam.texture = UiTheme.tex("beam")
@@ -131,21 +132,31 @@ func setup(p_hud: CityHud) -> void:
 	_clock.tooltip_text = tr("Время игры")
 	_clock.mouse_filter = Control.MOUSE_FILTER_PASS
 	right.add_child(_clock)
-	_speed = _sys_button("", tr("Скорость (+ / −)"))
+	_speed = _sys_button("", tr("Скорость игры\nЩелчок — по кругу; + и − — быстрее или медленнее"))
 	_speed.text = "×1"
 	_speed.custom_minimum_size = Vector2(58, 42)
 	_speed.add_theme_font_override("font", UiTheme.text(700))
 	_speed.add_theme_font_size_override("font_size", 19)
 	_speed.pressed.connect(func() -> void: hud.cycle_speed())
 	right.add_child(_speed)
-	_pause = _sys_button("pause", tr("Пауза (P)"))
+	_pause = _sys_button("pause", tr("Пауза (P)\nОстановить игру и продолжить"))
 	_pause.pressed.connect(func() -> void: hud.toggle_pause())
 	right.add_child(_pause)
-	var menu := _sys_button("menu", tr("Меню (F10)"))
+	var menu := _sys_button("menu", tr("Меню (F10, Esc)\nПродолжить, управление, начать заново, выйти"))
 	menu.pressed.connect(func() -> void: hud.open_menu())
 	right.add_child(menu)
 	resized.connect(_layout)
 	_layout()
+
+
+## Во всю ширину холста view сверху; холст уже CityBottomPanel.MIN_W — раскладка на MIN_W, балка ужата
+## до ширины холста (как нижняя панель — CityBottomPanel.fit)
+func fit(view: Vector2) -> void:
+	var s := CityBottomPanel.bar_scale(view)
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	scale = Vector2(s, s)
+	position = Vector2.ZERO
+	size = Vector2(view.x / s, H + 46.0)
 
 
 ## Ячейки слева — по ширине балки: на узком холсте (1600) уже, чтобы не заходить под герб посередине
@@ -162,8 +173,9 @@ func _layout() -> void:
 	for b in boxes:
 		var bw := w + (POP_EXTRA if b == _pop_box else 0.0)
 		b.position.x = x
-		b.size.x = bw
+		# сначала наименьший размер: иначе size не сжимается ниже прежнего (CHIP_W)
 		b.custom_minimum_size.x = bw
+		b.size.x = bw
 		x += bw
 	queue_redraw()
 
@@ -192,7 +204,7 @@ func _chip(x: float, icon: Texture2D) -> Dictionary:
 
 
 func _sys_button(icon: String, tip: String) -> Button:
-	var b := Button.new()
+	var b := CityTips.TipButton.new()
 	b.custom_minimum_size = Vector2(44, 42)
 	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_NONE

@@ -9,6 +9,7 @@ extends Node
 ##   --cam=Имя         сделать текущей камеру Camera3D с этим именем
 ##   --quality=high|medium|low  режим качества (ТЗ 11.7; не запоминается)
 ##   --light=day|sunset  время суток: день или закат (LightPresets; не запоминается)
+##   --ui_scale=N      масштаб интерфейса в процентах (75–150) или долях (0.75–1.5); не запоминается
 ##   --seed=N          зерно случайностей сцены
 ## Качество: выбор игрока (F2) хранится в user://settings.cfg; при первом запуске —
 ## по видеокарте (WorldQuality.auto_level). Съёмка (--shot, --movie, --hero) — всегда «Высокое»,
@@ -16,9 +17,16 @@ extends Node
 ## Время суток (решение автора 2026-10-14): «День» (по умолчанию) или «Закат» — переключатель в главном
 ## меню и в «Настройках», выбор хранится в user://settings.cfg; свет каждого — scripts/world/light_presets.gd,
 ## ставит мир (World.apply_light). Съёмка без --light — «День», настройки не читает и не пишет.
+## Масштаб интерфейса (просьба автора 2026-10-15): 75–150 % в «Настройках» главного меню, хранится в
+## user://settings.cfg. Это множитель холста окна (Window.content_scale_factor, режим canvas_items) — им
+## крупнеют и мельчают меню, интерфейс «Сражения» и «Города» сразу, 3D он не трогает. Сцена может
+## поднять холст для мелких окон (set_ui_boost: «Город» — не мельче 0,8 от раскладки 1920×1080); итог —
+## на экране не мельче UI_MIN_PHYS и не больше, чем позволяет самая тесная проверенная раскладка UI_MIN_VIEW.
+## Съёмка без --ui_scale и проверки без экрана (--headless) — 100 %, настройки игрока не читают и не пишут.
 
 signal quality_changed(level: String)
 signal light_mode_changed(mode: String)
+signal ui_scale_changed(scale: float)
 
 const QUALITY_HIGH := "high"
 const QUALITY_MEDIUM := "medium"
@@ -27,6 +35,17 @@ const QUALITY_LOW := "low"
 const LIGHT_DAY := "day"
 const LIGHT_SUNSET := "sunset"
 const LIGHT_MODES := [LIGHT_DAY, LIGHT_SUNSET]
+## Масштаб интерфейса: пределы ползунка и шаг (доли; 1 — как задумано: раскладка 1920×1080 на весь экран)
+const UI_SCALE_MIN := 0.75
+const UI_SCALE_MAX := 1.5
+const UI_SCALE_STEP := 0.05
+## Самая тесная раскладка, на которой проверены меню, «Сражение» и «Город» (холст в точках интерфейса):
+## уже — масштаб дальше не растёт
+const UI_MIN_VIEW := Vector2(1280, 720)
+## Интерфейс на экране не мельче этой доли раскладки 1920×1080 (мелкий шрифт 14–16 — от ~11 пикселей; при 0,6
+## критики читаемости не разобрали подписи): на окнах меньше 1440×810 мелкий масштаб тихо ограничен, а меню и
+## «Сражение» при 100 % чуть крупнее растяжения (1280×720: множитель 1,125 — как 75 % «Города»)
+const UI_MIN_PHYS := 0.75
 const SETTINGS_PATH := "user://settings.cfg"
 ## Главное меню (сцена по умолчанию проекта)
 const MENU_SCENE := "res://scenes/menu/main_menu.tscn"
@@ -45,6 +64,10 @@ var scene_time := 0.0
 ## Громкость (главная шина, 0..1) и окно во весь экран — настройки игрока (главное меню)
 var volume := 0.8
 var fullscreen := false
+## Масштаб интерфейса игрока (UI_SCALE_MIN..UI_SCALE_MAX). Менять через set_ui_scale()
+var ui_scale := 1.0
+## Подъём холста от сцены для мелких окон: func(окно: Vector2, раскладка: Vector2) -> float; пусто — 1
+var _ui_boost := Callable()
 ## Живой ветер — зеркало global ordo_wind (RenderingServer отдаёт глобальные uniform только
 ## в редакторе): xy — куда дует по мировым x/z, z — сила (×6 м/с), w — порывистость.
 ## Менять через set_wind(), чтобы шейдеры и эффекты на процессоре видели одно и то же.
@@ -96,6 +119,11 @@ func _ready() -> void:
 		if saved_light != "":
 			light_mode = saved_light
 			light_source = "saved"
+	if _args.has("ui_scale"):
+		var s := float(_args["ui_scale"])
+		ui_scale = _ui_clamp(s / 100.0 if s > 3.0 else s)
+	get_tree().root.size_changed.connect(apply_ui_scale)
+	apply_ui_scale()
 
 
 func arg(name: String, default_value := "") -> String:
@@ -220,6 +248,58 @@ func set_fullscreen(on: bool, remember := true) -> void:
 		_save_value("display", "fullscreen", on)
 
 
+## Масштаб интерфейса (доли, 0,75–1,5; шаг 0,05); remember — запомнить выбор игрока (user://settings.cfg)
+func set_ui_scale(s: float, remember := true) -> void:
+	s = _ui_clamp(s)
+	var changed := not is_equal_approx(s, ui_scale)
+	ui_scale = s
+	# без экрана (проверки) — только в свой файл настроек, не в настройки игрока
+	if remember and not _args.has("ui_scale") and (DisplayServer.get_name() != "headless" or settings_path != SETTINGS_PATH):
+		_save_value("display", "ui_scale", s)
+	apply_ui_scale()
+	if changed:
+		ui_scale_changed.emit(s)
+
+
+## Масштаб в пределах ползунка и на его шаге (ключ запуска и файл настроек — так же, как ползунок)
+static func _ui_clamp(s: float) -> float:
+	return clampf(snappedf(s, UI_SCALE_STEP), UI_SCALE_MIN, UI_SCALE_MAX)
+
+
+## Подъём холста от сцены для мелких окон (CityHud.ui_scale_factor) или пусто — без подъёма
+func set_ui_boost(boost: Callable) -> void:
+	_ui_boost = boost
+	apply_ui_scale()
+
+
+## Множитель холста окна win (пиксели) при раскладке base (canvas_items, aspect expand): масштаб игрока user
+## на подъём сцены boost; интерфейс на экране не мельче UI_MIN_PHYS, холст не теснее UI_MIN_VIEW
+static func ui_window_factor(win: Vector2, base: Vector2, user: float, boost := 1.0) -> float:
+	if win.x <= 0.0 or win.y <= 0.0 or base.x <= 0.0 or base.y <= 0.0:
+		return 1.0
+	# холст при множителе 1: окно, растянутое до раскладки по меньшей стороне (expand — не меньше base)
+	var natural := minf(win.x / base.x, win.y / base.y)
+	var canvas := win / natural
+	var most := maxf(1.0, minf(canvas.x / UI_MIN_VIEW.x, canvas.y / UI_MIN_VIEW.y))
+	return minf(maxf(user * boost, UI_MIN_PHYS / natural), most)
+
+
+## Поставить множитель холста главному окну (смена масштаба, подъёма сцены, размера окна). Окном владеет
+## только автозагрузка /root/Ordo (свои экземпляры проверок окно не трогают)
+func apply_ui_scale() -> void:
+	if not is_inside_tree() or get_tree().root.get_node_or_null("Ordo") != self:
+		return
+	var w := get_tree().root
+	if w.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED:
+		return
+	var win := Vector2(w.size)
+	var base := Vector2(w.content_scale_size)
+	var boost := float(_ui_boost.call(win, base)) if _ui_boost.is_valid() else 1.0
+	var f := ui_window_factor(win, base, ui_scale, boost)
+	if not is_equal_approx(w.content_scale_factor, f):
+		w.content_scale_factor = f
+
+
 func _save_value(section: String, key: String, v: Variant) -> void:
 	if _capturing():
 		return
@@ -236,6 +316,9 @@ func _load_prefs() -> void:
 	set_volume(float(cfg.get_value("audio", "volume", 0.8)), false)
 	if bool(cfg.get_value("display", "fullscreen", false)):
 		set_fullscreen(true, false)
+	# без экрана (проверки) — 100 %: раскладку проверяют на своём масштабе (свой файл настроек — читают)
+	if DisplayServer.get_name() != "headless" or settings_path != SETTINGS_PATH:
+		ui_scale = _ui_clamp(float(cfg.get_value("display", "ui_scale", 1.0)))
 
 
 func _process(delta: float) -> void:

@@ -10,6 +10,9 @@ extends RefCounted
 ##   UiTheme.icon("res", "food")            # assets/ui/icons/res_food.png
 
 const DIR := "res://assets/ui/"
+## Записка-подсказка: рваный край note.png сверху и снизу (пиксели) и сколько полос бумаги в середине
+const TIP_EDGE := 26
+const TIP_BANDS := 16
 const FONT_HEAD := "res://assets/ui/fonts/cormorant_unicase/CormorantUnicase-SemiBold.ttf"
 const FONT_HEAD_BOLD := "res://assets/ui/fonts/cormorant_unicase/CormorantUnicase-Bold.ttf"
 const FONT_TEXT := "res://assets/ui/fonts/alegreya/Alegreya-VariableFont_wght.ttf"
@@ -124,6 +127,45 @@ static func box(name: String, margin: float, content := -1.0, tile := false) -> 
 	return sb
 
 
+## Подсказка — высокая записка из note.png (400×76): верх и низ с рваным краем как есть, середина — полосы
+## бумаги, через одну перевёрнутые (растянутая полоса в 24 пикселя давала продольные разводы и гладкие края
+## на высокой подсказке). Без картинки — обычная записка box("note")
+static func tip_box() -> StyleBox:
+	if _cache.has("tip_box"):
+		return _cache["tip_box"]
+	var t := tex("note")
+	var sb: StyleBox = box("note", TIP_EDGE, 14)
+	if t != null and t.get_height() > TIP_EDGE * 2 + 4:
+		var src := t.get_image()
+		if src.is_compressed():
+			src.decompress()
+		src.convert(Image.FORMAT_RGBA8)
+		var w := src.get_width()
+		var h := src.get_height()
+		var band := h - TIP_EDGE * 2
+		var img := Image.create(w, TIP_EDGE * 2 + band * TIP_BANDS, false, Image.FORMAT_RGBA8)
+		img.blit_rect(src, Rect2i(0, 0, w, TIP_EDGE), Vector2i.ZERO)
+		var mid := src.get_region(Rect2i(0, TIP_EDGE, w, band))
+		var flip := mid.duplicate() as Image
+		flip.flip_y()
+		for i in TIP_BANDS:
+			img.blit_rect(flip if i % 2 == 1 else mid, Rect2i(0, 0, w, band), Vector2i(0, TIP_EDGE + i * band))
+		img.blit_rect(src, Rect2i(0, h - TIP_EDGE, w, TIP_EDGE), Vector2i(0, TIP_EDGE + band * TIP_BANDS))
+		var s := StyleBoxTexture.new()
+		s.texture = ImageTexture.create_from_image(img)
+		s.texture_margin_left = TIP_EDGE
+		s.texture_margin_right = TIP_EDGE
+		s.texture_margin_top = TIP_EDGE
+		s.texture_margin_bottom = TIP_EDGE
+		sb = s
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	sb.content_margin_top = 14
+	sb.content_margin_bottom = 18
+	_cache["tip_box"] = sb
+	return sb
+
+
 ## Тема интерфейса: кнопки (орех в латуни), вкладки (кожа), подсказка (записка), метки (пергамент)
 static func make(faction: StringName = &"kokand") -> Theme:
 	var th := Theme.new()
@@ -155,10 +197,7 @@ static func make(faction: StringName = &"kokand") -> Theme:
 	th.set_color("font_pressed_color", "CityTab", Color("#fff6de"))
 	th.set_color("font_hover_pressed_color", "CityTab", Color("#fff6de"))
 	# подсказка — бумажная записка, тушь
-	var tip := box("note", 26, 14)
-	tip.content_margin_left = 20
-	tip.content_margin_right = 20
-	th.set_stylebox("panel", "TooltipPanel", tip)
+	th.set_stylebox("panel", "TooltipPanel", tip_box())
 	th.set_font("font", "TooltipLabel", text(500))
 	th.set_font_size("font_size", "TooltipLabel", 17)
 	th.set_color("font_color", "TooltipLabel", INK)

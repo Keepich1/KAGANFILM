@@ -35,6 +35,9 @@ var _extra: Label
 var _grass: CityBar
 ## Состояние умения под кнопкой (по панели ECON: действует / через / готово)
 var _ability_state: Label
+## Кнопки найма (по порядку trains) и строка причины под ними — их подсказки и текст обновляет _update
+var _hires: Array[Button] = []
+var _why: Label
 ## Сжатая раскладка (тесты и кадры) и строк о здании на бумаге
 var compact := false
 var _extra_lines := EXTRA_LINES
@@ -54,9 +57,14 @@ func show_panel(d: Dictionary) -> void:
 	var own := is_own(int(d.get("handle", 0)))
 	var sig := "%d|%d|%s|" % [int(d.get("handle", 0)), int(d.get("state", 0)), str(own)]
 	if own:
+		# причина «нельзя» (why) меняется с каждым приходом ресурсов — её и подсказки обновляет _update, иначе
+		# кнопки найма пересобирались бы под мышью и подсказка пропадала
 		for t: Dictionary in d.get("trains", []):
-			sig += "%d:%s:%s;" % [int(t.get("utype", -1)), str(t.get("enabled", false)), t.get("why", "")]
-	sig += "|%d|%d|%s" % [(d.get("queue", []) as Array).size(), (d.get("trade", {}) as Dictionary).size(), str(d.has("ability"))]
+			sig += "%d:%s:%s;" % [int(t.get("utype", -1)), str(t.get("enabled", false)), str(t.get("cost", PackedInt32Array()))]
+	# очередь — только есть ли она (места очереди обновляет _update): иначе каждый найм пересобирал бы
+	# кнопки, и подсказка под мышью пропадала бы
+	var has_queue := not (d.get("trains", []) as Array).is_empty() or not (d.get("queue", []) as Array).is_empty()
+	sig += "|%s|%d|%s" % [str(has_queue), (d.get("trade", {}) as Dictionary).size(), str(d.has("ability"))]
 	if sig != _sig:
 		_sig = sig
 		_rebuild(d)
@@ -69,6 +77,8 @@ func _rebuild(d: Dictionary) -> void:
 	_slots.clear()
 	_grass = null
 	_ability_state = null
+	_hires.clear()
+	_why = null
 	_handle = int(d.get("handle", 0))
 	var defs := hud.query.defs()
 	var bt := int(d.get("btype", 0))
@@ -98,6 +108,7 @@ func _rebuild(d: Dictionary) -> void:
 	roundel.portrait = UiTheme.building_portrait(defs, bt)     # модель постройки, если снята; иначе значок
 	roundel.position = Vector2(4, 6)
 	roundel.size = Vector2(md, md)
+	roundel.tooltip_text = CityTips.building(defs, bt)
 	add_child(roundel)
 	var nm := UiTheme.label(String(d.get("name", "")), UiTheme.head_bold(), 26 if compact else 28, true)
 	nm.position = Vector2(tx - 2.0, 0)
@@ -138,7 +149,7 @@ func _rebuild(d: Dictionary) -> void:
 			qt.position = Vector2(x, 0)
 			add_child(qt)
 		for i in BuildingTable.QMAX:
-			var slot := Button.new()
+			var slot := CityTips.TipButton.new()
 			slot.position = q0 + Vector2(i * (s_sz + gap), 0)
 			slot.size = Vector2(s_sz, s_sz)
 			slot.focus_mode = Control.FOCUS_NONE
@@ -182,17 +193,16 @@ func _rebuild(d: Dictionary) -> void:
 		for i in trains.size():
 			var t: Dictionary = trains[i]
 			var bx := x + i * step + (step - TRAIN) * 0.5 - 8.0
-			var b := Button.new()
+			# подсказка — записка CityTips: кто это, цена и время, здоровье, атака, сильные и слабые стороны
+			var b := CityTips.TipButton.new()
 			b.position = Vector2(bx, 30)
 			b.size = Vector2(TRAIN, TRAIN)
 			b.focus_mode = Control.FOCUS_NONE
 			b.disabled = not t.get("enabled", false)
 			var cost: PackedInt32Array = t.get("cost", PackedInt32Array())
-			var tip := "%s\n%s: %s" % [t.get("name", ""), tr("Цена"), UiTheme.cost_text(defs, cost)]
-			if t.get("why", "") != "":
-				tip += "\n" + String(t["why"])
-			b.tooltip_text = tip
 			var ut := int(t.get("utype", -1))
+			b.tooltip_text = _hire_tip(defs, t)
+			_hires.append(b)
 			var utype_id := defs.unit_ids[ut] if ut >= 0 else ""
 			b.pressed.connect(func() -> void: hud.train(_handle, ut))
 			add_child(b)
@@ -217,29 +227,24 @@ func _rebuild(d: Dictionary) -> void:
 			row.position = Vector2(bx + TRAIN * 0.5 - (step - 6.0) * 0.5, 115)
 			row.size = Vector2(step - 6.0, 18)
 			add_child(row)
-		# причина первой недоступной кнопки — строкой (подсказка — у каждой кнопки)
-		for t: Dictionary in trains:
-			if t.get("why", "") != "":
-				var why := UiTheme.label(String(t["why"]), UiTheme.italic(600), 16, true)
-				why.position = Vector2(x, 156 if two_rows else 140)
-				why.add_theme_color_override("font_color", UiTheme.RED)
-				add_child(why)
-				break
+		# причина первой недоступной кнопки — строкой (подсказка — у каждой кнопки); текст — _update
+		_why = UiTheme.label("", UiTheme.italic(600), 16, true)
+		_why.position = Vector2(x, 156 if two_rows else 140)
+		_why.add_theme_color_override("font_color", UiTheme.RED)
+		add_child(_why)
 	# умение здания (Ҳашар у Урды, ECONOMY §2.6): кнопка в панели, клавиша V
 	if show_ab:
 		var ax := x + trains.size() * step + 24.0
 		var at := UiTheme.label(tr("Умение"), UiTheme.head_bold(), 19, true)
 		at.position = Vector2(ax - 8.0, 0)
 		add_child(at)
-		var b := Button.new()
+		var b := CityTips.TipButton.new()
 		b.name = "Ability"
 		b.position = Vector2(ax, 30)
 		b.size = Vector2(TRAIN, TRAIN)
 		b.focus_mode = Control.FOCUS_NONE
 		var nm_ab := RtsInput.ability_name(ab)
-		b.tooltip_text = "%s (V)\n%s" % [nm_ab, tr("Действует %d с, перезарядка %d с") % [int(ab.get("duration_s", 0)), int(ab.get("cooldown_s", 0))]]
-		if ab.has("build_mult"):
-			b.tooltip_text += "\n" + tr("Стройка и ремонт ×%s") % String.num(float(ab["build_mult"]), 1)
+		b.tooltip_text = CityTips.ability(ab)
 		b.pressed.connect(func() -> void:
 			if hud.input:
 				hud.input.use_ability(_handle))
@@ -271,6 +276,14 @@ func _rebuild(d: Dictionary) -> void:
 	# базар: обмен за золото (своё готовое здание с ценами от ECON)
 	if show_trade:
 		_trade_section(defs, x, rates, int(d.get("trade_lot", TRADE_LOT)))
+
+
+## Подсказка кнопки найма t (GameQuery.building_panel trains): записка CityTips по воину, цена и причина — из t
+func _hire_tip(defs: Defs, t: Dictionary) -> String:
+	var ut := int(t.get("utype", -1))
+	var cost: PackedInt32Array = t.get("cost", PackedInt32Array())
+	var tip := CityTips.unit(defs, ut, String(t.get("why", "")), true, cost) if ut >= 0 else ""
+	return tip if tip != "" else "%s\n%s: %s" % [t.get("name", ""), tr("Цена"), UiTheme.cost_text(defs, cost)]
 
 
 ## Столбцов обмена (все ресурсы с ценами, кроме золота)
@@ -310,7 +323,7 @@ func _trade_section(defs: Defs, x: float, rates: Dictionary, lot: int) -> void:
 		for k in rows.size():
 			var row: Array = rows[k]
 			var price: int = row[0]
-			var b := Button.new()
+			var b := CityTips.TipButton.new()
 			b.name = "Trade_%s_%s" % [defs.res_ids[r], "sell" if k == 0 else "buy"]
 			b.position = Vector2(cx, 64 + k * 34)
 			b.size = Vector2(TRADE_COL - 12.0, 30)
@@ -324,8 +337,9 @@ func _trade_section(defs: Defs, x: float, rates: Dictionary, lot: int) -> void:
 				b.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 				b.add_theme_constant_override("icon_max_width", 18)
 			b.text = "%s %s" % [row[3], (row[4] as String) % price] if price >= 0 else row[3]
-			b.tooltip_text = (tr("Продать %d %s за %d золота") if k == 0 else tr("Купить %d %s за %d золота")) % [
-				lot, tr(defs.r_name[r]).to_lower(), price] if price >= 0 else tr("Этим здесь не торгуют")
+			b.tooltip_text = ((tr("Продать\n%s %d → золото %d") if k == 0 else tr("Купить\nзолото %d → %s %d")) % (
+				[tr(defs.r_name[r]).to_lower(), lot, price] if k == 0 else [price, tr(defs.r_name[r]).to_lower(), lot])) \
+				if price >= 0 else tr("Этим здесь не торгуют")
 			var give: int = row[1]
 			var take: int = row[2]
 			b.pressed.connect(func() -> void: hud.trade(_handle, give, take, lot * 1000))
@@ -470,6 +484,18 @@ func _cost_row(defs: Defs, cost: PackedInt32Array, bad: bool) -> HFlowContainer:
 
 func _update(d: Dictionary) -> void:
 	var defs := hud.query.defs()
+	# найм: причины «нельзя» и подсказки — на месте (кнопки не пересобираются, подсказка под мышью живёт)
+	var trains: Array = d.get("trains", [])
+	var first_why := ""
+	for i in mini(trains.size(), _hires.size()):
+		var t: Dictionary = trains[i]
+		var tip := _hire_tip(defs, t)
+		if _hires[i].tooltip_text != tip:
+			_hires[i].tooltip_text = tip
+		if first_why == "" and String(t.get("why", "")) != "":
+			first_why = String(t["why"])
+	if _why and _why.text != first_why:
+		_why.text = first_why
 	var st := int(d.get("state", BuildingTable.State.ACTIVE))
 	var prog := float(d.get("progress", 1.0))
 	match st:
@@ -507,7 +533,9 @@ func _update(d: Dictionary) -> void:
 			var btn := s["button"] as Button
 			btn.tooltip_text = String(qd.get("name", "")) if btn.disabled else tr("%s — щелчок отменяет") % qd.get("name", "")
 			bar.value = float(qd.get("t", 0.0)) if i == 0 else 0.0
+			bar.visible = i == 0
 		else:
 			ic.texture = null
 			(s["button"] as Button).tooltip_text = tr("Пусто")
 			bar.value = 0.0
+			bar.visible = false

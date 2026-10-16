@@ -126,7 +126,7 @@ func _update_summary(cards: Array) -> void:
 
 
 func _card(c: Dictionary, at: Vector2) -> void:
-	var bg := NinePatchRect.new()
+	var bg := CityTips.TipNine.new()
 	bg.texture = UiTheme.tex("card")
 	bg.patch_margin_left = 12
 	bg.patch_margin_right = 12
@@ -135,8 +135,12 @@ func _card(c: Dictionary, at: Vector2) -> void:
 	bg.position = at
 	bg.size = CARD
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	bg.tooltip_text = "%s\n%s\n%s" % [c.get("name", ""), tr("Отряд со знаменем") if c.get("banner", false) else tr("Одиночки"),
-		tr("Щелчок — только они, Shift — убрать, дважды — камера")]
+	# записка CityTips: кто это (здоровье, удар, сильные и слабые стороны — из таблиц) и что делает щелчок
+	var defs := hud.query.defs()
+	var ut := defs.unit(StringName(String(c.get("type", ""))))
+	var who := CityTips.unit(defs, ut, "", false) if ut >= 0 else String(c.get("name", ""))
+	bg.tooltip_text = "%s\n%s\n%s" % [who, tr("Отряд со знаменем") if c.get("banner", false) else tr("Одиночки"),
+		"~ " + tr("Щелчок — только они, Shift — убрать, дважды — камера")]
 	bg.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var card := c
 	bg.gui_input.connect(func(e: InputEvent) -> void:
@@ -197,6 +201,9 @@ func _single(c: Dictionary) -> void:
 	roundel.portrait = UiTheme.unit_portrait(type_id)
 	roundel.position = Vector2(6, 8)
 	roundel.size = Vector2(112, 112)
+	# записка CityTips: кто это (из таблиц), без цены
+	var ut := hud.query.defs().unit(StringName(type_id))
+	roundel.tooltip_text = CityTips.unit(hud.query.defs(), ut, "", false) if ut >= 0 else ""
 	add_child(roundel)
 	var nm := UiTheme.label(String(c.get("name", type_id)), UiTheme.head_bold(), 30, true)
 	nm.position = Vector2(136, 2)

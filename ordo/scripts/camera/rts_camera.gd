@@ -89,8 +89,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_drag = mb.pressed
 	elif event is InputEventMouseMotion and _drag:
 		var mm := event as InputEventMouseMotion
-		_t_yaw -= mm.relative.x * 0.3
-		_t_pitch_off = clampf(_t_pitch_off + mm.relative.y * 0.15, -20.0, 20.0)
+		# сдвиг мыши — без множителя холста (масштаб интерфейса, Ordo): поворот на тот же путь мыши тот же
+		var rel := mm.relative * get_window().content_scale_factor
+		_t_yaw -= rel.x * 0.3
+		_t_pitch_off = clampf(_t_pitch_off + rel.y * 0.15, -20.0, 20.0)
 		moved_by_player.emit()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var k := (event as InputEventKey).physical_keycode
@@ -123,11 +125,13 @@ func _read_controls(delta: float) -> void:
 		var m := vp.get_mouse_position()
 		var size := vp.get_visible_rect().size
 		var over_hud := edge_blocked.is_valid() and bool(edge_blocked.call(m))
+		# кромка — та же на экране при любом масштабе интерфейса (точки холста = пиксели / множитель)
+		var em := edge_margin / maxf(get_window().content_scale_factor, 0.01)
 		if m.x >= 0 and m.y >= 0 and m.x <= size.x and m.y <= size.y and not over_hud:
-			if m.x < edge_margin: move.x -= 1.0
-			if m.x > size.x - edge_margin: move.x += 1.0
-			if m.y < edge_margin: move.y -= 1.0
-			if m.y > size.y - edge_margin: move.y += 1.0
+			if m.x < em: move.x -= 1.0
+			if m.x > size.x - em: move.x += 1.0
+			if m.y < em: move.y -= 1.0
+			if m.y > size.y - em: move.y += 1.0
 	if move != Vector2.ZERO:
 		var r := move.normalized().rotated(-deg_to_rad(yaw_deg))
 		_t_focus += Vector3(r.x, 0.0, r.y) * pan_speed * maxf(distance, 30.0) * delta

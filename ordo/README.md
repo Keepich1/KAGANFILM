@@ -38,7 +38,8 @@
 | Сражение | срез стиля (Esc — назад в меню) |
 | Город: за Коканд | город у арыков: поля, кирпич, стены и ворота |
 | Город: за кыпчаков | кочевой лагерь: юрты, табуны, олжо и көч |
-| Настройки | качество графики (как F2), время суток, громкость, во весь экран |
+| Игра с другом | **макет** лобби игры по сети (сети ещё нет): только при запуске из Godot или с ключом `--online_mock`, в установщике его нет (`--online_mock=0` — доска как в установщике). Кадры: `--menu_online=<состояние>`, `--menu_online_alt=N`, `--menu_online_side=kipchak`, F8 / Shift+F8 — листать состояния |
+| Настройки | качество графики (как F2), время суток, масштаб интерфейса (75–150 %), громкость, во весь экран |
 | Выход | |
 
 ## «Город»: как играть
@@ -136,9 +137,10 @@
   стыковка пакетов — `tests/test_city_integration.gd`.
 - Автобои ИИ против ИИ с проверкой повтора: `tools/skirmish_headless.sh 2` (набеги, стены, ворота, көч, олжо).
 - Проход партии по сценарию с кадрами (проверка первой играбельной сборки):
-  `tools/godot.sh --path . --resolution 1920x1080 --fixed-fps 30 res://scenes/gorod/gorod.tscn -- --quality=high --faction=kokand --playthrough=/abs/dir`.
+  `tools/godot.sh --path . --resolution 1920x1080 --fixed-fps 30 res://scenes/gorod/gorod.tscn -- --quality=high --ui_scale=100 --faction=kokand --playthrough=/abs/dir`.
 - Кадр без монитора: `tools/shot.sh res://scenes/slice.tscn out.png --cam=CamRTS --at=19`
-  (время суток — `--light=day|sunset`, без ключа — «День»; числа света обоих — `scripts/world/light_presets.gd`).
+  (время суток — `--light=day|sunset`, без ключа — «День»; числа света обоих — `scripts/world/light_presets.gd`;
+  масштаб интерфейса — `--ui_scale=75..150`, без ключа — 100 %; подсказка «Сражения» на кадре — `--show_help`).
   На Windows — `tools\shot.cmd` с теми же ключами (PowerShell, без Git Bash); в Git Bash работают и `tools/shot.sh`,
   `tools/import.sh`, `tools/godot.sh`, `tests/run_all.sh`, `tools/skirmish_headless.sh`; `tools/movie.sh` — если поставлен
   ffmpeg, генераторы — если поставлен Python. Godot ищется в `GODOT`, в `C:\Godot` или файлом прямо в `C:\`.

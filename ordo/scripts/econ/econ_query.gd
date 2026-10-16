@@ -9,7 +9,7 @@ extends RefCounted
 ##     fuel (печь: есть дрова), otlar: {n, cap}, tax_min (золота в минуту), trade: {res: {sell, buy}},
 ##     ability: {id, active_s, ready_s}, raid: 0..1 (круг набега), slaughter_s, auto_move, mode}
 ## build_menu(p, tab) → [{btype, name, cost (милли), hotkey, enabled, why, count, max}]
-## why — по-русски («Нужно: 40 дерева», «Сначала: Хумдон», «Не больше 10»), "" — можно.
+## why — по-русски («Не хватает: дерево 40», «Сначала: Хумдон», «Не больше 10»), "" — можно.
 
 const HOTKEYS := ["Q", "W", "E", "R", "T", "A", "S", "D", "F", "G", "Z", "X", "C", "V"]
 
@@ -172,5 +172,5 @@ func why_cost(e: EconomySim, p: int, cost: PackedInt32Array) -> String:
 	for r in mini(cost.size(), e.R):
 		var lack := cost[r] - e.players.res[p * e.R + r]
 		if cost[r] > 0 and lack > 0:
-			miss.append("%d %s" % [ceili(lack / 1000.0), tr(e.defs.r_name[r]).to_lower()])
-	return "" if miss.is_empty() else tr("Нужно: %s") % ", ".join(miss)
+			miss.append("%s %d" % [tr(e.defs.r_name[r]).to_lower(), ceili(lack / 1000.0)])
+	return "" if miss.is_empty() else tr("Не хватает: %s") % " · ".join(miss)

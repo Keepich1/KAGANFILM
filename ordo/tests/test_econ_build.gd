@@ -126,7 +126,7 @@ func _rules() -> void:
 		"«Укрепления» в Сб. 1: пахса, дарвоза, бурж («Сначала: Хумдон»)")
 	k.set_res(p, "wood", 10.0)
 	var uy: Dictionary = e.build_menu(p, &"economy")[0]
-	SimHarness.check(not uy["enabled"] and String(uy["why"]).begins_with("Нужно: 70 дерево"), "нет дерева — «Нужно: 70 дерево»")
+	SimHarness.check(not uy["enabled"] and String(uy["why"]).begins_with("Не хватает: дерево 70"), "нет дерева — «Не хватает: дерево 70»")
 
 
 ## Арык цепочкой: поле у воды

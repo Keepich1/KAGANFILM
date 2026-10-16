@@ -26,6 +26,8 @@ func setup(p_hud: CityHud) -> void:
 	hud = p_hud
 	name = "Notes"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# масштаб интерфейса сменился — записки к новому краю
+	resized.connect(_layout)
 	var ev := hud.query.events()
 	_cursor = ev.head if ev else 0
 

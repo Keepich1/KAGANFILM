@@ -3,6 +3,8 @@ extends Control
 ## Сетка приказов 6×3 (ARCHITECTURE §14): квадратные ореховые кнопки в латуни, золочёный значок,
 ## клавиша в углу. Вкладка «Приказы» — GameQuery.orders_for(выделение); «Хозяйство» и «Укрепления» —
 ## build_menu(вкладка): кнопка постройки с ценой в подсказке и причиной недоступности по-русски.
+## Подсказки — записки CityTips: приказ — что делает и клавиша; постройка — что это, цена и время, что даёт,
+## что нужно (из Defs).
 
 const COLS := 6
 const ROWS := 3
@@ -19,7 +21,8 @@ func setup(p_hud: CityHud) -> void:
 	name = "OrderGrid"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for i in COLS * ROWS:
-		var b := Button.new()
+		# подсказка — записка CityTips: что делает приказ, что даёт постройка, цена и что нужно
+		var b := CityTips.TipButton.new()
 		b.position = Vector2((i % COLS) * (CELL + GAP), (i / COLS) * (CELL + GAP))
 		b.size = Vector2(CELL, CELL)
 		b.focus_mode = Control.FOCUS_NONE
@@ -57,8 +60,8 @@ func show_orders(list: Array[Dictionary]) -> void:
 		var o: Dictionary = list[i]
 		var op := int(o["op"])
 		var key := String(o.get("key", ""))
-		var tip := "%s%s" % [o.get("label", ""), (" (%s)" % key) if key != "" else ""]
-		if op in RtsInput.ARMABLE:
+		var tip := CityTips.order(op, String(o.get("label", "")), key, bool(o.get("enabled", true)))
+		if op in RtsInput.ARMABLE and not tip.contains("ЛКМ"):
 			tip += "\n" + tr("Кнопка: затем ЛКМ по карте")
 		# в углу кнопки места мало: «Shift+K» → «↑K» (полностью — в подсказке)
 		_fill(i, UiTheme.order_icon(op), "" if key == "ПКМ" else key.replace("Shift+", "↑"), tip,
@@ -81,13 +84,8 @@ func show_build(list: Array[Dictionary]) -> void:
 	for i in n:
 		var o: Dictionary = list[i]
 		var bt := int(o["btype"])
-		var tip := "%s (%s)\n%s: %s" % [o.get("name", ""), o.get("hotkey", ""), tr("Цена"),
-			UiTheme.cost_text(defs, o.get("cost", PackedInt32Array()))]
-		if defs.b_size.size() > bt:
-			var sz := defs.b_size[bt]
-			tip += "\n" + tr("Размер %d×%d м") % [roundi(sz.x), roundi(sz.y)]
-		if o.get("why", "") != "":
-			tip += "\n" + String(o["why"])
+		var tip := CityTips.building(defs, bt, String(o.get("hotkey", "")), String(o.get("why", "")),
+			o.get("cost", PackedInt32Array()))
 		_fill(i, UiTheme.building_icon(defs, bt), String(o.get("hotkey", "")), tip, bool(o.get("enabled", true)),
 			{"btype": bt})
 	_clear_from(n)

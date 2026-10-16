@@ -40,14 +40,25 @@ const BIG_SEL := 200
 const BIG_INFO_S := 0.5
 ## Мелкое окно (1280×720 и т. п.): холст «Города» (Window.content_scale_factor) укрупняется так, чтобы
 ## интерфейс был не мельче UI_MIN_SCALE от раскладки 1920×1080, а сама раскладка — не уже MIN_VIEW
-## (1280×720 → 0,8: раскладка 1600×900). Окна от 1600×900 и больше — как было. Прежний множитель —
-## обратно при выходе из «Города» (главное меню, «Сражение»).
+## (1280×720 → 0,8: раскладка 1600×900). Окна от 1600×900 и больше — как было. Это подъём сцены для
+## Ordo.set_ui_boost: поверх него — масштаб интерфейса игрока (Ordo.ui_scale); при выходе из «Города»
+## (главное меню, «Сражение») подъём снимается.
 const UI_MIN_SCALE := 0.8
 const MIN_VIEW := Vector2(1600, 900)
+## Записки: от верха (под табличкой набега), отступ справа и над нижней панелью (в точках раскладки)
+const NOTES_TOP := 120.0
+const NOTES_RIGHT := 14.0
+const NOTES_GAP := 6.0
+## Окна посреди экрана (fit_dialog): не выше низа таблички набега, зазор до нижней панели, латунная рамка
+const DIALOG_TOP := 128.0
+const DIALOG_GAP := 10.0
+const DIALOG_FRAME := 10.0
 
-## Интерфейс, который ведёт масштаб окна (один на окно), и множитель окна до него
+## Окна посреди экрана, которые держит fit_dialog при смене холста: {окно: размер}
+var _dialogs := {}
+
+## Интерфейс, который ведёт подъём холста окна (один на окно)
 static var _scale_owner: CityHud = null
-static var _scale_prev := 1.0
 
 var query: GameQuery
 var driver: SimDriver
@@ -90,16 +101,14 @@ func _ready() -> void:
 	_apply_ui_scale()
 
 
-## Выход из «Города»: системный курсор вместо наконечника, прежний масштаб окна
+## Выход из «Города»: системный курсор вместо наконечника, холст окна — без подъёма
 func _exit_tree() -> void:
 	CityCursor.reset()
 	if _scale_owner == self:
 		_scale_owner = null
-		var w := get_window()
-		if w:
-			if w.size_changed.is_connected(_apply_ui_scale):
-				w.size_changed.disconnect(_apply_ui_scale)
-			w.content_scale_factor = _scale_prev
+		var o := get_node_or_null("/root/Ordo")
+		if o:
+			o.call("set_ui_boost", Callable())
 
 
 ## Множитель холста для окна win (пиксели) при раскладке base (canvas_items, aspect expand: свой масштаб окна —
@@ -112,23 +121,15 @@ static func ui_scale_factor(win: Vector2, base: Vector2) -> float:
 	return maxf(1.0, want / natural)
 
 
-## Подобрать масштаб окна под его размер (при входе и при каждом изменении окна)
+## Подъём холста для мелких окон — автозагрузке Ordo (она пересчитывает его при каждом изменении окна)
 func _apply_ui_scale() -> void:
-	if not is_inside_tree():
-		return
-	var w := get_window()
-	if w == null or w.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED:
+	var o := get_node_or_null("/root/Ordo")
+	if o == null:
 		return
 	if _scale_owner == null or not is_instance_valid(_scale_owner):
 		_scale_owner = self
-		_scale_prev = w.content_scale_factor
-		if not w.size_changed.is_connected(_apply_ui_scale):
-			w.size_changed.connect(_apply_ui_scale)
-	if _scale_owner != self:
-		return
-	var f := ui_scale_factor(Vector2(w.size), Vector2(w.content_scale_size))
-	if not is_equal_approx(w.content_scale_factor, f):
-		w.content_scale_factor = f
+	if _scale_owner == self:
+		o.call("set_ui_boost", ui_scale_factor)
 
 
 func setup(q: GameQuery, drv: SimDriver, sel: SelectionModel, p: int, cam: Camera3D = null, inp: RtsInput = null) -> void:
@@ -208,10 +209,7 @@ func _build() -> void:
 	_box.draw.connect(_draw_box)
 	root.add_child(_box)
 	notes = CityNotes.new()
-	notes.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	notes.offset_right = -14.0
-	notes.offset_bottom = -(CityBottomPanel.H + 6.0)
-	notes.offset_top = 120.0
+	# место записок — _fit_panels: справа, от NOTES_TOP до нижней панели
 	root.add_child(notes)
 	notes.setup(self)
 	bottom = CityBottomPanel.new()
@@ -223,15 +221,80 @@ func _build() -> void:
 	menu = CityMenu.new()
 	root.add_child(menu)
 	menu.setup(self)
+	_fit_panels()
+	root.resized.connect(_fit_panels)
 	CityCursor.apply(CityCursor.Kind.DEFAULT)
 	_ready_done = true
 	refresh_now()
 	bottom.minimap.refresh()
 
 
+## Холст сменил размер (окно, масштаб интерфейса): балка и нижняя панель — во всю ширину, записки — справа
+## над панелью; на холсте уже CityBottomPanel.MIN_W все три ужаты одной мерой (bar_scale)
+func _fit_panels() -> void:
+	if bottom == null or not is_instance_valid(bottom) or bottom.get_parent() != root:
+		return
+	var view := view_size()
+	top.fit(view)
+	bottom.fit(view)
+	var s := CityBottomPanel.bar_scale(view)
+	notes.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	notes.scale = Vector2(s, s)
+	notes.position = Vector2(0.0, NOTES_TOP * s)
+	notes.size = Vector2(view.x / s - NOTES_RIGHT, (view.y - bottom.screen_h()) / s - NOTES_TOP - NOTES_GAP)
+	for d in _dialogs.keys():
+		if is_instance_valid(d):
+			fit_dialog(d as Control, _dialogs[d])
+		else:
+			_dialogs.erase(d)
+
+
+## Окно посреди экрана: поставить (fit_dialog) и держать на месте при смене холста
+func add_dialog(p: Control, size: Vector2) -> void:
+	_dialogs[p] = size
+	fit_dialog(p, size)
+
+
+## Высота нижней панели на холсте (ужатая на узком холсте — меньше CityBottomPanel.H)
+func bottom_h() -> float:
+	return bottom.screen_h() if bottom else CityBottomPanel.H
+
+
+## Окно посреди экрана (меню паузы, конец партии — p, якорь любой, size — без латунной рамки): по середине
+## экрана, но ниже таблички набега и выше нижней панели (не на её подписях); не влезает — ужато целиком
+func fit_dialog(p: Control, size: Vector2) -> void:
+	var view := view_size()
+	var s := CityBottomPanel.bar_scale(view)
+	var y0 := DIALOG_TOP * s
+	var y1 := view.y - bottom_h() - DIALOG_GAP * s
+	var outer := size + Vector2(DIALOG_FRAME, DIALOG_FRAME) * 2.0
+	var k := minf(1.0, minf((y1 - y0) / outer.y, (view.x - DIALOG_GAP * 2.0) / outer.x))
+	var half := outer.y * k * 0.5
+	var cy := clampf(view.y * 0.5, y0 + half, maxf(y0 + half, y1 - half))
+	p.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	p.scale = Vector2(k, k)
+	p.size = size
+	p.position = Vector2(view.x * 0.5, cy) - size * k * 0.5
+
+
+## Открыто окно поверх игры: меню паузы или экран конца партии (GorodPlay кладёт его в root после меню)
+func modal_open() -> bool:
+	if menu == null:
+		return false
+	if menu.visible:
+		return true
+	for i in range(menu.get_index() + 1, root.get_child_count()):
+		var c := root.get_child(i) as CanvasItem
+		if c and c.visible:
+			return true
+	return false
+
+
 func _process(delta: float) -> void:
 	if not _ready_done:
 		return
+	# записки — не под окном меню и концом партии (окно резало бы их на полуслове)
+	notes.visible = not modal_open()
 	notes.tick(delta)
 	_t_ui += delta
 	_t_map += delta
@@ -333,8 +396,8 @@ func camera_ground_quad() -> PackedVector2Array:
 	if camera == null or not camera.is_inside_tree():
 		return out
 	var vs := view_size()
-	var top_y := CityTopBar.H
-	var bot_y := vs.y - CityBottomPanel.H
+	var top_y := CityTopBar.H * top.scale.y
+	var bot_y := vs.y - bottom_h()
 	for s in [Vector2(0, top_y), Vector2(vs.x, top_y), Vector2(vs.x, bot_y), Vector2(0, bot_y)]:
 		var screen: Vector2 = s * (camera.get_viewport().get_visible_rect().size / vs)
 		out.append(RtsInput.ground_point(camera, screen, 900.0))
@@ -472,7 +535,7 @@ func blocks(pos: Vector2) -> bool:
 	if c != null and c != root and c != _box and c != notes and c != top and c != bottom:
 		return true
 	var vs := view_size()
-	return pos.y >= vs.y - CityBottomPanel.H + CityBottomPanel.BELT * 0.5 or pos.y <= CityTopBar.H
+	return pos.y >= vs.y - bottom_h() + CityBottomPanel.BELT * 0.5 * bottom.scale.y or pos.y <= CityTopBar.H * top.scale.y
 
 
 ## Край экрана над интерфейсом: сдвиг камеры только у самой кромки (RtsCamera.edge_blocked)

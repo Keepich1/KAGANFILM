@@ -47,6 +47,10 @@ func _beats() -> Array:
 		return [
 			[1.0, _boost, "", {}],
 			[2.0, _start_economy, "01_start", {"select": "hq"}],
+			# подсказки на кадре (CityTips): найм, стройка, укрепления
+			[2.0, _noop, "01t_tip_hire", {"select": "hq", "tip": "hire:1"}],
+			[2.0, _noop, "01u_tip_build", {"select": "hq", "tip": "build:economy:8"}],
+			[2.0, _noop, "01v_tip_fort", {"select": "hq", "tip": "build:fort:3"}],
 			[6.0, _ghosts, "02_ghost", {}],
 			[6.5, _ghost_bad, "02b_ghost_bad", {}],
 			[7.0, _build_farm_house, "", {}],
@@ -65,6 +69,8 @@ func _beats() -> Array:
 			[285.0, _noop, "07_raid_warning", {"select": "hq"}],
 			[300.0, _form_squad, "", {}],
 			[310.0, _noop, "08_squad", {"select": "squad", "near_squad": true, "dist": 40.0, "pitch": 36.0}],
+			[310.0, _noop, "08t_tip_order", {"select": "squad", "near_squad": true, "dist": 40.0, "pitch": 36.0, "tip": "order:3"}],
+			[310.0, _noop, "08u_tip_card", {"select": "squad", "near_squad": true, "dist": 40.0, "pitch": 36.0, "tip": "card:0"}],
 			[325.0, _noop, "09_raid", {"near_raid": true, "dist": 58.0, "pitch": 38.0}],
 			[345.0, _disband, "", {}],
 			[350.0, _noop, "10_disband", {"near_squad": true, "dist": 40.0, "pitch": 36.0}],
@@ -76,6 +82,8 @@ func _beats() -> Array:
 	return [
 		[1.0, _boost, "", {}],
 		[2.0, _start_economy, "01_start", {"select": "hq"}],
+		[2.0, _noop, "01t_tip_hire", {"select": "hq", "tip": "hire:0"}],
+		[2.0, _noop, "01u_tip_build", {"select": "hq", "tip": "build:economy:4"}],
 		[6.0, _ghosts, "02_ghost", {}],
 		[7.0, _build_farm_house, "", {}],
 		[50.0, _noop, "03_chop", {"work": 0.0}],
@@ -133,6 +141,8 @@ func _frame(name: String, cfg: Dictionary) -> void:
 	scene.call("_set_fast", false)
 	for i in 3:
 		await get_tree().process_frame
+	if cfg.has("tip"):
+		await _hover(String(cfg["tip"]))
 	if name.ends_with("victory") or name.ends_with("defeat"):
 		await get_tree().create_timer(GorodPlay.END_FADE + 0.4).timeout     # экран конца проявился
 	if DisplayServer.get_name() != "headless":
@@ -143,9 +153,76 @@ func _frame(name: String, cfg: Dictionary) -> void:
 		img.save_png(path)
 	print("[проход] кадр %s (такт %d)" % [path, driver.game.tick])
 	scene.call("_set_fast", true)
+	if cfg.has("tip"):
+		_unhover()
 	if scene.play and scene.play.input and scene.play.input.placement and scene.play.input.placement.active():
 		scene.play.input.placement.cancel()
 	scene.ghost.hide_ghost()
+
+
+## Подсказка на кадре: «навести мышь» на кнопку интерфейса — событие движения прямо в окно (настоящая
+## мышь не двигается), потом ждать, пока Godot покажет подсказку. spec: «hire:N» — N-я кнопка найма в панели
+## здания, «build:вкладка:N» — N-я кнопка стройки вкладки, «order:N» — N-я кнопка приказа, «card:N» — карточка
+func _hover(spec: String) -> void:
+	var hud: CityHud = scene.play.hud if scene.play else null
+	if hud == null:
+		return
+	# пауза на время кадра: иначе очередь найма сдвинется, панель пересоберёт кнопки и подсказка пропадёт
+	_was_paused = driver.paused
+	driver.paused = true
+	# интерфейс обновляется по таймеру — сейчас же, чтобы кнопки не пересобрались под «мышью»
+	hud.refresh_now(true)
+	await get_tree().process_frame
+	var p := spec.split(":")
+	var target: Control = null
+	match p[0]:
+		"build", "order":
+			hud.bottom.tabs.select(StringName(p[1]) if p[0] == "build" else &"orders")
+			hud.refresh_now(true)
+			await get_tree().process_frame
+			var i := int(p[p.size() - 1])
+			if i < hud.bottom.grid.get_child_count():
+				target = hud.bottom.grid.get_child(i) as Control
+		"hire":
+			var n := 0
+			for ch in hud.bottom.building.get_children():
+				if ch is CityTips.TipButton and ch.name != "Ability" and (ch as Control).size.x >= CityBuildingPanel.TRAIN - 0.5:
+					if n == int(p[1]):
+						target = ch
+						break
+					n += 1
+		"card":
+			var n := 0
+			for ch in hud.bottom.cards.get_children():
+				if ch is CityTips.TipNine:
+					if n == int(p[1]):
+						target = ch
+						break
+					n += 1
+	if target == null or not target.is_visible_in_tree():
+		print("[проход] подсказка: нет кнопки %s" % spec)
+		return
+	var ev := InputEventMouseMotion.new()
+	ev.position = target.get_global_rect().get_center()
+	ev.global_position = ev.position
+	# настоящий курсор может быть вне окна съёмки — окно должно считать, что мышь над ним
+	get_viewport().notification(NOTIFICATION_VP_MOUSE_ENTER)
+	get_viewport().push_input(ev, true)
+	await get_tree().create_timer(float(ProjectSettings.get_setting("gui/timers/tooltip_delay_sec", 0.5)) + 0.4).timeout
+
+
+var _was_paused := false
+
+
+## Увести «мышь» с кнопки (подсказка прячется), вернуть вкладку приказов и ход игры
+func _unhover() -> void:
+	driver.paused = _was_paused
+	var ev := InputEventMouseMotion.new()
+	ev.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5, 200.0)
+	ev.global_position = ev.position
+	get_viewport().push_input(ev, true)
+	if scene.play and scene.play.hud:
+		scene.play.hud.bottom.tabs.select(&"orders")
 
 
 func _view(cfg: Dictionary) -> Vector4:

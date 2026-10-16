@@ -21,7 +21,11 @@
   Кадр не больше экрана (больше — `shot.cmd` сообщает об ошибке); пыль и дым от запуска к запуску чуть разные.
 - Автозагрузка `Ordo` (`scripts/core/ordo.gd`): качество `Ordo.quality` (`high`/`low`),
   аргументы командной строки `Ordo.arg("имя")`, зерно `Ordo.seed`, время суток `Ordo.light_mode`
-  (`day` — по умолчанию / `sunset`; `Ordo.set_light_mode()`, сигнал `light_mode_changed`, ключ `--light=`).
+  (`day` — по умолчанию / `sunset`; `Ordo.set_light_mode()`, сигнал `light_mode_changed`, ключ `--light=`),
+  масштаб интерфейса `Ordo.ui_scale` (0,75–1,5; `Ordo.set_ui_scale()`, сигнал `ui_scale_changed`, ключ `--ui_scale=75..150`).
+  Множитель холста окна (`Window.content_scale_factor`) ставит только `Ordo`; сцене для мелких окон —
+  `Ordo.set_ui_boost(func(окно, раскладка) -> float)` (так делает `CityHud`). Холст бывает от 1280×720 (150 %)
+  до 2560×1440 (75 %): интерфейс раскладывается по `get_viewport_rect()`, а не по 1920×1080.
 
 ## 2. Единицы и оси
 

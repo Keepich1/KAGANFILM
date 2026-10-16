@@ -8,6 +8,12 @@ extends HBoxContainer
 signal tab_changed(tab: StringName)
 
 const TABS := [[&"orders", "Приказы"], [&"economy", "Хозяйство"], [&"fort", "Укрепления"]]
+## Подсказки вкладок (записка CityTips: заголовок, строка)
+const TIPS := {
+	&"orders": "Приказы\nЧто делать выбранным: идти, бить, строй, стойка, работа.",
+	&"economy": "Хозяйство (B)\nДома, поля, склады, мастерские и постройки для найма войска.",
+	&"fort": "Укрепления\nСтены, ворота и башни. Стена — ЛКМ по точкам, ПКМ — конец.",
+}
 
 var current := &"orders"
 var _buttons := {}
@@ -18,7 +24,7 @@ func setup() -> void:
 	add_theme_constant_override("separation", 4)
 	var group := ButtonGroup.new()
 	for t in TABS:
-		var b := Button.new()
+		var b := CityTips.TipButton.new()
 		b.theme_type_variation = "CityTab"
 		b.text = tr(t[1])
 		b.toggle_mode = true
@@ -26,7 +32,7 @@ func setup() -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		b.custom_minimum_size = Vector2(112, 30)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.tooltip_text = tr(t[1]) + (" (B)" if t[0] == &"economy" else "")
+		b.tooltip_text = tr(String(TIPS[t[0]]))
 		var id: StringName = t[0]
 		b.pressed.connect(func() -> void: select(id))
 		add_child(b)

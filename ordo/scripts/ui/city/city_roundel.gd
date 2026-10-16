@@ -32,3 +32,8 @@ func _draw() -> void:
 	elif icon:
 		var s := (r - 7.0) * 1.55
 		draw_texture_rect(icon, Rect2(c - Vector2(s, s) * 0.5, Vector2(s, s)), false)
+
+
+## Подсказка медальона — записка CityTips (здание или воин: что это, из таблиц)
+func _make_custom_tooltip(for_text: String) -> Object:
+	return CityTips.panel(for_text)

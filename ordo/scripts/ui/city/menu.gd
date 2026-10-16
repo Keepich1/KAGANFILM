@@ -64,6 +64,8 @@ func setup(p_hud: CityHud) -> void:
 	add_child(dim)
 	_sheet = _paper(W, H)
 	_sheet.name = "Sheet"
+	# посреди экрана, но не на балке и нижней панели (масштаб интерфейса — CityHud.fit_dialog)
+	hud.add_dialog(_sheet, Vector2(W, H))
 	var title := UiTheme.label(tr("Меню"), UiTheme.head_bold(), 40, true)
 	title.position = Vector2(0, 26)
 	title.size = Vector2(W, 48)
@@ -74,9 +76,12 @@ func setup(p_hud: CityHud) -> void:
 	box.size = Vector2(W - 160, H - 130)
 	box.add_theme_constant_override("separation", 12)
 	_sheet.add_child(box)
-	for it in [["Продолжить", close], ["Управление", show_help], ["Начать заново", _restart], ["В главное меню", _quit]]:
-		var b := Button.new()
+	for it in [["Продолжить", close, "Вернуться в игру (Esc)"], ["Управление", show_help, "Все клавиши и мышь — на одном листе"],
+			["Начать заново", _restart, "Новая партия: те же стороны, всё с начала"],
+			["В главное меню", _quit, "Выйти из партии в главное меню"]]:
+		var b := CityTips.TipButton.new()
 		b.text = tr(it[0])
+		b.tooltip_text = "%s\n%s" % [tr(it[0]), tr(it[2])]
 		b.custom_minimum_size = Vector2(0, 56)
 		b.focus_mode = Control.FOCUS_NONE
 		b.add_theme_font_override("font", UiTheme.head_bold())
@@ -95,6 +100,7 @@ func setup(p_hud: CityHud) -> void:
 	_column(HELP_RIGHT, Vector2(HELP_W * 0.5 + 24, 90))
 	var back := Button.new()
 	back.text = tr("Назад")
+	back.tooltip_text = tr("Назад в меню паузы")
 	back.focus_mode = Control.FOCUS_NONE
 	back.position = Vector2(HELP_W * 0.5 - 100, HELP_H - 80)
 	back.size = Vector2(200, 52)

@@ -5,7 +5,8 @@ extends SceneTree
 ## записки — цвет печати по событию; все строки — по-русски; замер времени обновления; новая партия у драйвера
 ## (started) — интерфейс и ввод на новом окне чтения, перед чтением — driver.sync(). Табличка набега по
 ## raid_eta_ticks (0 — набег идёт); чужое здание — без найма и отмены; мелкое окно (1280×720) — холст 1600×900,
-## раскладка влезает; выход из «Города» возвращает курсор и масштаб окна.
+## масштаб интерфейса 150 % — холст 1280×720 (балка, панель и записки ужаты), 75 % — 2560×1440; раскладка влезает;
+## выход из «Города» возвращает курсор и масштаб окна (без подъёма «Города»).
 ## Если в проекте уже есть настоящая игра (GameDriver, GameQueryImpl — главная ветка после слияния GAME),
 ## тот же интерфейс проверяется и на ней: приказы мышью доходят до игры и принимаются (без CMD_REJECTED).
 ##   godot --headless --path ordo --script res://tests/test_ui_bind.gd
@@ -141,9 +142,11 @@ func _test_exit() -> void:
 	AudioServer.set_bus_mute(bus, false)
 
 
-## Мелкое окно: 1280×720 → холст 1600×900 (интерфейс 0,8 вместо 0,67), раскладка влезает; выход — как было
+## Мелкое окно и масштаб интерфейса (Ordo.ui_scale): 1280×720 → холст 1600×900 (интерфейс 0,8 вместо 0,67);
+## 150 % → холст 1280×720 (самый тесный): балка, нижняя панель и записки ужаты до раскладки 1600;
+## 75 % → холст 2560×1440. Раскладка влезает; выход — холст без подъёма «Города» (только масштаб игрока)
 func _test_small_window() -> void:
-	print("[мелкое окно 1280×720]")
+	print("[мелкое окно и масштаб интерфейса]")
 	var f := CityHud.ui_scale_factor
 	SimHarness.check(is_equal_approx(f.call(Vector2(1280, 720), Vector2(1920, 1080)), 1.2)
 		and is_equal_approx(f.call(Vector2(1920, 1080), Vector2(1920, 1080)), 1.0)
@@ -151,6 +154,10 @@ func _test_small_window() -> void:
 		and is_equal_approx(f.call(Vector2(2560, 1440), Vector2(1920, 1080)), 1.0)
 		and f.call(Vector2(1366, 768), Vector2(1920, 1080)) > 1.1,
 		"множитель: 1280×720 — 1,2; 1366×768 — %.3f; 1600×900 и больше — 1" % float(f.call(Vector2(1366, 768), Vector2(1920, 1080))))
+	var ordo := root.get_node_or_null("Ordo")
+	SimHarness.check(ordo != null, "автозагрузка Ordo (масштаб интерфейса) в дереве")
+	if ordo == null:
+		return
 	var w := root
 	var old_mode := w.content_scale_mode
 	var old_size := w.size
@@ -159,52 +166,91 @@ func _test_small_window() -> void:
 	w.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	w.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 	w.content_scale_size = Vector2i(1920, 1080)
-	w.size = Vector2i(1280, 720)
-	for p in 2:
-		var made := _make_hud(p)
-		var hud: CityHud = made[0]
-		var sel: SelectionModel = made[1]
-		var vs := hud.view_size()
-		var fid := String(city.defs().f_ids[city.players().faction[p]])
-		SimHarness.check(is_equal_approx(w.content_scale_factor, 1.2) and vs.is_equal_approx(Vector2(1600, 900)),
-			"%s: окно 1280×720 — множитель %.2f, холст %s" % [fid, w.content_scale_factor, vs])
-		# балка: ячейки слева не заходят под герб посередине
-		var right := 0.0
-		for c in hud.top._chips:
-			right = maxf(right, (c["box"] as Control).position.x + (c["box"] as Control).size.x)
-		right = maxf(right, hud.top._pop_box.position.x + hud.top._pop_box.size.x)
-		SimHarness.check(right <= vs.x * 0.5 - 40.0, "%s: ячейки балки до %.0f — левее герба (%.0f)" % [fid, right, vs.x * 0.5 - 40.0])
-		# панель каждого своего здания с наймом влезает в бумагу
-		var bt := city.buildings()
-		var defs := city.defs()
-		var worst := -1e9
-		var worst_at := ""
-		var compact := 0
-		var seen := {}
-		for b in bt.hw:
-			if bt.owner[b] != p or bt.state[b] == BuildingTable.State.FREE or seen.has(bt.btype[b]):
-				continue
-			seen[bt.btype[b]] = true
-			sel.set_selection(PackedInt32Array([bt.handle(b)]))
-			hud.refresh_now(true)
-			var bp := hud.bottom.building
-			compact += 1 if bp.compact else 0
-			for ch in bp.get_children():
-				var c := ch as Control
-				if c and c.visible and not c.is_queued_for_deletion():
-					var over := c.position.x + c.size.x - bp.size.x
-					if over > worst:
-						worst = over
-						worst_at = "%s/%s «%s»" % [defs.b_ids[bt.btype[b]], c.get_class(), c.get("text") if c.get("text") != null else ""]
-		SimHarness.check(worst <= 8.0, "%s: всё в панели здания внутри бумаги (ширина %.0f; дальше всех %s — %.0f; сжатых панелей %d)" % [
-			fid, hud.bottom.building.size.x, worst_at, worst, compact])
-		hud.free()
-		(made[2] as Node).free()
-		SimHarness.check(is_equal_approx(w.content_scale_factor, 1.0), "%s: выход — множитель окна снова %.2f" % [fid, w.content_scale_factor])
+	# [окно, масштаб игрока, множитель в «Городе», холст, ужатие нижней панели]
+	for cs: Array in [[Vector2i(1280, 720), 1.0, 1.2, Vector2(1600, 900), 1.0],
+			[Vector2i(1920, 1080), 1.5, 1.5, Vector2(1280, 720), 0.8],
+			[Vector2i(1280, 720), 1.5, 1.5, Vector2(1280, 720), 0.8],
+			[Vector2i(1920, 1080), 0.75, 0.75, Vector2(2560, 1440), 1.0]]:
+		var win: Vector2i = cs[0]
+		var ui: float = cs[1]
+		var tag := "окно %d×%d, %d %%" % [win.x, win.y, int(roundf(ui * 100.0))]
+		w.size = win
+		ordo.call("set_ui_scale", ui, false)
+		for p in 2:
+			_check_layout(p, tag, w, cs[2], cs[3], cs[4])
+			var plain := float(ordo.call("ui_window_factor", Vector2(win), Vector2(1920, 1080), ui))
+			SimHarness.check(is_equal_approx(w.content_scale_factor, plain),
+				"%s: выход — множитель окна %.2f (масштаб игрока без подъёма «Города»: %.2f)" % [tag, w.content_scale_factor, plain])
+	ordo.call("set_ui_scale", 1.0, false)
 	w.size = old_size
 	w.content_scale_size = old_css
 	w.content_scale_aspect = old_aspect
 	w.content_scale_mode = old_mode
+
+
+## Интерфейс стороны p на текущем окне: множитель и холст, нижняя панель во всю ширину (ужата на узком),
+## записки над ней, ячейки балки левее герба и числа в своих ячейках, всё в панели каждого здания — в бумаге
+func _check_layout(p: int, tag: String, w: Window, factor: float, canvas: Vector2, fit: float) -> void:
+	var made := _make_hud(p)
+	var hud: CityHud = made[0]
+	var sel: SelectionModel = made[1]
+	var vs := hud.view_size()
+	var fid := String(city.defs().f_ids[city.players().faction[p]])
+	tag = "%s, %s" % [fid, tag]
+	SimHarness.check(is_equal_approx(w.content_scale_factor, factor) and vs.is_equal_approx(canvas),
+		"%s: множитель %.2f, холст %s" % [tag, w.content_scale_factor, vs])
+	var bp := hud.bottom
+	SimHarness.check(is_equal_approx(bp.scale.x, fit) and is_equal_approx(bp.size.x * bp.scale.x, vs.x)
+		and is_equal_approx(bp.position.y + bp.screen_h(), vs.y) and bp.size.x >= CityBottomPanel.MIN_W - 0.5,
+		"%s: нижняя панель ужата ×%.2f, ширина %.0f (на холсте %.0f)" % [tag, bp.scale.x, bp.size.x, bp.size.x * bp.scale.x])
+	# балка и записки — той же мерой: балка во всю ширину сверху, записки справа над панелью
+	var tb := hud.top
+	var nt := hud.notes
+	var notes_end := nt.position + nt.size * nt.scale
+	SimHarness.check(is_equal_approx(tb.scale.x, fit) and is_equal_approx(tb.size.x * tb.scale.x, vs.x) and is_zero_approx(tb.position.y)
+		and is_equal_approx(nt.scale.x, fit) and is_equal_approx(notes_end.y, vs.y - bp.screen_h() - CityHud.NOTES_GAP * fit)
+		and is_equal_approx(notes_end.x, vs.x - CityHud.NOTES_RIGHT * fit),
+		"%s: балка и записки ужаты так же (×%.2f, ×%.2f), записки до %s над панелью" % [tag, tb.scale.x, nt.scale.x, notes_end])
+	# балка: ячейки слева не заходят под герб посередине, числа и подписи — в своих ячейках
+	var right := 0.0
+	var spill := ""
+	var boxes: Array[Control] = [hud.top._pop_box]
+	for c in hud.top._chips:
+		boxes.append(c["box"] as Control)
+	for b in boxes:
+		right = maxf(right, b.position.x + b.size.x)
+		for k in [1, 2]:
+			var l := b.get_child(k) as Label
+			if l.position.x + l.get_combined_minimum_size().x > b.size.x + 2.0:
+				spill += " «%s»" % l.text
+	SimHarness.check(right <= tb.size.x * 0.5 - 40.0, "%s: ячейки балки до %.0f — левее герба (%.0f)" % [tag, right, tb.size.x * 0.5 - 40.0])
+	SimHarness.check(spill == "", "%s: числа балки в своих ячейках%s" % [tag, spill])
+	# панель каждого своего здания с наймом влезает в бумагу
+	var bt := city.buildings()
+	var defs := city.defs()
+	var worst := -1e9
+	var worst_at := ""
+	var compact := 0
+	var seen := {}
+	for b in bt.hw:
+		if bt.owner[b] != p or bt.state[b] == BuildingTable.State.FREE or seen.has(bt.btype[b]):
+			continue
+		seen[bt.btype[b]] = true
+		sel.set_selection(PackedInt32Array([bt.handle(b)]))
+		hud.refresh_now(true)
+		var bpn := hud.bottom.building
+		compact += 1 if bpn.compact else 0
+		for ch in bpn.get_children():
+			var c := ch as Control
+			if c and c.visible and not c.is_queued_for_deletion():
+				var over := c.position.x + c.size.x - bpn.size.x
+				if over > worst:
+					worst = over
+					worst_at = "%s/%s «%s»" % [defs.b_ids[bt.btype[b]], c.get_class(), c.get("text") if c.get("text") != null else ""]
+	SimHarness.check(worst <= 8.0, "%s: всё в панели здания внутри бумаги (ширина %.0f; дальше всех %s — %.0f; сжатых панелей %d)" % [
+		tag, hud.bottom.building.size.x, worst_at, worst, compact])
+	hud.free()
+	(made[2] as Node).free()
 
 
 ## Добавки панели здания от ECON (сверх договора): тревоги впереди, места у воды, работники, отара без травы

@@ -7,6 +7,8 @@ extends Node
 ## Ставит сцена (GorodScene._ready), если её драйвер — GameDriver.
 
 const END_FADE := 0.6
+## Лист экрана конца партии (без латунной рамки); место — CityHud.add_dialog: между балкой и нижней панелью
+const END_SIZE := Vector2(640, 360)
 
 var scene: Node3D
 var driver: GameDriver
@@ -93,6 +95,7 @@ func _on_over(winner_team: int) -> void:
 	_end = _build_end(won)
 	if hud.root:
 		hud.root.add_child(_end)          # тема интерфейса (кнопки — орех и латунь)
+		hud.add_dialog(_end.get_node("Sheet") as Control, END_SIZE)
 	else:
 		hud.add_child(_end)
 	_end.modulate.a = 0.0
@@ -108,8 +111,8 @@ func _build_end(won: bool) -> Control:
 	dim.color = Color(0.05, 0.03, 0.02, 0.55)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(dim)
-	var w := 640.0
-	var h := 360.0
+	var w := END_SIZE.x
+	var h := END_SIZE.y
 	var sheet := NinePatchRect.new()
 	sheet.texture = UiTheme.tex("paper")
 	for m in ["patch_margin_left", "patch_margin_right", "patch_margin_top", "patch_margin_bottom"]:
@@ -119,6 +122,7 @@ func _build_end(won: bool) -> Control:
 	sheet.offset_right = w * 0.5
 	sheet.offset_top = -h * 0.5
 	sheet.offset_bottom = h * 0.5
+	sheet.name = "Sheet"
 	root.add_child(sheet)
 	var frame := NinePatchRect.new()
 	frame.texture = UiTheme.tex("frame_brass")
